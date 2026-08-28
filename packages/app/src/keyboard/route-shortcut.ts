@@ -1,6 +1,10 @@
 import type { KeyboardShortcutPayload, MessageInputKeyboardActionKind } from "@/keyboard/actions";
 import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
-import { buildSettingsRoute, parseHostWorkspaceRouteFromPathname } from "@/utils/host-routes";
+import {
+  buildCockpitRoute,
+  buildSettingsRoute,
+  parseHostWorkspaceRouteFromPathname,
+} from "@/utils/host-routes";
 import {
   getRelativeSidebarShortcutTarget,
   type SidebarShortcutWorkspaceTarget,
@@ -171,6 +175,13 @@ function routeSettingsToggle(ctx: ShortcutRoutingContext): ShortcutAction {
   return { kind: "router-back" };
 }
 
+function routeCockpitToggle(ctx: ShortcutRoutingContext): ShortcutAction {
+  if (ctx.pathname === buildCockpitRoute()) {
+    return { kind: "navigate-last-workspace" };
+  }
+  return { kind: "router-push", route: buildCockpitRoute() };
+}
+
 export function routeKeyboardShortcut(
   input: ShortcutRoutingInput,
   ctx: ShortcutRoutingContext,
@@ -207,6 +218,8 @@ export function routeKeyboardShortcut(
       return { kind: "open-project-picker" };
     case "settings.toggle":
       return routeSettingsToggle(ctx);
+    case "cockpit.toggle":
+      return routeCockpitToggle(ctx);
     case "command-center.toggle":
       return { kind: "command-center-toggle", nextOpen: !ctx.commandCenterOpen };
     case "command-center.files":

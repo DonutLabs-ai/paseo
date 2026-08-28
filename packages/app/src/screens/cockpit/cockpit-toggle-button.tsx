@@ -4,17 +4,19 @@ import { LayoutDashboard, PanelTop } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { HeaderToggleButton } from "@/components/headers/header-toggle-button";
 import { iconButtonChromeGlyphSize } from "@/components/ui/icon-button-chrome";
+import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 
 export function CockpitToggleButton({ active, onPress }: { active: boolean; onPress: () => void }) {
   const { t } = useTranslation();
   const label = active ? t("cockpit.actions.returnToWorkspace") : t("cockpit.actions.open");
+  const shortcutKeys = useShortcutKeys("toggle-cockpit");
   const accessibilityState = useMemo(() => ({ selected: active }), [active]);
 
   return (
     <HeaderToggleButton
       onPress={onPress}
       tooltipLabel={label}
-      tooltipKeys={[]}
+      tooltipKeys={shortcutKeys?.[0] ?? []}
       tooltipSide="bottom"
       style={active ? styles.active : undefined}
       testID="cockpit-mode-toggle"

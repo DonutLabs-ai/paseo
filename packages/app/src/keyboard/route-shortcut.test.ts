@@ -82,6 +82,23 @@ describe("routeKeyboardShortcut — dispatch passthroughs", () => {
   });
 });
 
+describe("routeKeyboardShortcut — cockpit toggle", () => {
+  it("opens cockpit from a workspace", () => {
+    expect(
+      routeKeyboardShortcut({ action: "cockpit.toggle", payload: null }, makeCtx()),
+    ).toEqual<ShortcutAction>({ kind: "router-push", route: "/cockpit" });
+  });
+
+  it("returns to the last workspace from cockpit", () => {
+    expect(
+      routeKeyboardShortcut(
+        { action: "cockpit.toggle", payload: null },
+        makeCtx({ pathname: "/cockpit" }),
+      ),
+    ).toEqual<ShortcutAction>({ kind: "navigate-last-workspace" });
+  });
+});
+
 describe("routeKeyboardShortcut — workspace.tab.navigate", () => {
   it("forwards index payloads to the workspace.tab.navigate-index dispatch", () => {
     expect(

@@ -1052,6 +1052,7 @@ export const ptBR: TranslationResources = {
   cockpit: {
     title: "Painel de controle",
     actions: {
+      toggle: "Alternar painel de controle",
       open: "Abrir painel de controle",
       returnToWorkspace: "Voltar ao espaço de trabalho",
     },

@@ -1036,6 +1036,7 @@ export const en = {
   cockpit: {
     title: "Cockpit",
     actions: {
+      toggle: "Toggle cockpit",
       open: "Open cockpit",
       returnToWorkspace: "Return to workspace",
     },

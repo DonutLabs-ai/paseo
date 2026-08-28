@@ -29,6 +29,7 @@ export interface ArchiveWorkspaceInput {
   diffStat?: { additions: number; deletions: number } | null;
   warningLabels?: WorktreeArchiveWarningLabels;
   onArchiveStarted: () => void;
+  onArchiveSucceeded?: () => void;
   onSetHiding?: (hiding: boolean) => void;
 }
 
@@ -47,6 +48,7 @@ export function useWorkspaceArchive(input: ArchiveWorkspaceInput): WorkspaceArch
     diffStat,
     warningLabels = DEFAULT_WORKTREE_ARCHIVE_WARNING_LABELS,
     onArchiveStarted,
+    onArchiveSucceeded,
     onSetHiding,
   } = input;
   const { t } = useTranslation();
@@ -59,24 +61,28 @@ export function useWorkspaceArchive(input: ArchiveWorkspaceInput): WorkspaceArch
       return;
     }
     onSetHiding?.(true);
+    onArchiveStarted();
     try {
-      onArchiveStarted();
-      await archiveWorkspaceOptimistically({
-        client,
-        workspace: {
-          serverId,
-          workspaceId,
-        },
-      });
+      try {
+        await archiveWorkspaceOptimistically({
+          client,
+          workspace: {
+            serverId,
+            workspaceId,
+          },
+        });
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : t("sidebar.workspace.toasts.archiveFailed"),
+        );
+        return;
+      }
       purgeArchivedWorkspaceState({ serverId, workspaceId });
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t("sidebar.workspace.toasts.archiveFailed"),
-      );
+      onArchiveSucceeded?.();
     } finally {
       onSetHiding?.(false);
     }
-  }, [onArchiveStarted, onSetHiding, serverId, t, toast, workspaceId]);
+  }, [onArchiveStarted, onArchiveSucceeded, onSetHiding, serverId, t, toast, workspaceId]);
 
   const archive = useCallback(() => {
     void (async () => {

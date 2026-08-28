@@ -259,6 +259,18 @@ describe("keyboard-shortcuts", () => {
       action: "command-center.toggle",
     },
     {
+      name: "matches Cmd+Alt+C to toggle cockpit on macOS",
+      event: { key: "c", code: "KeyC", metaKey: true, altKey: true },
+      context: { isMac: true },
+      action: "cockpit.toggle",
+    },
+    {
+      name: "matches Ctrl+Alt+C to toggle cockpit on non-mac platforms",
+      event: { key: "c", code: "KeyC", ctrlKey: true, altKey: true },
+      context: { isMac: false },
+      action: "cockpit.toggle",
+    },
+    {
       name: "matches Cmd+Backslash to split pane right on macOS",
       event: { key: "\\", code: "Backslash", metaKey: true },
       context: { isMac: true },
@@ -268,6 +280,18 @@ describe("keyboard-shortcuts", () => {
       name: "matches Cmd+Shift+Backslash to split pane down on macOS",
       event: { key: "|", code: "Backslash", metaKey: true, shiftKey: true },
       context: { isMac: true },
+      action: "workspace.pane.split.down",
+    },
+    {
+      name: "matches Ctrl+Backslash to split pane right on non-mac platforms",
+      event: { key: "\\", code: "Backslash", ctrlKey: true },
+      context: { isMac: false },
+      action: "workspace.pane.split.right",
+    },
+    {
+      name: "matches Ctrl+Shift+Backslash to split pane down on non-mac platforms",
+      event: { key: "|", code: "Backslash", ctrlKey: true, shiftKey: true },
+      context: { isMac: false },
       action: "workspace.pane.split.down",
     },
     {
@@ -512,8 +536,8 @@ describe("keyboard-shortcuts", () => {
       context: { commandCenterOpen: true },
     },
     {
-      name: "does not bind pane shortcuts on non-mac platforms",
-      event: { key: "\\", code: "Backslash", ctrlKey: true },
+      name: "does not bind pane focus shortcuts on non-mac platforms",
+      event: { key: "ArrowRight", code: "ArrowRight", ctrlKey: true, shiftKey: true },
       context: { isMac: false },
     },
     {
@@ -641,6 +665,7 @@ describe("keyboard-shortcut help sections", () => {
         "workspace-tab-jump-index": ["alt", "shift", "1-9"],
         "workspace-tab-close-current": ["alt", "shift", "W"],
         "workspace-pane-split-right": ["mod", "\\"],
+        "toggle-cockpit": ["mod", "alt", "C"],
         "workspace-pane-close": ["mod", "shift", "W"],
         "cycle-agent-mode": ["shift", "Tab"],
       },
@@ -660,6 +685,7 @@ describe("keyboard-shortcut help sections", () => {
         // the render assertion below.
         "workspace-tab-close-current": ["mod", "W"],
         "workspace-pane-split-right": ["mod", "\\"],
+        "toggle-cockpit": ["mod", "alt", "C"],
         "workspace-pane-close": ["mod", "shift", "W"],
       },
     },
@@ -667,8 +693,10 @@ describe("keyboard-shortcut help sections", () => {
       name: "uses non-mac desktop defaults for tab jump and close tab",
       context: { isMac: false, isDesktop: true },
       expectedKeys: {
+        "workspace-pane-split-right": ["ctrl", "\\"],
         "workspace-tab-jump-index": ["alt", "1-9"],
         "workspace-tab-close-current": ["ctrl", "W"],
+        "toggle-cockpit": ["ctrl", "alt", "C"],
       },
     },
     {

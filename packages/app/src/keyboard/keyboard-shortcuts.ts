@@ -192,7 +192,13 @@ export const SHORTCUT_HELP_ROW_ORDER: Record<ShortcutSectionId, readonly string[
     "workspace-pane-move-tab-down",
     "workspace-pane-close",
   ],
-  layout: ["toggle-left-sidebar", "toggle-right-sidebar", "toggle-both-sidebars", "toggle-focus"],
+  layout: [
+    "toggle-cockpit",
+    "toggle-left-sidebar",
+    "toggle-right-sidebar",
+    "toggle-both-sidebars",
+    "toggle-focus",
+  ],
   "agent-input": [
     "focus-message-input",
     "cycle-agent-mode",
@@ -239,6 +245,7 @@ const SHORTCUT_HELP_LABEL_KEYS: Record<string, string> = {
   "toggle-right-sidebar": "settings.shortcuts.help.toggleRightSidebar",
   "toggle-both-sidebars": "settings.shortcuts.help.toggleBothSidebars",
   "toggle-settings": "settings.shortcuts.help.toggleSettings",
+  "toggle-cockpit": "cockpit.actions.toggle",
   "toggle-focus": "settings.shortcuts.help.toggleFocusMode",
   "cycle-theme": "settings.shortcuts.help.cycleTheme",
   "focus-message-input": "settings.shortcuts.help.focusMessageInput",
@@ -713,7 +720,7 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     },
   },
 
-  // --- Pane management (mac only) ---
+  // --- Pane management ---
   {
     id: "workspace-pane-split-right-cmd-backslash",
     action: "workspace.pane.split.right",
@@ -730,6 +737,28 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     action: "workspace.pane.split.down",
     combo: "Cmd+Shift+\\",
     when: { mac: true, commandCenter: false },
+    help: {
+      id: "workspace-pane-split-down",
+      section: "tabs-panes",
+      label: "Split pane down",
+    },
+  },
+  {
+    id: "workspace-pane-split-right-ctrl-backslash-non-mac",
+    action: "workspace.pane.split.right",
+    combo: "Ctrl+\\",
+    when: { mac: false, commandCenter: false, terminal: false },
+    help: {
+      id: "workspace-pane-split-right",
+      section: "tabs-panes",
+      label: "Split pane right",
+    },
+  },
+  {
+    id: "workspace-pane-split-down-ctrl-shift-backslash-non-mac",
+    action: "workspace.pane.split.down",
+    combo: "Ctrl+Shift+\\",
+    when: { mac: false, commandCenter: false, terminal: false },
     help: {
       id: "workspace-pane-split-down",
       section: "tabs-panes",
@@ -896,6 +925,30 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
       label: "Show keyboard shortcuts",
       defaultDisplayKeys: ["?"],
       note: "Available when focus is not in a text field or terminal.",
+    },
+  },
+
+  // --- Cockpit ---
+  {
+    id: "cockpit-toggle-cmd-alt-c-mac",
+    action: "cockpit.toggle",
+    combo: "Cmd+Alt+C",
+    when: { mac: true, commandCenter: false, terminal: false },
+    help: {
+      id: "toggle-cockpit",
+      section: "layout",
+      label: "Toggle cockpit",
+    },
+  },
+  {
+    id: "cockpit-toggle-ctrl-alt-c-non-mac",
+    action: "cockpit.toggle",
+    combo: "Ctrl+Alt+C",
+    when: { mac: false, commandCenter: false, terminal: false },
+    help: {
+      id: "toggle-cockpit",
+      section: "layout",
+      label: "Toggle cockpit",
     },
   },
 

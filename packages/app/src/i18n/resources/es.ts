@@ -1061,6 +1061,7 @@ export const es: TranslationResources = {
   cockpit: {
     title: "Panel de control",
     actions: {
+      toggle: "Alternar panel de control",
       open: "Abrir panel de control",
       returnToWorkspace: "Volver al espacio de trabajo",
     },

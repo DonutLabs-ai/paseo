@@ -1027,6 +1027,7 @@ export const ar: TranslationResources = {
   cockpit: {
     title: "لوحة المتابعة",
     actions: {
+      toggle: "تبديل لوحة المتابعة",
       open: "فتح لوحة المتابعة",
       returnToWorkspace: "العودة إلى مساحة العمل",
     },

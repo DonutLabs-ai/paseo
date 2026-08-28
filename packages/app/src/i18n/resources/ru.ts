@@ -1042,6 +1042,7 @@ export const ru: TranslationResources = {
   cockpit: {
     title: "Панель управления",
     actions: {
+      toggle: "Переключить панель управления",
       open: "Открыть панель управления",
       returnToWorkspace: "Вернуться в рабочую область",
     },

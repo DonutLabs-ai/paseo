@@ -1038,6 +1038,7 @@ export const ja: TranslationResources = {
   cockpit: {
     title: "コックピット",
     actions: {
+      toggle: "コックピットを切り替え",
       open: "コックピットを開く",
       returnToWorkspace: "ワークスペースに戻る",
     },

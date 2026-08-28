@@ -1,27 +1,222 @@
 import { describe, expect, it } from "vitest";
 import {
-  COCKPIT_CARD_GAP,
-  resolveCockpitCardWidth,
-  resolveCockpitColumnCount,
+  addWorkspaceToCockpitLayout,
+  closeCockpitPane,
+  collectCockpitPanes,
+  createDefaultCockpitLayout,
+  filterCockpitLayout,
+  getCockpitPaneWorkspaceKey,
+  splitCockpitPane,
+  type CockpitLayoutIdSource,
 } from "./cockpit-layout";
 
-describe("cockpit card layout", () => {
-  it("uses one column below the minimum two-card width", () => {
-    expect(resolveCockpitColumnCount(611)).toBe(1);
+function createIds(): CockpitLayoutIdSource {
+  let nextId = 1;
+  return {
+    createNodeId: (prefix) => `${prefix}-${nextId++}`,
+  };
+}
+
+function requireLayout<T>(value: T | null): T {
+  if (!value) throw new Error("Expected cockpit layout");
+  return value;
+}
+
+function requireItem<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) throw new Error("Expected cockpit layout item");
+  return value;
+}
+
+describe("cockpit pane layout", () => {
+  it("builds a balanced default grid and focuses the active workspace", () => {
+    const layout = requireLayout(
+      createDefaultCockpitLayout({
+        workspaceKeys: ["a", "b", "c", "d", "e"],
+        preferredWorkspaceKey: "d",
+        ids: createIds(),
+      }),
+    );
+
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected row group");
+    expect(layout.root.group.direction).toBe("vertical");
+    expect(
+      layout.root.group.children.map((row) =>
+        row.kind === "group" ? row.group.children.length : 1,
+      ),
+    ).toEqual([3, 2]);
+    const focusedPane = collectCockpitPanes(layout.root).find(
+      (pane) => pane.id === layout.focusedPaneId,
+    );
+    expect(focusedPane && getCockpitPaneWorkspaceKey(focusedPane)).toBe("d");
   });
 
-  it("uses two columns once two cards and their gap fit", () => {
-    expect(resolveCockpitColumnCount(612)).toBe(2);
-    expect(resolveCockpitCardWidth(612)).toBe(300);
+  it("splits right into the current row and redistributes every width equally", () => {
+    const ids = createIds();
+    const initial = requireLayout(createDefaultCockpitLayout({ workspaceKeys: ["a", "b"], ids }));
+    const targetPaneId = requireItem(collectCockpitPanes(initial.root)[0]).id;
+    const layout = requireLayout(
+      splitCockpitPane({
+        layout: initial,
+        targetPaneId,
+        position: "right",
+        ids,
+      }),
+    );
+
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected horizontal group");
+    expect(layout.root.group.direction).toBe("horizontal");
+    expect(layout.root.group.sizes).toEqual([1 / 3, 1 / 3, 1 / 3]);
+    expect(collectCockpitPanes(layout.root).map(getCockpitPaneWorkspaceKey)).toEqual([
+      "a",
+      null,
+      "b",
+    ]);
+    expect(layout.focusedPaneId).toBe(requireItem(collectCockpitPanes(layout.root)[1]).id);
   });
 
-  it("caps wide layouts at three readable columns", () => {
-    expect(resolveCockpitColumnCount(2_000)).toBe(3);
-    expect(resolveCockpitCardWidth(2_000)).toBe((2_000 - COCKPIT_CARD_GAP * 2) / 3);
+  it("splits down by nesting a vertical group beneath the target column", () => {
+    const ids = createIds();
+    const initial = requireLayout(createDefaultCockpitLayout({ workspaceKeys: ["a", "b"], ids }));
+    const targetPaneId = requireItem(collectCockpitPanes(initial.root)[0]).id;
+    const layout = requireLayout(
+      splitCockpitPane({
+        layout: initial,
+        targetPaneId,
+        position: "down",
+        ids,
+      }),
+    );
+
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected horizontal root");
+    expect(layout.root.group.direction).toBe("horizontal");
+    const firstColumn = requireItem(layout.root.group.children[0]);
+    expect(firstColumn.kind).toBe("group");
+    if (firstColumn.kind !== "group") throw new Error("Expected vertical column");
+    expect(firstColumn.group.direction).toBe("vertical");
+    expect(firstColumn.group.sizes).toEqual([0.5, 0.5]);
   });
 
-  it("returns a safe initial layout before measurement", () => {
-    expect(resolveCockpitColumnCount(0)).toBe(1);
-    expect(resolveCockpitCardWidth(0)).toBeNull();
+  it("splits down into the current column and redistributes every height equally", () => {
+    const ids = createIds();
+    const initial = requireLayout(createDefaultCockpitLayout({ workspaceKeys: ["a"], ids }));
+    if (!initial.focusedPaneId) throw new Error("Expected focused cockpit pane");
+    const firstSplit = requireLayout(
+      splitCockpitPane({
+        layout: initial,
+        targetPaneId: initial.focusedPaneId,
+        position: "down",
+        ids,
+      }),
+    );
+    if (!firstSplit.focusedPaneId) throw new Error("Expected focused split pane");
+    const layout = requireLayout(
+      splitCockpitPane({
+        layout: firstSplit,
+        targetPaneId: firstSplit.focusedPaneId,
+        position: "down",
+        ids,
+      }),
+    );
+
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected vertical group");
+    expect(layout.root.group.direction).toBe("vertical");
+    expect(layout.root.group.sizes).toEqual([1 / 3, 1 / 3, 1 / 3]);
+    expect(collectCockpitPanes(layout.root).map(getCockpitPaneWorkspaceKey)).toEqual([
+      "a",
+      null,
+      null,
+    ]);
+  });
+
+  it("fills a reserved empty pane with the next new workspace", () => {
+    const ids = createIds();
+    const initial = requireLayout(createDefaultCockpitLayout({ workspaceKeys: ["a"], ids }));
+    if (!initial.focusedPaneId) throw new Error("Expected focused cockpit pane");
+    const emptyLayout = requireLayout(
+      splitCockpitPane({
+        layout: initial,
+        targetPaneId: initial.focusedPaneId,
+        position: "right",
+        ids,
+      }),
+    );
+    const layout = addWorkspaceToCockpitLayout({
+      layout: emptyLayout,
+      workspaceKey: "b",
+      ids,
+    });
+
+    expect(collectCockpitPanes(layout.root).map(getCockpitPaneWorkspaceKey)).toEqual(["a", "b"]);
+  });
+
+  it("fills the focused placeholder when more than one empty pane exists", () => {
+    const ids = createIds();
+    const initial = requireLayout(createDefaultCockpitLayout({ workspaceKeys: ["a"], ids }));
+    if (!initial.focusedPaneId) throw new Error("Expected focused cockpit pane");
+    const rightSplit = requireLayout(
+      splitCockpitPane({
+        layout: initial,
+        targetPaneId: initial.focusedPaneId,
+        position: "right",
+        ids,
+      }),
+    );
+    if (!rightSplit.focusedPaneId) throw new Error("Expected focused right pane");
+    const downSplit = requireLayout(
+      splitCockpitPane({
+        layout: rightSplit,
+        targetPaneId: rightSplit.focusedPaneId,
+        position: "down",
+        ids,
+      }),
+    );
+    const layout = addWorkspaceToCockpitLayout({
+      layout: downSplit,
+      workspaceKey: "b",
+      ids,
+    });
+
+    expect(collectCockpitPanes(layout.root).map(getCockpitPaneWorkspaceKey)).toEqual([
+      "a",
+      null,
+      "b",
+    ]);
+  });
+
+  it("closes a pane, collapses single-child groups, and equalizes survivors", () => {
+    const ids = createIds();
+    const initial = requireLayout(
+      createDefaultCockpitLayout({ workspaceKeys: ["a", "b", "c"], ids }),
+    );
+    const middlePaneId = requireItem(collectCockpitPanes(initial.root)[1]).id;
+    const result = requireLayout(closeCockpitPane(initial, middlePaneId));
+    const layout = requireLayout(result.layout);
+
+    expect(getCockpitPaneWorkspaceKey(result.removedPane)).toBe("b");
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected horizontal group");
+    expect(layout.root.group.sizes).toEqual([0.5, 0.5]);
+    expect(collectCockpitPanes(layout.root).map(getCockpitPaneWorkspaceKey)).toEqual(["a", "c"]);
+  });
+
+  it("filters cards without mutating the persisted layout topology", () => {
+    const layout = requireLayout(
+      createDefaultCockpitLayout({
+        workspaceKeys: ["a", "b", "c"],
+        ids: createIds(),
+      }),
+    );
+    const presented = requireLayout(filterCockpitLayout(layout, new Set(["a", "c"])));
+
+    expect(collectCockpitPanes(presented.root).map(getCockpitPaneWorkspaceKey)).toEqual(["a", "c"]);
+    expect(collectCockpitPanes(layout.root).map(getCockpitPaneWorkspaceKey)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
   });
 });

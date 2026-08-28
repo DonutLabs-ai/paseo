@@ -1,15 +1,15 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Pressable,
   ScrollView,
   Text,
   View,
-  type LayoutChangeEvent,
+  type GestureResponderEvent,
   type PressableStateCallbackType,
   type ViewStyle,
 } from "react-native";
-import { GitBranch, GitPullRequest } from "lucide-react-native";
+import { Columns2, GitBranch, GitPullRequest, Plus, Rows2, X } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { router } from "expo-router";
 import { SidebarMenuToggle } from "@/components/headers/menu-header";
@@ -17,6 +17,8 @@ import { ScreenHeader } from "@/components/headers/screen-header";
 import { ScreenTitle } from "@/components/headers/screen-title";
 import { DiffStat } from "@/components/diff-stat";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { Button } from "@/components/ui/button";
+import { ToolbarButton, ToolbarControls } from "@/components/ui/pane-content-toolbar";
 import { SidebarModelProvider, useSidebarModel } from "@/components/sidebar/sidebar-model";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import type {
@@ -24,23 +26,34 @@ import type {
   SidebarWorkspaceEntry,
 } from "@/hooks/use-sidebar-workspaces-list";
 import { useAppSettings } from "@/hooks/use-settings";
+import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
+import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
+import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
 import {
   navigateToLastWorkspace,
   navigateToWorkspace,
+  rememberLastWorkspaceSelection,
+  useLastWorkspaceSelection,
 } from "@/stores/navigation-active-workspace-store";
-import { buildOpenProjectRoute } from "@/utils/host-routes";
+import {
+  useCockpitLayoutStore,
+  useCockpitLayoutStoreHydrated,
+} from "@/stores/cockpit-layout-store";
+import { buildNewWorkspaceRoute, buildOpenProjectRoute } from "@/utils/host-routes";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
+import { findAdjacentPane } from "@/utils/split-navigation";
+import type { SplitNode, SplitPane } from "@/stores/workspace-layout-store";
+import { useWorkspaceArchive } from "@/workspace/use-workspace-archive";
+import { toWorktreeArchiveRisk } from "@/git/worktree-archive-warning";
 import { CockpitToggleButton } from "./cockpit-toggle-button";
 import {
   COCKPIT_CARD_GAP,
   COCKPIT_HORIZONTAL_PADDING,
-  resolveCockpitCardWidth,
+  filterCockpitLayout,
+  findCockpitPane,
+  getCockpitLayoutMinimumHeight,
+  getCockpitPaneWorkspaceKey,
 } from "./cockpit-layout";
-
-interface CockpitSection {
-  project: SidebarProjectEntry;
-  workspaces: SidebarWorkspaceEntry[];
-}
 
 const STATUS_LABEL_KEYS = {
   needs_input: "cockpit.status.needsInput",
@@ -56,16 +69,45 @@ const PR_STATE_LABEL_KEYS = {
   closed: "workspace.git.pr.states.closed",
 } as const;
 
-function buildCockpitSections(input: {
-  projects: readonly SidebarProjectEntry[];
-  workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
-}): CockpitSection[] {
-  return input.projects.flatMap((project) => {
-    const workspaces = project.workspaces.flatMap((placement) => {
-      const workspace = input.workspaceEntriesByKey.get(placement.workspaceKey);
-      return workspace ? [workspace] : [];
+function collectWorkspaceKeys(projects: readonly SidebarProjectEntry[]): string[] {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  for (const project of projects) {
+    for (const placement of project.workspaces) {
+      if (seen.has(placement.workspaceKey)) continue;
+      seen.add(placement.workspaceKey);
+      keys.push(placement.workspaceKey);
+    }
+  }
+  return keys;
+}
+
+function buildProjectNamesByWorkspace(
+  projects: readonly SidebarProjectEntry[],
+): ReadonlyMap<string, string> {
+  const result = new Map<string, string>();
+  for (const project of projects) {
+    for (const placement of project.workspaces) {
+      if (!result.has(placement.workspaceKey)) {
+        result.set(placement.workspaceKey, project.projectName);
+      }
+    }
+  }
+  return result;
+}
+
+function navigateToCockpitWorkspace(workspace: SidebarWorkspaceEntry): void {
+  if (workspace.agentId) {
+    navigateToWorkspace({
+      serverId: workspace.serverId,
+      workspaceId: workspace.workspaceId,
+      target: { kind: "agent", agentId: workspace.agentId },
     });
-    return workspaces.length > 0 ? [{ project, workspaces }] : [];
+    return;
+  }
+  navigateToWorkspace({
+    serverId: workspace.serverId,
+    workspaceId: workspace.workspaceId,
   });
 }
 
@@ -79,27 +121,71 @@ export function CockpitScreen() {
 
 function CockpitScreenContent() {
   const { t } = useTranslation();
-  const { projects, workspaceEntriesByKey, isInitialLoad } = useSidebarModel();
+  const { allProjects, workspaceEntriesByKey, isInitialLoad } = useSidebarModel();
   const {
     settings: { workspaceTitleSource },
   } = useAppSettings();
-  const [contentWidth, setContentWidth] = useState(0);
-  const sections = useMemo(
-    () => buildCockpitSections({ projects, workspaceEntriesByKey }),
-    [projects, workspaceEntriesByKey],
+  const layout = useCockpitLayoutStore((state) => state.layout);
+  const reconcileWorkspaces = useCockpitLayoutStore((state) => state.reconcileWorkspaces);
+  const splitPane = useCockpitLayoutStore((state) => state.splitPane);
+  const addEmptyPane = useCockpitLayoutStore((state) => state.addEmptyPane);
+  const closePane = useCockpitLayoutStore((state) => state.closePane);
+  const focusPane = useCockpitLayoutStore((state) => state.focusPane);
+  const layoutHydrated = useCockpitLayoutStoreHydrated();
+  const lastWorkspaceSelection = useLastWorkspaceSelection();
+  const allWorkspaceKeys = useMemo(() => collectWorkspaceKeys(allProjects), [allProjects]);
+  const preferredWorkspaceKey = lastWorkspaceSelection
+    ? `${lastWorkspaceSelection.serverId}:${lastWorkspaceSelection.workspaceId}`
+    : null;
+  const visibleWorkspaceKeys = useMemo(
+    () => new Set(workspaceEntriesByKey.keys()),
+    [workspaceEntriesByKey],
   );
-  const cardWidth = resolveCockpitCardWidth(
-    Math.max(0, contentWidth - COCKPIT_HORIZONTAL_PADDING * 2),
+  const projectNamesByWorkspace = useMemo(
+    () => buildProjectNamesByWorkspace(allProjects),
+    [allProjects],
   );
 
-  const handleLayout = useCallback((event: LayoutChangeEvent) => {
-    setContentWidth(event.nativeEvent.layout.width);
-  }, []);
+  useEffect(() => {
+    if (!layoutHydrated || isInitialLoad) return;
+    reconcileWorkspaces({
+      workspaceKeys: allWorkspaceKeys,
+      preferredWorkspaceKey,
+    });
+  }, [allWorkspaceKeys, isInitialLoad, layoutHydrated, preferredWorkspaceKey, reconcileWorkspaces]);
+
+  const visibleLayout = useMemo(
+    () => filterCockpitLayout(layout, visibleWorkspaceKeys),
+    [layout, visibleWorkspaceKeys],
+  );
+  const focusedWorkspace = useMemo(() => {
+    if (!visibleLayout?.focusedPaneId) return null;
+    const pane = findCockpitPane(visibleLayout.root, visibleLayout.focusedPaneId);
+    const workspaceKey = pane ? getCockpitPaneWorkspaceKey(pane) : null;
+    return workspaceKey ? (workspaceEntriesByKey.get(workspaceKey) ?? null) : null;
+  }, [visibleLayout, workspaceEntriesByKey]);
+  useEffect(() => {
+    if (!focusedWorkspace) return;
+    rememberLastWorkspaceSelection({
+      serverId: focusedWorkspace.serverId,
+      workspaceId: focusedWorkspace.workspaceId,
+    });
+  }, [focusedWorkspace]);
   const handleReturnToWorkspace = useCallback(() => {
+    if (focusedWorkspace) {
+      navigateToCockpitWorkspace(focusedWorkspace);
+      return;
+    }
     if (!navigateToLastWorkspace()) {
       router.replace(buildOpenProjectRoute());
     }
-  }, []);
+  }, [focusedWorkspace]);
+  const handleAddPane = useCallback(() => addEmptyPane(), [addEmptyPane]);
+  const handleSplitPane = useCallback(
+    (paneId: string, position: "right" | "down") => splitPane(paneId, position),
+    [splitPane],
+  );
+  const splitRightKeys = useShortcutKeys("workspace-pane-split-right");
   const headerLeft = useMemo(
     () => (
       <>
@@ -110,46 +196,108 @@ function CockpitScreenContent() {
     [t],
   );
   const headerRight = useMemo(
-    () => <CockpitToggleButton active onPress={handleReturnToWorkspace} />,
-    [handleReturnToWorkspace],
+    () => (
+      <View style={styles.headerActions}>
+        <ToolbarButton
+          label={t("workspace.tabs.actions.splitRight")}
+          shortcut={splitRightKeys}
+          testID="cockpit-add-pane"
+          onPress={handleAddPane}
+        >
+          <ThemedPlus size={15} />
+        </ToolbarButton>
+        <CockpitToggleButton active onPress={handleReturnToWorkspace} />
+      </View>
+    ),
+    [handleAddPane, handleReturnToWorkspace, splitRightKeys, t],
   );
 
-  let content = (
+  const handlePaneKeyboardAction = useCallback(
+    (action: KeyboardActionDefinition): boolean => {
+      if (action.id === "workspace.pane.split.right") {
+        if (visibleLayout?.focusedPaneId) {
+          splitPane(visibleLayout.focusedPaneId, "right");
+        } else {
+          addEmptyPane();
+        }
+        return true;
+      }
+      if (action.id === "workspace.pane.split.down") {
+        if (visibleLayout?.focusedPaneId) {
+          splitPane(visibleLayout.focusedPaneId, "down");
+        } else {
+          addEmptyPane();
+        }
+        return true;
+      }
+
+      let direction: "left" | "right" | "up" | "down" | null = null;
+      if (action.id === "workspace.pane.focus.left") direction = "left";
+      if (action.id === "workspace.pane.focus.right") direction = "right";
+      if (action.id === "workspace.pane.focus.up") direction = "up";
+      if (action.id === "workspace.pane.focus.down") direction = "down";
+      if (!direction || !visibleLayout?.focusedPaneId) return false;
+      const adjacentPaneId = findAdjacentPane(
+        visibleLayout.root,
+        visibleLayout.focusedPaneId,
+        direction,
+      );
+      if (adjacentPaneId) focusPane(adjacentPaneId);
+      return true;
+    },
+    [addEmptyPane, focusPane, splitPane, visibleLayout],
+  );
+
+  useKeyboardActionHandler({
+    handlerId: "cockpit-pane-layout-actions",
+    actions: [
+      "workspace.pane.split.right",
+      "workspace.pane.split.down",
+      "workspace.pane.focus.left",
+      "workspace.pane.focus.right",
+      "workspace.pane.focus.up",
+      "workspace.pane.focus.down",
+    ] as const,
+    enabled: layoutHydrated && !isInitialLoad,
+    priority: 200,
+    handle: handlePaneKeyboardAction,
+  });
+
+  let content: ReactElement = (
     <View style={styles.centerState}>
       <LoadingSpinner color={styles.spinner.color} />
     </View>
   );
-  if (!isInitialLoad && sections.length === 0) {
+  if (layoutHydrated && !isInitialLoad && !visibleLayout) {
     content = (
       <View style={styles.centerState}>
         <Text style={styles.emptyTitle}>{t("cockpit.empty.title")}</Text>
         <Text style={styles.emptyDescription}>{t("cockpit.empty.description")}</Text>
+        <Button size="sm" leftIcon={ThemedPlus} onPress={handleAddPane}>
+          {t("sidebar.workspace.actions.newWorkspace")}
+        </Button>
       </View>
     );
-  } else if (!isInitialLoad) {
+  } else if (layoutHydrated && !isInitialLoad && visibleLayout) {
+    const minimumHeight = getCockpitLayoutMinimumHeight(visibleLayout.root);
     content = (
-      <View style={styles.contentFrame} onLayout={handleLayout}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          {sections.map((section) => (
-            <View key={section.project.viewKey} style={styles.section}>
-              <Text style={styles.sectionTitle}>{section.project.projectName}</Text>
-              <View style={styles.cardGrid}>
-                {section.workspaces.map((workspace) => (
-                  <CockpitWorkspaceCard
-                    key={workspace.workspaceKey}
-                    workspace={workspace}
-                    title={resolveSidebarWorkspacePrimaryLabel({
-                      workspace,
-                      workspaceTitleSource,
-                    })}
-                    width={cardWidth}
-                  />
-                ))}
-              </View>
-            </View>
-          ))}
-        </ScrollView>
-      </View>
+      <ScrollView style={styles.contentFrame} contentContainerStyle={styles.scrollContent}>
+        <View
+          style={[styles.layoutRoot, inlineUnistylesStyle({ minHeight: minimumHeight })]}
+          testID="cockpit-pane-layout"
+        >
+          <CockpitSplitNodeView
+            node={visibleLayout.root}
+            focusedPaneId={visibleLayout.focusedPaneId}
+            workspaceEntriesByKey={workspaceEntriesByKey}
+            projectNamesByWorkspace={projectNamesByWorkspace}
+            workspaceTitleSource={workspaceTitleSource}
+            onFocusPane={focusPane}
+            onSplitPane={handleSplitPane}
+            onClosePane={closePane}
+          />
+        </View>
+      </ScrollView>
     );
   }
 
@@ -161,51 +309,151 @@ function CockpitScreenContent() {
   );
 }
 
-function CockpitWorkspaceCard({
-  workspace,
-  title,
-  width,
+function CockpitSplitNodeView({
+  node,
+  focusedPaneId,
+  workspaceEntriesByKey,
+  projectNamesByWorkspace,
+  workspaceTitleSource,
+  onFocusPane,
+  onSplitPane,
+  onClosePane,
 }: {
+  node: SplitNode;
+  focusedPaneId: string | null;
+  workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
+  projectNamesByWorkspace: ReadonlyMap<string, string>;
+  workspaceTitleSource: "title" | "branch";
+  onFocusPane: (paneId: string) => void;
+  onSplitPane: (paneId: string, position: "right" | "down") => void;
+  onClosePane: (paneId: string) => void;
+}): ReactElement | null {
+  if (node.kind === "pane") {
+    const workspaceKey = getCockpitPaneWorkspaceKey(node.pane);
+    if (!workspaceKey) {
+      return (
+        <CockpitEmptyPane
+          pane={node.pane}
+          isFocused={node.pane.id === focusedPaneId}
+          onFocus={onFocusPane}
+          onSplit={onSplitPane}
+          onClose={onClosePane}
+        />
+      );
+    }
+    const workspace = workspaceEntriesByKey.get(workspaceKey);
+    if (!workspace) return null;
+    return (
+      <CockpitWorkspaceCard
+        pane={node.pane}
+        workspace={workspace}
+        projectName={projectNamesByWorkspace.get(workspaceKey) ?? null}
+        title={resolveSidebarWorkspacePrimaryLabel({ workspace, workspaceTitleSource })}
+        isFocused={node.pane.id === focusedPaneId}
+        onFocus={onFocusPane}
+        onSplit={onSplitPane}
+        onClose={onClosePane}
+      />
+    );
+  }
+
+  const groupStyle =
+    node.group.direction === "horizontal" ? styles.splitGroupHorizontal : styles.splitGroupVertical;
+  return (
+    <View style={[styles.splitGroup, groupStyle]} testID={`cockpit-split-${node.group.id}`}>
+      {node.group.children.map((child) => (
+        <View
+          key={child.kind === "pane" ? child.pane.id : child.group.id}
+          style={styles.splitChild}
+        >
+          <CockpitSplitNodeView
+            node={child}
+            focusedPaneId={focusedPaneId}
+            workspaceEntriesByKey={workspaceEntriesByKey}
+            projectNamesByWorkspace={projectNamesByWorkspace}
+            workspaceTitleSource={workspaceTitleSource}
+            onFocusPane={onFocusPane}
+            onSplitPane={onSplitPane}
+            onClosePane={onClosePane}
+          />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function CockpitWorkspaceCard({
+  pane,
+  workspace,
+  projectName,
+  title,
+  isFocused,
+  onFocus,
+  onSplit,
+  onClose,
+}: {
+  pane: SplitPane;
   workspace: SidebarWorkspaceEntry;
+  projectName: string | null;
   title: string;
-  width: number | null;
+  isFocused: boolean;
+  onFocus: (paneId: string) => void;
+  onSplit: (paneId: string, position: "right" | "down") => void;
+  onClose: (paneId: string) => void;
 }) {
   const { t } = useTranslation();
-  const cardSizeStyle = useMemo<ViewStyle>(
-    () => inlineUnistylesStyle(width === null ? { width: "100%" } : { width }),
-    [width],
-  );
-  const accessibilityLabel = `${title}, ${t(STATUS_LABEL_KEYS[workspace.statusBucket])}`;
+  const [isArchiving, setIsArchiving] = useState(false);
+  const archiveController = useWorkspaceArchive({
+    serverId: workspace.serverId,
+    workspaceId: workspace.workspaceId,
+    workspaceKind: workspace.workspaceKind,
+    name: workspace.name,
+    ...toWorktreeArchiveRisk(workspace),
+    onArchiveStarted: () => undefined,
+    onArchiveSucceeded: () => onClose(pane.id),
+    onSetHiding: setIsArchiving,
+  });
+  const handleFocus = useCallback(() => onFocus(pane.id), [onFocus, pane.id]);
   const handlePress = useCallback(() => {
-    if (workspace.agentId) {
-      navigateToWorkspace({
-        serverId: workspace.serverId,
-        workspaceId: workspace.workspaceId,
-        target: { kind: "agent", agentId: workspace.agentId },
-      });
-      return;
-    }
-    navigateToWorkspace({
-      serverId: workspace.serverId,
-      workspaceId: workspace.workspaceId,
-    });
-  }, [workspace.agentId, workspace.serverId, workspace.workspaceId]);
-  const pressableStyle = useCallback(
+    handleFocus();
+    navigateToCockpitWorkspace(workspace);
+  }, [handleFocus, workspace]);
+  const handleArchive = useCallback(() => {
+    if (isArchiving) return;
+    handleFocus();
+    archiveController.archive();
+  }, [archiveController, handleFocus, isArchiving]);
+
+  useKeyboardActionHandler({
+    handlerId: `cockpit-pane-close-${pane.id}`,
+    actions: ["workspace.pane.close"] as const,
+    enabled: isFocused && !isArchiving,
+    priority: 200,
+    handle: () => {
+      handleArchive();
+      return true;
+    },
+  });
+
+  const accessibilityLabel = `${title}, ${t(STATUS_LABEL_KEYS[workspace.statusBucket])}`;
+  const cardStyle = useCallback(
     (state: PressableStateCallbackType & { hovered?: boolean }) =>
-      cockpitCardStyle(state, cardSizeStyle),
-    [cardSizeStyle],
+      cockpitCardStyle(state, isFocused),
+    [isFocused],
   );
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      onFocus={handleFocus}
+      onPressIn={handleFocus}
       onPress={handlePress}
-      style={pressableStyle}
+      style={cardStyle}
       testID={`cockpit-workspace-card-${workspace.workspaceKey}`}
     >
       <View style={styles.cardHeader}>
-        <View style={[styles.statusDot, resolveStatusDotStyle(workspace.statusBucket)]} />
+        <CockpitStatusIndicator bucket={workspace.statusBucket} />
         <View style={styles.cardTitleGroup}>
           <Text style={styles.cardTitle} numberOfLines={1}>
             {title}
@@ -220,9 +468,22 @@ function CockpitWorkspaceCard({
             deletions={workspace.diffStat.deletions}
           />
         ) : null}
+        <CockpitPaneActions
+          paneId={pane.id}
+          closeLabel={t("sidebar.workspace.actions.archiveWorkspace")}
+          closeDisabled={isArchiving}
+          onFocus={onFocus}
+          onSplit={onSplit}
+          onClose={handleArchive}
+        />
       </View>
 
       <View style={styles.metaRow}>
+        {projectName ? (
+          <Text style={styles.projectName} numberOfLines={1}>
+            {projectName}
+          </Text>
+        ) : null}
         {workspace.currentBranch ? (
           <View style={styles.metaItem}>
             <ThemedGitBranch size={13} />
@@ -265,6 +526,155 @@ function CockpitWorkspaceCard({
   );
 }
 
+function CockpitEmptyPane({
+  pane,
+  isFocused,
+  onFocus,
+  onSplit,
+  onClose,
+}: {
+  pane: SplitPane;
+  isFocused: boolean;
+  onFocus: (paneId: string) => void;
+  onSplit: (paneId: string, position: "right" | "down") => void;
+  onClose: (paneId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const handleFocus = useCallback(() => onFocus(pane.id), [onFocus, pane.id]);
+  const handleClose = useCallback(() => onClose(pane.id), [onClose, pane.id]);
+  const handleCreateWorkspace = useCallback(() => {
+    handleFocus();
+    router.navigate(buildNewWorkspaceRoute());
+  }, [handleFocus]);
+
+  useKeyboardActionHandler({
+    handlerId: `cockpit-empty-pane-close-${pane.id}`,
+    actions: ["workspace.pane.close"] as const,
+    enabled: isFocused,
+    priority: 200,
+    handle: () => {
+      handleClose();
+      return true;
+    },
+  });
+
+  return (
+    <View
+      style={[styles.card, styles.emptyPane, isFocused ? styles.cardFocused : null]}
+      onFocus={handleFocus}
+      testID={`cockpit-empty-pane-${pane.id}`}
+    >
+      <View style={styles.emptyPaneToolbar}>
+        <CockpitPaneActions
+          paneId={pane.id}
+          closeLabel={t("workspace.tabs.actions.closePane")}
+          onFocus={onFocus}
+          onSplit={onSplit}
+          onClose={handleClose}
+        />
+      </View>
+      <View style={styles.emptyPaneContent}>
+        <ThemedPlus size={20} />
+        <Text style={styles.emptyTitle}>{t("sidebar.workspace.actions.newWorkspace")}</Text>
+        <Text style={styles.emptyDescription}>{t("cockpit.empty.description")}</Text>
+        <Button size="sm" onPress={handleCreateWorkspace}>
+          {t("sidebar.workspace.actions.newWorkspace")}
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+function CockpitPaneActions({
+  paneId,
+  closeLabel,
+  closeDisabled = false,
+  onFocus,
+  onSplit,
+  onClose,
+}: {
+  paneId: string;
+  closeLabel: string;
+  closeDisabled?: boolean;
+  onFocus: (paneId: string) => void;
+  onSplit: (paneId: string, position: "right" | "down") => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const splitRightKeys = useShortcutKeys("workspace-pane-split-right");
+  const splitDownKeys = useShortcutKeys("workspace-pane-split-down");
+  const closeKeys = useShortcutKeys("workspace-pane-close");
+  const preparePaneAction = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      onFocus(paneId);
+    },
+    [onFocus, paneId],
+  );
+  const handleSplitRight = useCallback(
+    (event: GestureResponderEvent) => {
+      preparePaneAction(event);
+      onSplit(paneId, "right");
+    },
+    [onSplit, paneId, preparePaneAction],
+  );
+  const handleSplitDown = useCallback(
+    (event: GestureResponderEvent) => {
+      preparePaneAction(event);
+      onSplit(paneId, "down");
+    },
+    [onSplit, paneId, preparePaneAction],
+  );
+  const handleClose = useCallback(
+    (event: GestureResponderEvent) => {
+      preparePaneAction(event);
+      onClose();
+    },
+    [onClose, preparePaneAction],
+  );
+
+  return (
+    <ToolbarControls style={styles.paneActions}>
+      <ToolbarButton
+        label={t("workspace.tabs.actions.splitRight")}
+        shortcut={splitRightKeys}
+        testID={`cockpit-pane-split-right-${paneId}`}
+        onPress={handleSplitRight}
+      >
+        <ThemedColumns2 size={14} />
+      </ToolbarButton>
+      <ToolbarButton
+        label={t("workspace.tabs.actions.splitDown")}
+        shortcut={splitDownKeys}
+        testID={`cockpit-pane-split-down-${paneId}`}
+        onPress={handleSplitDown}
+      >
+        <ThemedRows2 size={14} />
+      </ToolbarButton>
+      <ToolbarButton
+        label={closeLabel}
+        shortcut={closeKeys}
+        disabled={closeDisabled}
+        testID={`cockpit-pane-close-${paneId}`}
+        onPress={handleClose}
+      >
+        <ThemedClose size={14} />
+      </ToolbarButton>
+    </ToolbarControls>
+  );
+}
+
+function CockpitStatusIndicator({ bucket }: { bucket: SidebarWorkspaceEntry["statusBucket"] }) {
+  if (bucket === "running") {
+    return (
+      <View style={styles.statusSpinnerFrame} testID="cockpit-running-spinner">
+        <LoadingSpinner color={styles.statusSpinner.color} size={12} />
+      </View>
+    );
+  }
+  return <View style={[styles.statusDot, resolveStatusDotStyle(bucket)]} />;
+}
+
 function ActivityBlock({
   label,
   text,
@@ -290,9 +700,10 @@ function ActivityBlock({
 
 function cockpitCardStyle(
   state: PressableStateCallbackType & { hovered?: boolean },
-  size: ViewStyle,
+  focused: boolean,
 ): ViewStyle[] {
-  const result = [styles.card, size];
+  const result: ViewStyle[] = [styles.card];
+  if (focused) result.push(styles.cardFocused);
   if (state.hovered) result.push(styles.cardHovered);
   if (state.pressed) result.push(styles.cardPressed);
   return result;
@@ -301,7 +712,6 @@ function cockpitCardStyle(
 function resolveStatusDotStyle(bucket: SidebarWorkspaceEntry["statusBucket"]): ViewStyle {
   if (bucket === "needs_input") return styles.statusDotNeedsInput;
   if (bucket === "failed") return styles.statusDotFailed;
-  if (bucket === "running") return styles.statusDotRunning;
   if (bucket === "attention") return styles.statusDotAttention;
   return styles.statusDotDone;
 }
@@ -312,6 +722,18 @@ const ThemedGitBranch = withUnistyles(GitBranch, (theme) => ({
 const ThemedGitPullRequest = withUnistyles(GitPullRequest, (theme) => ({
   color: theme.colors.foregroundMuted,
 }));
+const ThemedColumns2 = withUnistyles(Columns2, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const ThemedRows2 = withUnistyles(Rows2, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const ThemedClose = withUnistyles(X, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const ThemedPlus = withUnistyles(Plus, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
 
 const styles = StyleSheet.create((theme) => ({
   screen: {
@@ -319,30 +741,46 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: 0,
     backgroundColor: theme.colors.surfaceWorkspace,
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+  },
   contentFrame: {
     flex: 1,
     minHeight: 0,
   },
   scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: COCKPIT_HORIZONTAL_PADDING,
     paddingTop: theme.spacing[4],
     paddingBottom: theme.spacing[8],
-    gap: theme.spacing[6],
   },
-  section: {
-    gap: theme.spacing[3],
+  layoutRoot: {
+    flexGrow: 1,
+    minWidth: 0,
   },
-  sectionTitle: {
-    color: theme.colors.foregroundMuted,
-    fontSize: theme.fontSize.base,
-    fontWeight: theme.fontWeight.medium,
-  },
-  cardGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  splitGroup: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 0,
     gap: COCKPIT_CARD_GAP,
   },
+  splitGroupHorizontal: {
+    flexDirection: "row",
+  },
+  splitGroupVertical: {
+    flexDirection: "column",
+  },
+  splitChild: {
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    minHeight: 0,
+  },
   card: {
+    flex: 1,
+    minWidth: 0,
     minHeight: 210,
     padding: theme.spacing[4],
     gap: theme.spacing[3],
@@ -351,6 +789,9 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface1,
     userSelect: "none",
+  },
+  cardFocused: {
+    borderColor: theme.colors.accent,
   },
   cardHovered: {
     borderColor: theme.colors.borderAccent,
@@ -364,28 +805,6 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "flex-start",
     gap: theme.spacing[2],
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    marginTop: 6,
-    borderRadius: theme.borderRadius.full,
-    flexShrink: 0,
-  },
-  statusDotNeedsInput: {
-    backgroundColor: theme.colors.statusDotWarning,
-  },
-  statusDotFailed: {
-    backgroundColor: theme.colors.statusDotDanger,
-  },
-  statusDotRunning: {
-    backgroundColor: theme.colors.statusDotRunning,
-  },
-  statusDotAttention: {
-    backgroundColor: theme.colors.statusDotSuccess,
-  },
-  statusDotDone: {
-    backgroundColor: theme.colors.border,
   },
   cardTitleGroup: {
     flex: 1,
@@ -402,6 +821,41 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.sm,
     lineHeight: 17,
   },
+  statusDot: {
+    width: 8,
+    height: 8,
+    marginTop: 6,
+    borderRadius: theme.borderRadius.full,
+    flexShrink: 0,
+  },
+  statusDotNeedsInput: {
+    backgroundColor: theme.colors.statusDotWarning,
+  },
+  statusDotFailed: {
+    backgroundColor: theme.colors.statusDotDanger,
+  },
+  statusDotAttention: {
+    backgroundColor: theme.colors.statusDotSuccess,
+  },
+  statusDotDone: {
+    backgroundColor: theme.colors.border,
+  },
+  statusSpinnerFrame: {
+    width: 12,
+    height: 12,
+    marginTop: 3,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    overflow: "hidden",
+  },
+  statusSpinner: {
+    color: theme.colors.statusDotRunning,
+  },
+  paneActions: {
+    flexShrink: 0,
+    gap: 0,
+  },
   metaRow: {
     minHeight: 18,
     minWidth: 0,
@@ -409,6 +863,12 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     flexWrap: "wrap",
     gap: theme.spacing[2],
+  },
+  projectName: {
+    maxWidth: "100%",
+    color: theme.colors.foregroundExtraMuted,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 17,
   },
   metaItem: {
     minWidth: 0,
@@ -448,6 +908,21 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.normal,
     lineHeight: 20,
+  },
+  emptyPane: {
+    padding: theme.spacing[2],
+  },
+  emptyPaneToolbar: {
+    minHeight: 28,
+    alignItems: "flex-end",
+  },
+  emptyPaneContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[4],
+    paddingBottom: theme.spacing[4],
   },
   centerState: {
     flex: 1,

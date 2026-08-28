@@ -71,6 +71,10 @@ export function navigateToLastWorkspace(): boolean {
   });
 }
 
+export function rememberLastWorkspaceSelection(selection: ActiveWorkspaceSelection): void {
+  lastWorkspaceSelectionStore.remember(selection);
+}
+
 export function useActiveWorkspaceSelection(): ActiveWorkspaceSelection | null {
   const params = useLocalSearchParams<{
     serverId?: string | string[];

@@ -1060,6 +1060,7 @@ export const fr: TranslationResources = {
   cockpit: {
     title: "Cockpit",
     actions: {
+      toggle: "Basculer le cockpit",
       open: "Ouvrir le cockpit",
       returnToWorkspace: "Revenir à l’espace de travail",
     },

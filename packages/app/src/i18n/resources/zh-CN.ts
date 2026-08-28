@@ -1019,6 +1019,7 @@ export const zhCN: TranslationResources = {
   cockpit: {
     title: "驾驶舱",
     actions: {
+      toggle: "切换驾驶舱",
       open: "打开驾驶舱",
       returnToWorkspace: "返回工作区",
     },

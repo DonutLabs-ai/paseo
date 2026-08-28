@@ -1034,6 +1034,7 @@ export const ko: TranslationResources = {
   cockpit: {
     title: "콕핏",
     actions: {
+      toggle: "콕핏 전환",
       open: "콕핏 열기",
       returnToWorkspace: "워크스페이스로 돌아가기",
     },
