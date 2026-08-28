@@ -122,6 +122,58 @@ test("reopens cockpit after creating a workspace from an empty pane", async ({ p
   }
 });
 
+test("opens cockpit when persisted pane focus differs from the active workspace", async ({
+  page,
+}) => {
+  const firstWorkspace = await seedMockAgentWorkspace({
+    repoPrefix: "cockpit-focus-first-",
+    title: "Cockpit first focus",
+    initialPrompt: "Keep the first cockpit pane focused",
+  });
+  const secondWorkspace = await seedMockAgentWorkspace({
+    repoPrefix: "cockpit-focus-second-",
+    title: "Cockpit second focus",
+    initialPrompt: "Open cockpit from the second workspace",
+  });
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+
+  try {
+    const serverId = getServerId();
+    await openAgentRoute(page, firstWorkspace);
+    await waitForWorkspaceInSidebar(page, {
+      serverId,
+      workspaceId: secondWorkspace.workspaceId,
+    });
+
+    await page.keyboard.press("Control+Alt+C");
+    await expect(page).toHaveURL(/\/cockpit$/);
+    await expect(
+      page.getByTestId(`cockpit-workspace-card-${serverId}:${firstWorkspace.workspaceId}`),
+    ).toBeVisible({ timeout: 30_000 });
+
+    await page.keyboard.press("Control+Alt+C");
+    await expect(page).toHaveURL(
+      new RegExp(`/h/${serverId}/workspace/${firstWorkspace.workspaceId}`),
+    );
+    await switchWorkspaceViaSidebar({
+      page,
+      serverId,
+      workspaceId: secondWorkspace.workspaceId,
+    });
+
+    await page.keyboard.press("Control+Alt+C");
+    await expect(page).toHaveURL(/\/cockpit$/);
+    await expect(
+      page.getByTestId(`cockpit-workspace-card-${serverId}:${secondWorkspace.workspaceId}`),
+    ).toBeVisible({ timeout: 30_000 });
+    expect(pageErrors).toEqual([]);
+  } finally {
+    await firstWorkspace.cleanup();
+    await secondWorkspace.cleanup();
+  }
+});
+
 test("persists equal cockpit panes and reflows after an empty pane closes", async ({ page }) => {
   const workspace = await seedMockAgentWorkspace({
     repoPrefix: "cockpit-layout-",

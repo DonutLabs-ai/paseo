@@ -56,6 +56,7 @@ import {
   findCockpitPane,
   getCockpitLayoutMinimumHeight,
   getCockpitPaneWorkspaceKey,
+  type CockpitLayout,
 } from "./cockpit-layout";
 
 const STATUS_LABEL_KEYS = {
@@ -109,6 +110,25 @@ function navigateToCockpitWorkspace(workspace: SidebarWorkspaceEntry): void {
     return;
   }
   navigateToWorkspace({
+    serverId: workspace.serverId,
+    workspaceId: workspace.workspaceId,
+  });
+}
+
+function resolveCockpitPaneWorkspace(
+  layout: CockpitLayout | null,
+  paneId: string | null,
+  workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>,
+): SidebarWorkspaceEntry | null {
+  if (!layout || !paneId) return null;
+  const pane = findCockpitPane(layout.root, paneId);
+  const workspaceKey = pane ? getCockpitPaneWorkspaceKey(pane) : null;
+  return workspaceKey ? (workspaceEntriesByKey.get(workspaceKey) ?? null) : null;
+}
+
+function rememberCockpitWorkspace(workspace: SidebarWorkspaceEntry | null): void {
+  if (!workspace) return;
+  rememberLastWorkspaceSelection({
     serverId: workspace.serverId,
     workspaceId: workspace.workspaceId,
   });
@@ -169,19 +189,41 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
     () => filterCockpitLayout(layout, visibleWorkspaceKeys),
     [layout, visibleWorkspaceKeys],
   );
-  const focusedWorkspace = useMemo(() => {
-    if (!visibleLayout?.focusedPaneId) return null;
-    const pane = findCockpitPane(visibleLayout.root, visibleLayout.focusedPaneId);
-    const workspaceKey = pane ? getCockpitPaneWorkspaceKey(pane) : null;
-    return workspaceKey ? (workspaceEntriesByKey.get(workspaceKey) ?? null) : null;
-  }, [visibleLayout, workspaceEntriesByKey]);
-  useEffect(() => {
-    if (!isRouteFocused || !focusedWorkspace) return;
-    rememberLastWorkspaceSelection({
-      serverId: focusedWorkspace.serverId,
-      workspaceId: focusedWorkspace.workspaceId,
-    });
-  }, [focusedWorkspace, isRouteFocused]);
+  const focusedWorkspace = useMemo(
+    () =>
+      resolveCockpitPaneWorkspace(
+        visibleLayout,
+        visibleLayout?.focusedPaneId ?? null,
+        workspaceEntriesByKey,
+      ),
+    [visibleLayout, workspaceEntriesByKey],
+  );
+  const handleFocusPane = useCallback(
+    (paneId: string) => {
+      focusPane(paneId);
+      rememberCockpitWorkspace(
+        resolveCockpitPaneWorkspace(visibleLayout, paneId, workspaceEntriesByKey),
+      );
+    },
+    [focusPane, visibleLayout, workspaceEntriesByKey],
+  );
+  const handleClosePane = useCallback(
+    (paneId: string) => {
+      closePane(paneId);
+      const nextLayout = filterCockpitLayout(
+        useCockpitLayoutStore.getState().layout,
+        visibleWorkspaceKeys,
+      );
+      rememberCockpitWorkspace(
+        resolveCockpitPaneWorkspace(
+          nextLayout,
+          nextLayout?.focusedPaneId ?? null,
+          workspaceEntriesByKey,
+        ),
+      );
+    },
+    [closePane, visibleWorkspaceKeys, workspaceEntriesByKey],
+  );
   const handleReturnToWorkspace = useCallback(() => {
     if (focusedWorkspace) {
       navigateToCockpitWorkspace(focusedWorkspace);
@@ -253,10 +295,10 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
         visibleLayout.focusedPaneId,
         direction,
       );
-      if (adjacentPaneId) focusPane(adjacentPaneId);
+      if (adjacentPaneId) handleFocusPane(adjacentPaneId);
       return true;
     },
-    [addEmptyPane, focusPane, splitPane, visibleLayout],
+    [addEmptyPane, handleFocusPane, splitPane, visibleLayout],
   );
 
   useKeyboardActionHandler({
@@ -303,9 +345,9 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
             workspaceEntriesByKey={workspaceEntriesByKey}
             projectNamesByWorkspace={projectNamesByWorkspace}
             workspaceTitleSource={workspaceTitleSource}
-            onFocusPane={focusPane}
+            onFocusPane={handleFocusPane}
             onSplitPane={handleSplitPane}
-            onClosePane={closePane}
+            onClosePane={handleClosePane}
           />
         </View>
       </ScrollView>
