@@ -1186,27 +1186,33 @@ export function createWorkspaceLayoutStore(
               state.layoutByWorkspace,
               normalizedWorkspaceKey,
             );
+            const explorerSidebarPaneId = resolveExplorerSidebarPaneId(
+              currentLayout,
+              state.explorerSidebarPaneIdByWorkspace[normalizedWorkspaceKey],
+            );
             const nextState = reconcileWorkspaceTabs(
               {
                 layout: currentLayout,
                 pinnedAgentIds: state.pinnedAgentIdsByWorkspace[normalizedWorkspaceKey] ?? null,
                 pendingAgentIds: state.pendingAgentIdsByWorkspace[normalizedWorkspaceKey] ?? null,
                 hiddenAgentIds: state.hiddenAgentIdsByWorkspace[normalizedWorkspaceKey] ?? null,
-                explorerSidebarPaneId: resolveExplorerSidebarPaneId(
-                  currentLayout,
-                  state.explorerSidebarPaneIdByWorkspace[normalizedWorkspaceKey],
-                ),
+                explorerSidebarPaneId,
               },
               snapshot,
             );
-            if (nextState.layout === currentLayout) {
+            const nextLayout = keepWorkspaceFocusOutOfExplorerSidebar(
+              nextState.layout,
+              explorerSidebarPaneId,
+              currentLayout.focusedPaneId,
+            );
+            if (nextLayout === currentLayout) {
               return state;
             }
 
             return {
               layoutByWorkspace: {
                 ...state.layoutByWorkspace,
-                [normalizedWorkspaceKey]: nextState.layout,
+                [normalizedWorkspaceKey]: nextLayout,
               },
             };
           });
