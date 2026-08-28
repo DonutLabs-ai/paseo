@@ -16,8 +16,10 @@ import {
   selectWorkspaceFields,
   selectWorkspaceKeys,
   selectWorkspaceOrderByScope,
+  selectWorkspaceScriptEntries,
   selectWorkspaceStatusesForBadges,
   workspaceEqualityFns,
+  type WorkspaceScriptEntry,
   type WorkspaceStructure,
 } from "./selectors";
 import { useSessionStore, type WorkspaceDescriptor } from "../session-store";
@@ -29,9 +31,19 @@ import type { DesktopBadgeWorkspaceStatus } from "@/utils/desktop-badge-state";
 
 export type {
   DesktopBadgeWorkspaceStatus,
+  WorkspaceScriptEntry,
   WorkspaceStructure,
   WorkspaceStructureProject,
 } from "./selectors";
+
+export function useWorkspaceScriptEntries(serverIds: readonly string[]): WorkspaceScriptEntry[] {
+  const selectScripts = useMemo(
+    () => (state: Parameters<typeof selectWorkspaceScriptEntries>[0]) =>
+      selectWorkspaceScriptEntries(state, serverIds),
+    [serverIds],
+  );
+  return useStoreWithEqualityFn(useSessionStore, selectScripts, workspaceEqualityFns.deep);
+}
 
 export function useWorkspace(
   serverId: string | null,

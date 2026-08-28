@@ -688,33 +688,37 @@ function CockpitPaneActions({
   );
 
   return (
-    <ToolbarControls style={styles.paneActions}>
-      <ToolbarButton
-        label={t("workspace.tabs.actions.splitRight")}
-        shortcut={splitRightKeys}
-        testID={`cockpit-pane-split-right-${paneId}`}
-        onPress={handleSplitRight}
-      >
-        <ThemedColumns2 size={14} />
-      </ToolbarButton>
-      <ToolbarButton
-        label={t("workspace.tabs.actions.splitDown")}
-        shortcut={splitDownKeys}
-        testID={`cockpit-pane-split-down-${paneId}`}
-        onPress={handleSplitDown}
-      >
-        <ThemedRows2 size={14} />
-      </ToolbarButton>
-      <ToolbarButton
-        label={closeLabel}
-        shortcut={closeKeys}
-        disabled={closeDisabled}
-        testID={`cockpit-pane-close-${paneId}`}
-        onPress={handleClose}
-      >
-        <ThemedClose size={14} />
-      </ToolbarButton>
-    </ToolbarControls>
+    <View style={styles.paneActions}>
+      <ToolbarControls>
+        <ToolbarButton
+          label={t("workspace.tabs.actions.splitRight")}
+          shortcut={splitRightKeys}
+          testID={`cockpit-pane-split-right-${paneId}`}
+          onPress={handleSplitRight}
+        >
+          <ThemedColumns2 size={14} />
+        </ToolbarButton>
+        <ToolbarButton
+          label={t("workspace.tabs.actions.splitDown")}
+          shortcut={splitDownKeys}
+          testID={`cockpit-pane-split-down-${paneId}`}
+          onPress={handleSplitDown}
+        >
+          <ThemedRows2 size={14} />
+        </ToolbarButton>
+      </ToolbarControls>
+      <ToolbarControls>
+        <ToolbarButton
+          label={closeLabel}
+          shortcut={closeKeys}
+          disabled={closeDisabled}
+          testID={`cockpit-pane-close-${paneId}`}
+          onPress={handleClose}
+        >
+          <ThemedClose size={14} />
+        </ToolbarButton>
+      </ToolbarControls>
+    </View>
   );
 }
 
@@ -904,7 +908,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   paneActions: {
     flexShrink: 0,
-    gap: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
   },
   metaRow: {
     minHeight: 18,

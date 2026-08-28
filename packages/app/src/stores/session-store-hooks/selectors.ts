@@ -23,6 +23,15 @@ export interface SessionsSnapshot {
   >;
 }
 
+export interface WorkspaceScriptEntry {
+  serverId: string;
+  workspaceId: string;
+  workspaceName: string;
+  projectName: string;
+  workspaceDirectory: string;
+  script: WorkspaceDescriptor["scripts"][number];
+}
+
 export interface SidebarOrderSnapshot {
   projectOrder: string[];
   workspaceOrderByProject: Record<string, string[]>;
@@ -180,6 +189,28 @@ export function selectWorkspaceStructureProjects(
   }
 
   return buildWorkspaceStructureProjects({ sessions });
+}
+
+export function selectWorkspaceScriptEntries(
+  state: SessionsSnapshot,
+  serverIds: readonly string[],
+): WorkspaceScriptEntry[] {
+  const entries: WorkspaceScriptEntry[] = [];
+  for (const serverId of serverIds) {
+    for (const workspace of state.sessions[serverId]?.workspaces.values() ?? []) {
+      for (const script of workspace.scripts) {
+        entries.push({
+          serverId,
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+          projectName: workspace.projectCustomName ?? workspace.projectDisplayName,
+          workspaceDirectory: workspace.workspaceDirectory,
+          script,
+        });
+      }
+    }
+  }
+  return entries;
 }
 
 export function createWorkspaceStructureProjectsSelector(

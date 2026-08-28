@@ -15,6 +15,7 @@ import {
   selectWorkspaceFields,
   selectWorkspaceKeys,
   selectWorkspaceOrderByScope,
+  selectWorkspaceScriptEntries,
   selectWorkspaceStatusesForBadges,
   selectWorkspaceStructureProjects,
   workspaceEqualityFns,
@@ -278,6 +279,56 @@ describe("selectWorkspace", () => {
     expect(tracked.current).toBe(before);
 
     tracked.stop();
+  });
+});
+
+describe("selectWorkspaceScriptEntries", () => {
+  it("flattens scripts from only the requested hosts with workspace context", () => {
+    const processComposeScript = {
+      scriptName: "process-compose",
+      type: "script" as const,
+      hostname: "localhost",
+      port: null,
+      proxyUrl: null,
+      lifecycle: "running" as const,
+      health: null,
+      exitCode: null,
+      terminalId: "terminal-process-compose",
+    };
+    const includedWorkspace = createWorkspace({
+      id: "workspace-ops",
+      name: "ops",
+      workspaceDirectory: "/repo/ops",
+      scripts: [processComposeScript],
+    });
+    const excludedWorkspace = createWorkspace({
+      id: "workspace-excluded",
+      scripts: [{ ...processComposeScript, scriptName: "excluded" }],
+    });
+    const state = {
+      sessions: {
+        [SERVER_ID]: {
+          workspaces: new Map([[includedWorkspace.id, includedWorkspace]]),
+        },
+        "other-server": {
+          workspaces: new Map([[excludedWorkspace.id, excludedWorkspace]]),
+        },
+      },
+    };
+
+    const entries = selectWorkspaceScriptEntries(state, [SERVER_ID]);
+
+    expect(entries).toEqual([
+      {
+        serverId: SERVER_ID,
+        workspaceId: includedWorkspace.id,
+        workspaceName: "ops",
+        projectName: "Project 1",
+        workspaceDirectory: "/repo/ops",
+        script: processComposeScript,
+      },
+    ]);
+    expect(entries[0]?.script).toBe(processComposeScript);
   });
 });
 

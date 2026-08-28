@@ -57,6 +57,55 @@ test("shows the latest agent activity in the sidebar and cockpit cards", async (
   }
 });
 
+test("opens a workspace script in the global utility tray across workspace and cockpit routes", async ({
+  page,
+}) => {
+  const workspace = await seedMockAgentWorkspace({
+    repoPrefix: "utility-tray-",
+    title: "Utility tray",
+    initialPrompt: "Verify the global utility tray",
+    repo: {
+      paseoConfig: {
+        scripts: {
+          "process-compose": {
+            type: "script",
+            command:
+              "node -e \"console.log('process-compose ready'); setInterval(() => {}, 1000)\"",
+          },
+        },
+      },
+    },
+  });
+
+  try {
+    await openAgentRoute(page, workspace);
+    const trigger = page.getByTestId("utility-tray-trigger");
+    await expect(trigger).toHaveCount(1);
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    await expect(page.getByTestId("utility-tray-overlay")).toBeVisible();
+    const scriptRow = page.getByTestId(
+      `utility-tray-script-${getServerId()}:${workspace.workspaceId}:process-compose`,
+    );
+    await expect(scriptRow).toBeVisible({ timeout: 15_000 });
+    await scriptRow.click();
+    await page.getByTestId("utility-tray-start").click();
+    await expect(page.locator(".xterm-screen")).toBeVisible({ timeout: 15_000 });
+    await page.getByTestId("utility-tray-close").click();
+    await expect(page.getByTestId("utility-tray-overlay")).toHaveCount(0);
+
+    await page.keyboard.press("Control+Alt+C");
+    await expect(page).toHaveURL(/\/cockpit$/);
+    await expect(trigger).toHaveCount(1);
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    await expect(page.getByTestId("utility-tray-overlay")).toBeVisible();
+    await expect(page.locator(".xterm-screen")).toBeVisible({ timeout: 15_000 });
+  } finally {
+    await workspace.cleanup();
+  }
+});
+
 test("reopens cockpit after creating a workspace from an empty pane", async ({ page }) => {
   const workspace = await seedWorkspace({
     repoPrefix: "cockpit-new-workspace-",
@@ -193,6 +242,16 @@ test("persists equal cockpit panes and reflows after an empty pane closes", asyn
     const focusedBorderColor = await card.evaluate(
       (element) => getComputedStyle(element).borderTopColor,
     );
+    const splitDownBounds = await card
+      .getByRole("button", { name: "Split pane down" })
+      .boundingBox();
+    const archiveBounds = await card
+      .getByRole("button", { name: "Archive workspace" })
+      .boundingBox();
+    if (!splitDownBounds || !archiveBounds) {
+      throw new Error("Expected cockpit pane action buttons to have layout bounds");
+    }
+    expect(archiveBounds.x - (splitDownBounds.x + splitDownBounds.width)).toBeGreaterThanOrEqual(8);
 
     await page.keyboard.press("Control+\\");
     const emptyPane = page.getByTestId(/^cockpit-empty-pane-/);
