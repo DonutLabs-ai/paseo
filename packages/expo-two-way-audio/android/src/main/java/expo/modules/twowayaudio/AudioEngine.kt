@@ -43,7 +43,10 @@ class AudioEngine (context: Context) {
     private var playbackWrites = 0
     private var playbackWriteBytes = 0L
 
-    var isRecording = false
+    @Volatile var isRecording = false
+    @Volatile private var recordingStopRequested = false
+    private val recordingStopLock = Any()
+    private val recordingStopCompletions = mutableListOf<() -> Unit>()
     private var isRecordingBeforePause = false
     var isPlaying = false
 
@@ -318,6 +321,7 @@ class AudioEngine (context: Context) {
         }
 
         audioRecord.startRecording()
+        recordingStopRequested = false
         isRecording = true
         startMicSampleTap()
         return true
@@ -338,25 +342,53 @@ class AudioEngine (context: Context) {
                         onInputVolumeCallback?.invoke(micVolume)
                         onMicDataCallback?.invoke(data)
                     }
+                    if (recordingStopRequested) {
+                        stopRecording()
+                    }
                 }
                 Log.d("AudioEngine", "Mic sample tap stopped.")
             }catch (e: Exception){
-                Log.e("AudioEngine", "Error reading mic sample data", e)
-                isRecording = false
-                tearDown()
-                throw e
+                if (isRecording) {
+                    Log.e("AudioEngine", "Error reading mic sample data", e)
+                    isRecording = false
+                    tearDown()
+                    throw e
+                }
+                Log.d("AudioEngine", "Mic sample tap released while stopping.")
             }
         }
     }
 
     private fun stopRecording() {
-        if (!isRecording) return
-        isRecording = false
+        val completions = synchronized(recordingStopLock) {
+            if (!isRecording && recordingStopCompletions.isEmpty()) return
+            isRecording = false
+            recordingStopRequested = false
+            val pending = recordingStopCompletions.toList()
+            recordingStopCompletions.clear()
+            pending
+        }
         if (audioRecord.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
             audioRecord.stop()
             audioRecord.release()
         }
         onInputVolumeCallback?.invoke(0.0F)
+        completions.forEach { it() }
+    }
+
+    fun stopRecordingWhenDrained(completion: () -> Unit) {
+        val completeNow = synchronized(recordingStopLock) {
+            if (!isRecording) {
+                true
+            } else {
+                recordingStopCompletions.add(completion)
+                recordingStopRequested = true
+                false
+            }
+        }
+        if (completeNow) {
+            completion()
+        }
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)

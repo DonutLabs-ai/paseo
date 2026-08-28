@@ -50,6 +50,18 @@ class ExpoTwoWayAudioModule : Module() {
              } ?: false
          }
 
+         AsyncFunction("stopRecording") { promise: Promise ->
+             val engine = audioEngine
+             if (engine == null) {
+                 promise.resolve(null)
+                 return@AsyncFunction
+             }
+             engine.stopRecordingWhenDrained {
+                 sendEvent(ON_RECORDING_CHANGE_EVENT, mapOf("data" to false))
+                 promise.resolve(null)
+             }
+         }
+
          Function("tearDown") {
              audioEngine?.tearDown()
              audioEngine = null
