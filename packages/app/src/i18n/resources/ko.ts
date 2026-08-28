@@ -1204,6 +1204,7 @@ export const ko: TranslationResources = {
         hideMessage:
           '"{{workspaceName}}"을(를) 사이드바에서 숨길까요?\n\n디스크의 파일은 변경되지 않습니다.',
         hideConfirm: "숨기기",
+        archiveMessage: "이 워크스페이스는 활성 워크스페이스에서 제거됩니다.",
         cancel: "취소",
       },
       rename: {

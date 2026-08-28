@@ -1231,6 +1231,7 @@ export const fr: TranslationResources = {
         hideMessage:
           "Masquer «{{workspaceName}}» dans la barre latérale?\n\nLes fichiers sur le disque ne seront pas modifiés.",
         hideConfirm: "Cacher",
+        archiveMessage: "Cet espace de travail sera retiré des espaces de travail actifs.",
         cancel: "Annuler",
       },
       rename: {

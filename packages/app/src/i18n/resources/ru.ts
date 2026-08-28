@@ -1213,6 +1213,7 @@ export const ru: TranslationResources = {
         hideMessage:
           "Скрыть «{{workspaceName}}» на боковой панели?\n\nФайлы на диске не будут изменены.",
         hideConfirm: "Скрыть",
+        archiveMessage: "Это рабочее пространство будет удалено из активных рабочих пространств.",
         cancel: "Отмена",
       },
       rename: {

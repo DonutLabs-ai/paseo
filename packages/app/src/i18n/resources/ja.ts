@@ -1209,6 +1209,7 @@ export const ja: TranslationResources = {
         hideMessage:
           '"{{workspaceName}}"をサイドバーから非表示にしますか？\n\nディスク上のファイルは変更されません。',
         hideConfirm: "非表示",
+        archiveMessage: "このワークスペースはアクティブなワークスペースから削除されます。",
         cancel: "キャンセル",
       },
       rename: {

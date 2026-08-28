@@ -232,8 +232,31 @@ test("archives a workspace when its cockpit pane closes", async ({ page }) => {
       })
       .toBe(true);
 
-    await card.getByRole("button", { name: "Archive workspace" }).click();
+    const archiveButton = card.getByRole("button", { name: "Archive workspace" });
+    let dismissedConfirmation = false;
+    page.once("dialog", (dialog) => {
+      dismissedConfirmation = true;
+      void dialog.dismiss();
+    });
+    await archiveButton.click();
 
+    expect(dismissedConfirmation).toBe(true);
+    await expect(card).toBeVisible();
+    await expect
+      .poll(async () => {
+        const result = await workspace.client.fetchWorkspaces();
+        return result.entries.some((entry) => entry.id === workspace.workspaceId);
+      })
+      .toBe(true);
+
+    let acceptedConfirmation = false;
+    page.once("dialog", (dialog) => {
+      acceptedConfirmation = true;
+      void dialog.accept();
+    });
+    await archiveButton.click();
+
+    expect(acceptedConfirmation).toBe(true);
     await expect(card).toHaveCount(0);
     await expect
       .poll(async () => {

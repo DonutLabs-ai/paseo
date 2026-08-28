@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useToast } from "@/contexts/toast-context";
 import {
-  confirmRiskyWorktreeArchive,
+  buildWorktreeArchiveConfirmationMessage,
   DEFAULT_WORKTREE_ARCHIVE_WARNING_LABELS,
   type WorktreeArchiveWarningLabels,
 } from "@/git/worktree-archive-warning";
@@ -11,6 +11,7 @@ import type { WorkspaceDescriptor } from "@/stores/session-store";
 import { useWorkspaceLayoutStore } from "@/stores/workspace-layout-store";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 import { archiveWorkspaceOptimistically } from "@/workspace/workspace-archive";
+import { confirmDialog } from "@/utils/confirm-dialog";
 
 function purgeArchivedWorkspaceState(input: { serverId: string; workspaceId: string }): void {
   const workspaceKey = buildWorkspaceTabPersistenceKey(input);
@@ -28,6 +29,7 @@ export interface ArchiveWorkspaceInput {
   aheadOfOrigin?: number | null;
   diffStat?: { additions: number; deletions: number } | null;
   warningLabels?: WorktreeArchiveWarningLabels;
+  confirmationPolicy?: "risky-worktree" | "always";
   onArchiveStarted: () => void;
   onArchiveSucceeded?: () => void;
   onSetHiding?: (hiding: boolean) => void;
@@ -47,6 +49,7 @@ export function useWorkspaceArchive(input: ArchiveWorkspaceInput): WorkspaceArch
     aheadOfOrigin,
     diffStat,
     warningLabels = DEFAULT_WORKTREE_ARCHIVE_WARNING_LABELS,
+    confirmationPolicy = "risky-worktree",
     onArchiveStarted,
     onArchiveSucceeded,
     onSetHiding,
@@ -86,16 +89,31 @@ export function useWorkspaceArchive(input: ArchiveWorkspaceInput): WorkspaceArch
 
   const archive = useCallback(() => {
     void (async () => {
-      if (workspaceKind === "worktree") {
-        const confirmed = await confirmRiskyWorktreeArchive(
-          {
-            workspaceName: name,
-            isDirty,
-            aheadOfOrigin,
-            diffStat,
-          },
-          warningLabels,
-        );
+      const riskMessage =
+        workspaceKind === "worktree"
+          ? buildWorktreeArchiveConfirmationMessage(
+              {
+                workspaceName: name,
+                isDirty,
+                aheadOfOrigin,
+                diffStat,
+              },
+              warningLabels,
+            )
+          : null;
+      const confirmationMessage =
+        riskMessage ??
+        (confirmationPolicy === "always"
+          ? t("sidebar.workspace.confirmations.archiveMessage")
+          : null);
+      if (confirmationMessage) {
+        const confirmed = await confirmDialog({
+          title: warningLabels.title(name),
+          message: confirmationMessage,
+          confirmLabel: warningLabels.confirm,
+          cancelLabel: warningLabels.cancel,
+          destructive: true,
+        });
         if (!confirmed) {
           return;
         }
@@ -105,9 +123,11 @@ export function useWorkspaceArchive(input: ArchiveWorkspaceInput): WorkspaceArch
   }, [
     aheadOfOrigin,
     archiveWorkspaceRecord,
+    confirmationPolicy,
     diffStat,
     isDirty,
     name,
+    t,
     warningLabels,
     workspaceKind,
   ]);

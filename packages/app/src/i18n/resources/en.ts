@@ -1206,6 +1206,7 @@ export const en = {
         hideMessage:
           'Hide "{{workspaceName}}" from the sidebar?\n\nFiles on disk will not be changed.',
         hideConfirm: "Hide",
+        archiveMessage: "This workspace will be removed from active workspaces.",
         cancel: "Cancel",
       },
       rename: {

@@ -1186,6 +1186,7 @@ export const zhCN: TranslationResources = {
         hideTitle: "隐藏 workspace？",
         hideMessage: "从侧边栏隐藏「{{workspaceName}}」？\n\n磁盘上的文件不会被更改。",
         hideConfirm: "隐藏",
+        archiveMessage: "此 workspace 将从活跃 workspace 中移除。",
         cancel: "取消",
       },
       rename: {

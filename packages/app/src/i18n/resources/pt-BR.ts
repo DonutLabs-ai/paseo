@@ -1222,6 +1222,7 @@ export const ptBR: TranslationResources = {
         hideMessage:
           'Ocultar "{{workspaceName}}" da barra lateral?\n\nOs arquivos no disco não serão alterados.',
         hideConfirm: "Ocultar",
+        archiveMessage: "Este workspace será removido dos workspaces ativos.",
         cancel: "Cancelar",
       },
       rename: {

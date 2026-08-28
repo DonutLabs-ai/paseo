@@ -420,6 +420,7 @@ function CockpitWorkspaceCard({
     workspaceKind: workspace.workspaceKind,
     name: workspace.name,
     ...toWorktreeArchiveRisk(workspace),
+    confirmationPolicy: "always",
     onArchiveStarted: () => undefined,
     onArchiveSucceeded: () => onClose(pane.id),
     onSetHiding: setIsArchiving,

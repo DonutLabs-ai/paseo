@@ -1197,6 +1197,7 @@ export const ar: TranslationResources = {
         hideMessage:
           'إخفاء "{{workspaceName}}" من الشريط الجانبي؟\n\n لن يتم تغيير الملفات الموجودة على القرص.',
         hideConfirm: "يخفي",
+        archiveMessage: "ستُزال مساحة العمل هذه من مساحات العمل النشطة.",
         cancel: "يلغي",
       },
       rename: {
