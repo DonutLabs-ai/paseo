@@ -38,8 +38,6 @@ const nativeAudio = vi.hoisted(() => {
   };
 });
 
-vi.mock("@getpaseo/expo-two-way-audio", () => nativeAudio);
-
 import { createAudioEngine } from "./audio-engine.native";
 
 function emitMicrophoneData(data: Uint8Array): void {
@@ -59,10 +57,13 @@ describe("native audio capture", () => {
 
   it("drains microphone events queued while capture stops", async () => {
     const captured: Uint8Array[] = [];
-    const engine = createAudioEngine({
-      onCaptureData: (pcm) => captured.push(pcm),
-      onVolumeLevel: vi.fn(),
-    });
+    const engine = createAudioEngine(
+      {
+        onCaptureData: (pcm) => captured.push(pcm),
+        onVolumeLevel: vi.fn(),
+      },
+      { nativeModule: nativeAudio },
+    );
 
     await engine.startCapture();
     let didStop = false;
@@ -88,10 +89,13 @@ describe("native audio capture", () => {
   });
 
   it("waits for capture to stop before destroying the native engine", async () => {
-    const engine = createAudioEngine({
-      onCaptureData: vi.fn(),
-      onVolumeLevel: vi.fn(),
-    });
+    const engine = createAudioEngine(
+      {
+        onCaptureData: vi.fn(),
+        onVolumeLevel: vi.fn(),
+      },
+      { nativeModule: nativeAudio },
+    );
 
     await engine.startCapture();
     const destroyed = engine.destroy();
@@ -113,10 +117,13 @@ describe("native audio capture", () => {
           resolvePermission = resolve;
         }),
     );
-    const engine = createAudioEngine({
-      onCaptureData: vi.fn(),
-      onVolumeLevel: vi.fn(),
-    });
+    const engine = createAudioEngine(
+      {
+        onCaptureData: vi.fn(),
+        onVolumeLevel: vi.fn(),
+      },
+      { nativeModule: nativeAudio },
+    );
 
     const started = engine.startCapture();
     await Promise.resolve();
@@ -131,10 +138,13 @@ describe("native audio capture", () => {
   });
 
   it("makes concurrent destruction wait for the same capture drain", async () => {
-    const engine = createAudioEngine({
-      onCaptureData: vi.fn(),
-      onVolumeLevel: vi.fn(),
-    });
+    const engine = createAudioEngine(
+      {
+        onCaptureData: vi.fn(),
+        onVolumeLevel: vi.fn(),
+      },
+      { nativeModule: nativeAudio },
+    );
 
     await engine.startCapture();
     let firstFinished = false;
@@ -160,10 +170,13 @@ describe("native audio capture", () => {
   });
 
   it("does not restart capture when destruction overtakes a pending stop", async () => {
-    const engine = createAudioEngine({
-      onCaptureData: vi.fn(),
-      onVolumeLevel: vi.fn(),
-    });
+    const engine = createAudioEngine(
+      {
+        onCaptureData: vi.fn(),
+        onVolumeLevel: vi.fn(),
+      },
+      { nativeModule: nativeAudio },
+    );
 
     await engine.startCapture();
     const stopped = engine.stopCapture();
