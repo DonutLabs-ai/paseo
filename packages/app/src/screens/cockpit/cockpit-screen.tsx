@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
+import { useIsFocused } from "@react-navigation/native";
 import { useTranslation } from "react-i18next";
 import {
   Pressable,
@@ -114,14 +115,15 @@ function navigateToCockpitWorkspace(workspace: SidebarWorkspaceEntry): void {
 }
 
 export function CockpitScreen() {
+  const isRouteFocused = useIsFocused();
   return (
-    <SidebarModelProvider active>
-      <CockpitScreenContent />
+    <SidebarModelProvider active={isRouteFocused}>
+      <CockpitScreenContent isRouteFocused={isRouteFocused} />
     </SidebarModelProvider>
   );
 }
 
-function CockpitScreenContent() {
+function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   const { t } = useTranslation();
   const { allProjects, workspaceEntriesByKey, isInitialLoad } = useSidebarModel();
   const {
@@ -149,12 +151,19 @@ function CockpitScreenContent() {
   );
 
   useEffect(() => {
-    if (!layoutHydrated || isInitialLoad) return;
+    if (!isRouteFocused || !layoutHydrated || isInitialLoad) return;
     reconcileWorkspaces({
       workspaceKeys: allWorkspaceKeys,
       preferredWorkspaceKey,
     });
-  }, [allWorkspaceKeys, isInitialLoad, layoutHydrated, preferredWorkspaceKey, reconcileWorkspaces]);
+  }, [
+    allWorkspaceKeys,
+    isInitialLoad,
+    isRouteFocused,
+    layoutHydrated,
+    preferredWorkspaceKey,
+    reconcileWorkspaces,
+  ]);
 
   const visibleLayout = useMemo(
     () => filterCockpitLayout(layout, visibleWorkspaceKeys),
@@ -167,12 +176,12 @@ function CockpitScreenContent() {
     return workspaceKey ? (workspaceEntriesByKey.get(workspaceKey) ?? null) : null;
   }, [visibleLayout, workspaceEntriesByKey]);
   useEffect(() => {
-    if (!focusedWorkspace) return;
+    if (!isRouteFocused || !focusedWorkspace) return;
     rememberLastWorkspaceSelection({
       serverId: focusedWorkspace.serverId,
       workspaceId: focusedWorkspace.workspaceId,
     });
-  }, [focusedWorkspace]);
+  }, [focusedWorkspace, isRouteFocused]);
   const handleReturnToWorkspace = useCallback(() => {
     if (focusedWorkspace) {
       navigateToCockpitWorkspace(focusedWorkspace);
@@ -260,7 +269,7 @@ function CockpitScreenContent() {
       "workspace.pane.focus.up",
       "workspace.pane.focus.down",
     ] as const,
-    enabled: layoutHydrated && !isInitialLoad,
+    enabled: isRouteFocused && layoutHydrated && !isInitialLoad,
     priority: 200,
     handle: handlePaneKeyboardAction,
   });

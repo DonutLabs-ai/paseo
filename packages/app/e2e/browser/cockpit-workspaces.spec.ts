@@ -1,10 +1,18 @@
 import { test, expect } from "../support/fixtures";
+import { gotoAppShell } from "../support/helpers/app";
 import {
   openAgentRoute,
   seedMockAgentWorkspace,
   seedRunningMockAgentWorkspace,
 } from "../support/helpers/mock-agent";
+import { submitNewWorkspacePrompt } from "../support/helpers/new-workspace";
+import { seedWorkspace } from "../support/helpers/seed-client";
 import { getServerId } from "../support/helpers/server-id";
+import {
+  switchWorkspaceViaSidebar,
+  waitForSidebarHydration,
+  waitForWorkspaceInSidebar,
+} from "../support/helpers/workspace-ui";
 import { STATUS_RING_FRAME_SIZE } from "../../src/components/status-ring/geometry";
 
 const PROMPT = "Build the cockpit workspace overview";
@@ -44,6 +52,71 @@ test("shows the latest agent activity in the sidebar and cockpit cards", async (
     await expect(page.getByText("Cockpit summary", { exact: true })).toBeVisible({
       timeout: 30_000,
     });
+  } finally {
+    await workspace.cleanup();
+  }
+});
+
+test("reopens cockpit after creating a workspace from an empty pane", async ({ page }) => {
+  const workspace = await seedWorkspace({
+    repoPrefix: "cockpit-new-workspace-",
+    title: "Cockpit source workspace",
+  });
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+
+  try {
+    const serverId = getServerId();
+    await gotoAppShell(page);
+    await waitForSidebarHydration(page);
+    await switchWorkspaceViaSidebar({
+      page,
+      serverId,
+      workspaceId: workspace.workspaceId,
+    });
+
+    await page.keyboard.press("Control+Alt+C");
+    await expect(page).toHaveURL(/\/cockpit$/);
+    await page.keyboard.press("Control+\\");
+    const emptyPane = page.getByTestId(/^cockpit-empty-pane-/);
+    await expect(emptyPane).toBeVisible();
+    await emptyPane.getByRole("button", { name: "New workspace", exact: true }).click();
+    await expect(page).toHaveURL(/\/new(?:\?.*)?$/);
+
+    await submitNewWorkspacePrompt(page, "Create a workspace from cockpit");
+    await expect(page).toHaveURL(new RegExp(`/h/${serverId}/workspace/`), {
+      timeout: 60_000,
+    });
+    await expect
+      .poll(
+        async () => {
+          const result = await workspace.client.fetchWorkspaces({
+            filter: { projectId: workspace.projectId },
+          });
+          return result.entries.some((entry) => entry.id !== workspace.workspaceId);
+        },
+        { timeout: 30_000 },
+      )
+      .toBe(true);
+    const result = await workspace.client.fetchWorkspaces({
+      filter: { projectId: workspace.projectId },
+    });
+    const createdWorkspace =
+      result.entries.find((entry) => entry.id !== workspace.workspaceId) ?? null;
+    if (!createdWorkspace) {
+      throw new Error("New workspace was not returned by the daemon");
+    }
+    await waitForWorkspaceInSidebar(page, {
+      serverId,
+      workspaceId: createdWorkspace.id,
+    });
+
+    await page.keyboard.press("Control+Alt+C");
+    await expect(page).toHaveURL(/\/cockpit$/);
+    await expect(
+      page.getByTestId(`cockpit-workspace-card-${serverId}:${createdWorkspace.id}`),
+    ).toBeVisible({ timeout: 30_000 });
+    expect(pageErrors).toEqual([]);
   } finally {
     await workspace.cleanup();
   }
