@@ -171,6 +171,15 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             serviceSummary={serviceSummary}
             labels={labels}
           />
+          {workspace.activityPreview ? (
+            <Text
+              style={styles.workspaceActivityPreview}
+              numberOfLines={2}
+              testID={`sidebar-workspace-summary-${workspace.workspaceKey}`}
+            >
+              {workspace.activityPreview}
+            </Text>
+          ) : null}
         </View>
       </View>
       {showShortcutBadge && shortcutNumber !== null ? (
@@ -458,6 +467,7 @@ const styles = StyleSheet.create((theme) => ({
   workspaceContentColumn: {
     flex: 1,
     minWidth: 0,
+    gap: theme.spacing[0.5],
   },
   workspaceTitleRow: {
     flexDirection: "row",
@@ -517,6 +527,13 @@ const styles = StyleSheet.create((theme) => ({
   },
   workspaceBranchTextHovered: {
     opacity: 1,
+  },
+  workspaceActivityPreview: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.normal,
+    lineHeight: 17,
+    opacity: 0.82,
   },
   statusDotNeedsInput: {
     backgroundColor: getStatusDotColor({ theme, bucket: "needs_input" }) ?? undefined,

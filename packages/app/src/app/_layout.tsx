@@ -859,6 +859,7 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
   const shouldShowAppChrome =
     storeReady &&
     (pathname === "/open-project" ||
+      pathname === "/cockpit" ||
       pathname === "/new" ||
       pathname === "/sessions" ||
       pathname === "/schedules" ||
@@ -888,6 +889,7 @@ function RootStack() {
         <Stack.Screen name="settings/[section]" />
         <Stack.Screen name="new" />
         <Stack.Screen name="open-project" />
+        <Stack.Screen name="cockpit" />
         <Stack.Screen name="sessions" />
         <Stack.Screen name="schedules" />
         <Stack.Screen name="pair-scan" />

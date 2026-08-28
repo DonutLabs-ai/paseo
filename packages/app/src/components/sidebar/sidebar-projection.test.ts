@@ -37,6 +37,11 @@ function makeWorkspace(
     archiveUnpushedCommitCount: null,
     scripts: [],
     hasRunningScripts: false,
+    agentId: null,
+    latestPrompt: null,
+    latestReply: null,
+    activityPreview: null,
+    activityPreviewKind: null,
     labels,
   };
   return { placement, entry };

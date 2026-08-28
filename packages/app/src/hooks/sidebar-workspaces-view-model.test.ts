@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
 import type { WorkspaceStructureProject } from "@/projects/workspace-structure";
+import type { StreamItem } from "@/types/stream";
 import { buildWorkspaceAgentActivityIndex } from "@/utils/workspace-agent-activity";
 import {
   appendMissingOrderKeys,
@@ -166,6 +167,15 @@ function workspace(input: {
   };
 }
 
+function assistantMessage(text: string, timestamp: string): StreamItem {
+  return {
+    kind: "assistant_message",
+    id: `assistant-${timestamp}`,
+    text,
+    timestamp: new Date(timestamp),
+  };
+}
+
 describe("applyStoredOrdering", () => {
   it("keeps unknown items on the baseline while applying stored order", () => {
     const result = applyStoredOrdering({
@@ -322,6 +332,8 @@ describe("shared sidebar workspace model", () => {
         {
           serverId: "host-a",
           workspaceAgentActivity: new Map(),
+          agentStreamTail: new Map(),
+          agentStreamHead: new Map(),
           workspaces: new Map([
             [
               "main",
@@ -338,6 +350,8 @@ describe("shared sidebar workspace model", () => {
         {
           serverId: "host-b",
           workspaceAgentActivity: new Map(),
+          agentStreamTail: new Map(),
+          agentStreamHead: new Map(),
           workspaces: new Map([
             [
               "feature",
@@ -425,6 +439,8 @@ describe("shared sidebar workspace model", () => {
         {
           serverId: "srv",
           workspaceAgentActivity: new Map(),
+          agentStreamTail: new Map(),
+          agentStreamHead: new Map(),
           workspaces: new Map([
             ["one", one],
             ["two", two],
@@ -438,6 +454,8 @@ describe("shared sidebar workspace model", () => {
         {
           serverId: "srv",
           workspaceAgentActivity: new Map(),
+          agentStreamTail: new Map(),
+          agentStreamHead: new Map(),
           workspaces: new Map([
             ["one", one],
             ["two", { ...two, status: "running" }],
@@ -451,6 +469,72 @@ describe("shared sidebar workspace model", () => {
     expect(nextEntries.get("srv:two")).not.toBe(previousEntries.get("srv:two"));
   });
 
+  it("updates only the row whose latest agent reply changed", () => {
+    const model = buildSidebarWorkspacePlacementModel({
+      projects: [project({ projectKey: "project", workspaceKeys: ["srv:one", "srv:two"] })],
+    });
+    const workspaces = new Map([
+      [
+        "one",
+        workspace({
+          id: "one",
+          name: "one",
+          projectId: "project",
+          projectDisplayName: "project",
+        }),
+      ],
+      [
+        "two",
+        workspace({
+          id: "two",
+          name: "two",
+          projectId: "project",
+          projectDisplayName: "project",
+        }),
+      ],
+    ]);
+    const workspaceAgentActivity = new Map([
+      ["one", { agentId: "agent-one", status: "running" as const, enteredAt: null }],
+      ["two", { agentId: "agent-two", status: "running" as const, enteredAt: null }],
+    ]);
+    const initialTail = new Map<string, StreamItem[]>([
+      ["agent-one", [assistantMessage("One is unchanged", "2026-06-10T00:00:00.000Z")]],
+      ["agent-two", [assistantMessage("Two before", "2026-06-10T00:00:00.000Z")]],
+    ]);
+    const previousEntries = buildSidebarWorkspaceEntries({
+      placements: model.workspaces,
+      sessions: [
+        {
+          serverId: "srv",
+          workspaceAgentActivity,
+          agentStreamTail: initialTail,
+          agentStreamHead: new Map(),
+          workspaces,
+        },
+      ],
+    });
+    const updatedTail = new Map(initialTail);
+    updatedTail.set("agent-two", [assistantMessage("Two after", "2026-06-10T00:00:01.000Z")]);
+
+    const nextEntries = buildSidebarWorkspaceEntries({
+      placements: model.workspaces,
+      sessions: [
+        {
+          serverId: "srv",
+          workspaceAgentActivity,
+          agentStreamTail: updatedTail,
+          agentStreamHead: new Map(),
+          workspaces,
+        },
+      ],
+      previousEntries,
+    });
+
+    expect(nextEntries.get("srv:one")).toBe(previousEntries.get("srv:one"));
+    expect(nextEntries.get("srv:two")).not.toBe(previousEntries.get("srv:two"));
+    expect(nextEntries.get("srv:two")?.activityPreview).toBe("Two after");
+  });
+
   it("keeps a structurally disambiguated project key in status entries", () => {
     const projectKey = "host:srv:project:prj_a";
     const model = buildSidebarWorkspacePlacementModel({
@@ -462,6 +546,8 @@ describe("shared sidebar workspace model", () => {
         {
           serverId: "srv",
           workspaceAgentActivity: new Map(),
+          agentStreamTail: new Map(),
+          agentStreamHead: new Map(),
           workspaces: new Map([
             [
               "clone-a",

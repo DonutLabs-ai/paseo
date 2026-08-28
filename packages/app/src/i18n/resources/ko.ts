@@ -1031,6 +1031,31 @@ export const ko: TranslationResources = {
       updateHost: "레이블을 관리하려면 호스트를 업데이트하세요.",
     },
   },
+  cockpit: {
+    title: "콕핏",
+    actions: {
+      open: "콕핏 열기",
+      returnToWorkspace: "워크스페이스로 돌아가기",
+    },
+    status: {
+      needsInput: "입력 필요",
+      failed: "실패",
+      running: "작업 중",
+      attention: "준비됨",
+      done: "대기 중",
+    },
+    labels: {
+      latestReply: "최신 답변",
+      prompt: "프롬프트",
+    },
+    empty: {
+      title: "표시할 워크스페이스가 없습니다",
+      description: "사이드바 필터를 변경하거나 워크스페이스를 만드세요.",
+      waitingForReply: "답변을 기다리는 중…",
+      noActivity: "아직 에이전트 활동이 없습니다",
+      noPrompt: "아직 프롬프트가 없습니다",
+    },
+  },
   sidebar: {
     display: {
       trigger: "표시 설정",

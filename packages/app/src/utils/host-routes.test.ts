@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCockpitRoute,
   buildHostAgentDetailRoute,
   buildHostRootRoute,
   buildHostWorkspaceOpenRoute,
@@ -24,6 +25,12 @@ import {
   parseWorkspaceOpenIntent,
   stripHostWorkspaceRouteEchoSearch,
 } from "./host-routes";
+
+describe("global routes", () => {
+  it("builds the cockpit route", () => {
+    expect(buildCockpitRoute()).toBe("/cockpit");
+  });
+});
 
 describe("parseHostAgentRouteFromPathname", () => {
   it("continues parsing detail routes", () => {

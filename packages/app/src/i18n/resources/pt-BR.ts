@@ -1049,6 +1049,31 @@ export const ptBR: TranslationResources = {
       updateHost: "Atualize este host para gerenciar etiquetas.",
     },
   },
+  cockpit: {
+    title: "Painel de controle",
+    actions: {
+      open: "Abrir painel de controle",
+      returnToWorkspace: "Voltar ao espaço de trabalho",
+    },
+    status: {
+      needsInput: "Precisa de atenção",
+      failed: "Falhou",
+      running: "Trabalhando",
+      attention: "Pronto",
+      done: "Ocioso",
+    },
+    labels: {
+      latestReply: "Resposta mais recente",
+      prompt: "Instrução",
+    },
+    empty: {
+      title: "Nenhum espaço de trabalho para mostrar",
+      description: "Altere os filtros da barra lateral ou crie um espaço de trabalho.",
+      waitingForReply: "Aguardando resposta…",
+      noActivity: "Ainda não há atividade do agente",
+      noPrompt: "Ainda não há instrução",
+    },
+  },
   sidebar: {
     display: {
       trigger: "Preferências de exibição",

@@ -1033,6 +1033,31 @@ export const en = {
       updateHost: "Update this host to manage labels.",
     },
   },
+  cockpit: {
+    title: "Cockpit",
+    actions: {
+      open: "Open cockpit",
+      returnToWorkspace: "Return to workspace",
+    },
+    status: {
+      needsInput: "Needs input",
+      failed: "Failed",
+      running: "Working",
+      attention: "Ready",
+      done: "Idle",
+    },
+    labels: {
+      latestReply: "Latest reply",
+      prompt: "Prompt",
+    },
+    empty: {
+      title: "No workspaces to show",
+      description: "Change sidebar filters or create a workspace to populate the cockpit.",
+      waitingForReply: "Waiting for reply…",
+      noActivity: "No agent activity yet",
+      noPrompt: "No prompt yet",
+    },
+  },
   sidebar: {
     display: {
       trigger: "Display preferences",

@@ -1039,6 +1039,31 @@ export const ru: TranslationResources = {
       updateHost: "Обновите этот хост для управления метками.",
     },
   },
+  cockpit: {
+    title: "Панель управления",
+    actions: {
+      open: "Открыть панель управления",
+      returnToWorkspace: "Вернуться в рабочую область",
+    },
+    status: {
+      needsInput: "Требуется ввод",
+      failed: "Ошибка",
+      running: "В работе",
+      attention: "Готово",
+      done: "Ожидание",
+    },
+    labels: {
+      latestReply: "Последний ответ",
+      prompt: "Запрос",
+    },
+    empty: {
+      title: "Нет рабочих областей для отображения",
+      description: "Измените фильтры боковой панели или создайте рабочую область.",
+      waitingForReply: "Ожидание ответа…",
+      noActivity: "Активности агента пока нет",
+      noPrompt: "Запроса пока нет",
+    },
+  },
   sidebar: {
     display: {
       trigger: "Настройки отображения",

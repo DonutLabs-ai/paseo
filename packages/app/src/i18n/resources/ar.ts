@@ -1024,6 +1024,31 @@ export const ar: TranslationResources = {
       updateHost: "حدّث هذا المضيف لإدارة التسميات.",
     },
   },
+  cockpit: {
+    title: "لوحة المتابعة",
+    actions: {
+      open: "فتح لوحة المتابعة",
+      returnToWorkspace: "العودة إلى مساحة العمل",
+    },
+    status: {
+      needsInput: "بحاجة إلى إدخال",
+      failed: "فشل",
+      running: "قيد العمل",
+      attention: "جاهز",
+      done: "خامل",
+    },
+    labels: {
+      latestReply: "أحدث رد",
+      prompt: "المطالبة",
+    },
+    empty: {
+      title: "لا توجد مساحات عمل لعرضها",
+      description: "غيّر عوامل تصفية الشريط الجانبي أو أنشئ مساحة عمل.",
+      waitingForReply: "في انتظار الرد…",
+      noActivity: "لا يوجد نشاط للوكيل بعد",
+      noPrompt: "لا توجد مطالبة بعد",
+    },
+  },
   sidebar: {
     display: {
       trigger: "تفضيلات العرض",

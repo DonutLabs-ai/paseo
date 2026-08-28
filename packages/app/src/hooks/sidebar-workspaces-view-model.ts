@@ -2,7 +2,8 @@ import type { PrHint } from "@/git/pr-hint";
 import { selectPrHintFromStatus } from "@/git/pr-hint";
 import { type HostProjectListItem } from "@/projects/host-project-model";
 import type { PendingCreateAttempt } from "@/stores/create-flow-store";
-import type { WorkspaceDescriptor } from "@/stores/session-store";
+import type { SessionState, WorkspaceDescriptor } from "@/stores/session-store";
+import type { StreamItem } from "@/types/stream";
 import type {
   WorkspaceStructureHostPlacement,
   WorkspaceStructureProject,
@@ -12,6 +13,7 @@ import { aggregateSidebarStateBuckets } from "@/utils/sidebar-agent-state";
 import { shortenPath } from "@/utils/shorten-path";
 import type { WorkspaceAgentActivity } from "@/utils/workspace-agent-activity";
 import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
+import { selectWorkspaceActivityPreview } from "@/utils/workspace-activity-preview";
 
 const EMPTY_PROJECTS: SidebarProjectEntry[] = [];
 
@@ -52,6 +54,11 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   archiveUnpushedCommitCount: number | null;
   scripts: WorkspaceDescriptor["scripts"];
   hasRunningScripts: boolean;
+  agentId: string | null;
+  latestPrompt: string | null;
+  latestReply: string | null;
+  activityPreview: string | null;
+  activityPreviewKind: "prompt" | "reply" | null;
 }
 
 export interface SidebarProjectEntry {
@@ -73,11 +80,15 @@ export interface SidebarWorkspaceSession {
   serverId: string;
   workspaces: Map<string, WorkspaceDescriptor>;
   workspaceAgentActivity: Map<string, WorkspaceAgentActivity>;
+  agentStreamTail: SessionState["agentStreamTail"];
+  agentStreamHead: SessionState["agentStreamHead"];
 }
 
 interface SidebarWorkspaceSessionSource {
   workspaces: Map<string, WorkspaceDescriptor>;
   workspaceAgentActivity: Map<string, WorkspaceAgentActivity>;
+  agentStreamTail: SessionState["agentStreamTail"];
+  agentStreamHead: SessionState["agentStreamHead"];
 }
 
 export function selectSidebarWorkspaceSessions(
@@ -94,6 +105,8 @@ export function selectSidebarWorkspaceSessions(
       serverId,
       workspaces: session.workspaces,
       workspaceAgentActivity: session.workspaceAgentActivity,
+      agentStreamTail: session.agentStreamTail,
+      agentStreamHead: session.agentStreamHead,
     });
   }
   return selected;
@@ -114,7 +127,9 @@ export function areSidebarWorkspaceSessionsEqual(
       !rightSession ||
       leftSession.serverId !== rightSession.serverId ||
       leftSession.workspaces !== rightSession.workspaces ||
-      leftSession.workspaceAgentActivity !== rightSession.workspaceAgentActivity
+      leftSession.workspaceAgentActivity !== rightSession.workspaceAgentActivity ||
+      leftSession.agentStreamTail !== rightSession.agentStreamTail ||
+      leftSession.agentStreamHead !== rightSession.agentStreamHead
     ) {
       return false;
     }
@@ -149,9 +164,24 @@ export function createSidebarWorkspaceEntry(input: {
   projectViewKey?: string;
   pendingCreateAttempts?: Record<string, PendingCreateAttempt>;
   workspaceAgentActivity?: ReadonlyMap<string, WorkspaceAgentActivity>;
+  agentStreamTail?: ReadonlyMap<string, readonly StreamItem[]>;
+  agentStreamHead?: ReadonlyMap<string, readonly StreamItem[]>;
 }): SidebarWorkspaceEntry {
   const projectViewKey = input.projectViewKey ?? input.workspace.projectId;
   const effectiveStatus = deriveEffectiveWorkspaceStatus(input);
+  const rootAgentActivity = input.workspaceAgentActivity?.get(input.workspace.id) ?? null;
+  const activityPreview = rootAgentActivity
+    ? selectWorkspaceActivityPreview({
+        tail: input.agentStreamTail?.get(rootAgentActivity.agentId) ?? [],
+        head: input.agentStreamHead?.get(rootAgentActivity.agentId) ?? [],
+        status: effectiveStatus.status,
+      })
+    : {
+        latestPrompt: null,
+        latestReply: null,
+        activityPreview: null,
+        activityPreviewKind: null,
+      };
   return {
     workspaceKey: `${input.serverId}:${input.workspace.id}`,
     serverId: input.serverId,
@@ -181,6 +211,8 @@ export function createSidebarWorkspaceEntry(input: {
     archiveUnpushedCommitCount: input.workspace.gitRuntime?.aheadOfOrigin ?? null,
     scripts: input.workspace.scripts,
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
+    agentId: rootAgentActivity?.agentId ?? null,
+    ...activityPreview,
   };
 }
 
@@ -391,6 +423,8 @@ export function buildSidebarWorkspaceEntries(input: {
       projectViewKey: placement.projectViewKey,
       pendingCreateAttempts: input.pendingCreateAttempts,
       workspaceAgentActivity: session.workspaceAgentActivity,
+      agentStreamTail: session.agentStreamTail,
+      agentStreamHead: session.agentStreamHead,
     });
     const previousEntry = input.previousEntries?.get(placement.workspaceKey);
     entries.set(

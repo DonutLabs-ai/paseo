@@ -1016,6 +1016,31 @@ export const zhCN: TranslationResources = {
       updateHost: "请更新此主机以管理标签。",
     },
   },
+  cockpit: {
+    title: "驾驶舱",
+    actions: {
+      open: "打开驾驶舱",
+      returnToWorkspace: "返回工作区",
+    },
+    status: {
+      needsInput: "等待输入",
+      failed: "失败",
+      running: "工作中",
+      attention: "已就绪",
+      done: "空闲",
+    },
+    labels: {
+      latestReply: "最新回复",
+      prompt: "任务",
+    },
+    empty: {
+      title: "没有可显示的工作区",
+      description: "请更改侧边栏筛选条件或创建工作区。",
+      waitingForReply: "等待回复…",
+      noActivity: "暂无 Agent 动态",
+      noPrompt: "暂无任务",
+    },
+  },
   sidebar: {
     display: {
       trigger: "显示偏好",

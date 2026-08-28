@@ -42,6 +42,11 @@ function workspace(input: {
     archiveUnpushedCommitCount: null,
     scripts: [],
     hasRunningScripts: false,
+    agentId: null,
+    latestPrompt: null,
+    latestReply: null,
+    activityPreview: null,
+    activityPreviewKind: null,
   };
 }
 

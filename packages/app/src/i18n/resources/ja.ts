@@ -1035,6 +1035,31 @@ export const ja: TranslationResources = {
       updateHost: "ラベルを管理するにはホストを更新してください。",
     },
   },
+  cockpit: {
+    title: "コックピット",
+    actions: {
+      open: "コックピットを開く",
+      returnToWorkspace: "ワークスペースに戻る",
+    },
+    status: {
+      needsInput: "入力待ち",
+      failed: "失敗",
+      running: "作業中",
+      attention: "準備完了",
+      done: "待機中",
+    },
+    labels: {
+      latestReply: "最新の返信",
+      prompt: "プロンプト",
+    },
+    empty: {
+      title: "表示するワークスペースがありません",
+      description: "サイドバーのフィルターを変更するか、ワークスペースを作成してください。",
+      waitingForReply: "返信を待っています…",
+      noActivity: "エージェントのアクティビティはまだありません",
+      noPrompt: "プロンプトはまだありません",
+    },
+  },
   sidebar: {
     display: {
       trigger: "表示設定",

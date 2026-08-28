@@ -40,6 +40,7 @@ import { RetainedPanel } from "@/components/retained-panel";
 import { WorkspaceActions } from "@/git/workspace-actions";
 import { WorkspaceOpenInEditorButton } from "@/workspace/open-in-editor/button";
 import { WorkspaceScriptsButton } from "@/screens/workspace/workspace-scripts-button";
+import { CockpitToggleButton } from "@/screens/cockpit/cockpit-toggle-button";
 import { ImportSessionSheet } from "@/components/import-session-sheet";
 import { useToast } from "@/contexts/toast-context";
 import { getOrCreateClientId } from "@/utils/client-id";
@@ -189,7 +190,7 @@ import { findAdjacentPane } from "@/utils/split-navigation";
 import { supportsDesktopPaneSplits, useIsCompactFormFactor } from "@/constants/layout";
 import { getIsElectron, isNative, isWeb } from "@/constants/platform";
 import type { SurfaceBackdrop } from "@/styles/surface-backdrop";
-import { buildHostRootRoute, buildSettingsHostRoute } from "@/utils/host-routes";
+import { buildCockpitRoute, buildHostRootRoute, buildSettingsHostRoute } from "@/utils/host-routes";
 import { useWorkspaceTerminals } from "@/screens/workspace/terminals/use-workspace-terminals";
 import type { TerminalProfile } from "@getpaseo/protocol/messages";
 import {
@@ -1527,6 +1528,7 @@ function WorkspaceScreenContent({
   recoveryAgentId,
 }: WorkspaceScreenContentProps) {
   const { t } = useTranslation();
+  const router = useRouter();
   const _insets = useSafeAreaInsets();
   const toast = useToast();
   const isMobile = useIsCompactFormFactor();
@@ -3714,10 +3716,14 @@ function WorkspaceScreenContent({
     gate: workspaceScreenGate,
     workspaceKey: persistenceKey,
   });
+  const handleOpenCockpit = useCallback(() => {
+    router.navigate(buildCockpitRoute());
+  }, [router]);
 
   const headerRight = useMemo(
     () => (
       <View style={styles.headerRight}>
+        <CockpitToggleButton active={false} onPress={handleOpenCockpit} />
         {!isMobile && workspaceDescriptor && workspaceDescriptor.scripts.length > 0 ? (
           <WorkspaceScriptsButton
             serverId={normalizedServerId}
@@ -3766,6 +3772,7 @@ function WorkspaceScreenContent({
     ),
     [
       isMobile,
+      handleOpenCockpit,
       workspaceDescriptor,
       normalizedServerId,
       normalizedWorkspaceId,

@@ -1057,6 +1057,31 @@ export const fr: TranslationResources = {
       updateHost: "Mettez à jour cet hôte pour gérer les étiquettes.",
     },
   },
+  cockpit: {
+    title: "Cockpit",
+    actions: {
+      open: "Ouvrir le cockpit",
+      returnToWorkspace: "Revenir à l’espace de travail",
+    },
+    status: {
+      needsInput: "Entrée requise",
+      failed: "Échec",
+      running: "En cours",
+      attention: "Prêt",
+      done: "Inactif",
+    },
+    labels: {
+      latestReply: "Dernière réponse",
+      prompt: "Instruction",
+    },
+    empty: {
+      title: "Aucun espace de travail à afficher",
+      description: "Modifiez les filtres de la barre latérale ou créez un espace de travail.",
+      waitingForReply: "En attente d’une réponse…",
+      noActivity: "Aucune activité de l’agent pour le moment",
+      noPrompt: "Aucune instruction pour le moment",
+    },
+  },
   sidebar: {
     display: {
       trigger: "Préférences d'affichage",
