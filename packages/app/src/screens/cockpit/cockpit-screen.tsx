@@ -16,6 +16,8 @@ import { SidebarMenuToggle } from "@/components/headers/menu-header";
 import { ScreenHeader } from "@/components/headers/screen-header";
 import { ScreenTitle } from "@/components/headers/screen-title";
 import { DiffStat } from "@/components/diff-stat";
+import { StatusRing } from "@/components/status-ring";
+import { STATUS_RING_FRAME_SIZE } from "@/components/status-ring/geometry";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Button } from "@/components/ui/button";
 import { ToolbarButton, ToolbarControls } from "@/components/ui/pane-content-toolbar";
@@ -667,8 +669,8 @@ function CockpitPaneActions({
 function CockpitStatusIndicator({ bucket }: { bucket: SidebarWorkspaceEntry["statusBucket"] }) {
   if (bucket === "running") {
     return (
-      <View style={styles.statusSpinnerFrame} testID="cockpit-running-spinner">
-        <LoadingSpinner color={styles.statusSpinner.color} size={12} />
+      <View style={styles.statusRingFrame} testID="cockpit-running-spinner">
+        <StatusRing />
       </View>
     );
   }
@@ -703,9 +705,9 @@ function cockpitCardStyle(
   focused: boolean,
 ): ViewStyle[] {
   const result: ViewStyle[] = [styles.card];
-  if (focused) result.push(styles.cardFocused);
   if (state.hovered) result.push(styles.cardHovered);
   if (state.pressed) result.push(styles.cardPressed);
+  if (focused) result.push(styles.cardFocused);
   return result;
 }
 
@@ -753,8 +755,8 @@ const styles = StyleSheet.create((theme) => ({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: COCKPIT_HORIZONTAL_PADDING,
-    paddingTop: theme.spacing[4],
-    paddingBottom: theme.spacing[8],
+    paddingTop: theme.spacing[2],
+    paddingBottom: theme.spacing[4],
   },
   layoutRoot: {
     flexGrow: 1,
@@ -786,7 +788,7 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[3],
     borderRadius: theme.borderRadius.xl,
     borderWidth: theme.borderWidth[1],
-    borderColor: theme.colors.border,
+    borderColor: theme.colors.borderAccent,
     backgroundColor: theme.colors.surface1,
     userSelect: "none",
   },
@@ -794,7 +796,7 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.colors.accent,
   },
   cardHovered: {
-    borderColor: theme.colors.borderAccent,
+    borderColor: theme.colors.surface3,
     backgroundColor: theme.colors.surface2,
   },
   cardPressed: {
@@ -840,17 +842,13 @@ const styles = StyleSheet.create((theme) => ({
   statusDotDone: {
     backgroundColor: theme.colors.border,
   },
-  statusSpinnerFrame: {
-    width: 12,
-    height: 12,
+  statusRingFrame: {
+    width: STATUS_RING_FRAME_SIZE,
+    height: STATUS_RING_FRAME_SIZE,
     marginTop: 3,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
-    overflow: "hidden",
-  },
-  statusSpinner: {
-    color: theme.colors.statusDotRunning,
   },
   paneActions: {
     flexShrink: 0,

@@ -5,6 +5,7 @@ import {
   seedRunningMockAgentWorkspace,
 } from "../support/helpers/mock-agent";
 import { getServerId } from "../support/helpers/server-id";
+import { STATUS_RING_FRAME_SIZE } from "../../src/components/status-ring/geometry";
 
 const PROMPT = "Build the cockpit workspace overview";
 const REPLY = "Cockpit summary Implemented workspace cards and live progress summaries.";
@@ -126,7 +127,12 @@ test("shows a spinner while a cockpit workspace is running", async ({ page }) =>
     await page.getByTestId("cockpit-mode-toggle").click();
     const workspaceKey = `${getServerId()}:${workspace.workspaceId}`;
     const card = page.getByTestId(`cockpit-workspace-card-${workspaceKey}`);
-    await expect(card.getByTestId("cockpit-running-spinner")).toBeVisible({ timeout: 30_000 });
+    const spinner = card.getByTestId("cockpit-running-spinner");
+    await expect(spinner).toBeVisible({ timeout: 30_000 });
+    const bounds = await spinner.boundingBox();
+    expect(bounds?.width).toBe(STATUS_RING_FRAME_SIZE);
+    expect(bounds?.height).toBe(STATUS_RING_FRAME_SIZE);
+    await expect(spinner.getByRole("progressbar")).toHaveCount(0);
   } finally {
     await workspace.cleanup();
   }
