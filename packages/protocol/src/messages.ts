@@ -2764,6 +2764,19 @@ export const PushUnregisterResponseSchema = z.object({
 // Terminal Messages
 // ============================================================================
 
+export const UtilityTerminalInfoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  cwd: z.string(),
+  command: z.string().nullable(),
+  args: z.array(z.string()),
+  status: z.enum(["running", "stopped"]),
+  terminalId: z.string().nullable(),
+  exitCode: z.number().int().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
 export const ListTerminalsRequestSchema = z.object({
   type: z.literal("list_terminals_request"),
   cwd: z.string().optional(),
@@ -2803,6 +2816,38 @@ export const CreateTerminalRequestSchema = z.object({
     .optional(),
   requestId: z.string(),
 });
+
+export const UtilityTerminalListRequestSchema = z.object({
+  type: z.literal("utility_terminal.list.request"),
+  requestId: z.string(),
+});
+
+export const UtilityTerminalCreateRequestSchema = z.object({
+  type: z.literal("utility_terminal.create.request"),
+  name: z.string().trim().min(1),
+  cwd: z.string().trim().min(1),
+  command: z.string().trim().min(1).nullable().optional(),
+  args: z.array(z.string()).optional(),
+  requestId: z.string(),
+});
+
+function utilityTerminalIdRequest<const Type extends string>(type: Type) {
+  return z.object({
+    type: z.literal(type),
+    id: z.string().trim().min(1),
+    requestId: z.string(),
+  });
+}
+
+export const UtilityTerminalStartRequestSchema = utilityTerminalIdRequest(
+  "utility_terminal.start.request",
+);
+export const UtilityTerminalStopRequestSchema = utilityTerminalIdRequest(
+  "utility_terminal.stop.request",
+);
+export const UtilityTerminalRemoveRequestSchema = utilityTerminalIdRequest(
+  "utility_terminal.remove.request",
+);
 
 export const RenameTerminalRequestSchema = z.object({
   type: z.literal("terminal.rename.request"),
@@ -3134,6 +3179,11 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   SubscribeTerminalsRequestSchema,
   UnsubscribeTerminalsRequestSchema,
   CreateTerminalRequestSchema,
+  UtilityTerminalListRequestSchema,
+  UtilityTerminalCreateRequestSchema,
+  UtilityTerminalStartRequestSchema,
+  UtilityTerminalStopRequestSchema,
+  UtilityTerminalRemoveRequestSchema,
   RenameTerminalRequestSchema,
   StartWorkspaceScriptRequestSchema,
   WorkspaceScriptListRequestSchema,
@@ -5929,6 +5979,53 @@ export const CreateTerminalResponseSchema = z.object({
   }),
 });
 
+export const UtilityTerminalListResponseSchema = z.object({
+  type: z.literal("utility_terminal.list.response"),
+  payload: z.object({
+    requestId: z.string(),
+    terminals: z.array(UtilityTerminalInfoSchema),
+    error: z.string().nullable(),
+  }),
+});
+
+function utilityTerminalMutationResponse<const Type extends string>(type: Type) {
+  return z.object({
+    type: z.literal(type),
+    payload: z.object({
+      requestId: z.string(),
+      terminal: UtilityTerminalInfoSchema.nullable(),
+      error: z.string().nullable(),
+    }),
+  });
+}
+
+export const UtilityTerminalCreateResponseSchema = utilityTerminalMutationResponse(
+  "utility_terminal.create.response",
+);
+export const UtilityTerminalStartResponseSchema = utilityTerminalMutationResponse(
+  "utility_terminal.start.response",
+);
+export const UtilityTerminalStopResponseSchema = utilityTerminalMutationResponse(
+  "utility_terminal.stop.response",
+);
+
+export const UtilityTerminalRemoveResponseSchema = z.object({
+  type: z.literal("utility_terminal.remove.response"),
+  payload: z.object({
+    requestId: z.string(),
+    id: z.string(),
+    removed: z.boolean(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const UtilityTerminalsChangedSchema = z.object({
+  type: z.literal("utility_terminals.changed"),
+  payload: z.object({
+    terminals: z.array(UtilityTerminalInfoSchema),
+  }),
+});
+
 export const RenameTerminalResponseSchema = z.object({
   type: z.literal("terminal.rename.response"),
   payload: z.object({
@@ -6448,6 +6545,12 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ListTerminalsResponseSchema,
   TerminalsChangedSchema,
   CreateTerminalResponseSchema,
+  UtilityTerminalListResponseSchema,
+  UtilityTerminalCreateResponseSchema,
+  UtilityTerminalStartResponseSchema,
+  UtilityTerminalStopResponseSchema,
+  UtilityTerminalRemoveResponseSchema,
+  UtilityTerminalsChangedSchema,
   RenameTerminalResponseSchema,
   SubscribeTerminalResponseSchema,
   KillTerminalResponseSchema,
@@ -6898,6 +7001,18 @@ export type UnsubscribeTerminalsRequest = z.infer<typeof UnsubscribeTerminalsReq
 export type TerminalsChanged = z.infer<typeof TerminalsChangedSchema>;
 export type CreateTerminalRequest = z.infer<typeof CreateTerminalRequestSchema>;
 export type CreateTerminalResponse = z.infer<typeof CreateTerminalResponseSchema>;
+export type UtilityTerminalInfo = z.infer<typeof UtilityTerminalInfoSchema>;
+export type UtilityTerminalListRequest = z.infer<typeof UtilityTerminalListRequestSchema>;
+export type UtilityTerminalListResponse = z.infer<typeof UtilityTerminalListResponseSchema>;
+export type UtilityTerminalCreateRequest = z.infer<typeof UtilityTerminalCreateRequestSchema>;
+export type UtilityTerminalCreateResponse = z.infer<typeof UtilityTerminalCreateResponseSchema>;
+export type UtilityTerminalStartRequest = z.infer<typeof UtilityTerminalStartRequestSchema>;
+export type UtilityTerminalStartResponse = z.infer<typeof UtilityTerminalStartResponseSchema>;
+export type UtilityTerminalStopRequest = z.infer<typeof UtilityTerminalStopRequestSchema>;
+export type UtilityTerminalStopResponse = z.infer<typeof UtilityTerminalStopResponseSchema>;
+export type UtilityTerminalRemoveRequest = z.infer<typeof UtilityTerminalRemoveRequestSchema>;
+export type UtilityTerminalRemoveResponse = z.infer<typeof UtilityTerminalRemoveResponseSchema>;
+export type UtilityTerminalsChanged = z.infer<typeof UtilityTerminalsChangedSchema>;
 export type RenameTerminalRequest = z.infer<typeof RenameTerminalRequestSchema>;
 export type RenameTerminalResponse = z.infer<typeof RenameTerminalResponseSchema>;
 export type StartWorkspaceScriptRequest = z.infer<typeof StartWorkspaceScriptRequestSchema>;

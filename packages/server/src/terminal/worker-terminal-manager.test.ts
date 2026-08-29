@@ -204,6 +204,23 @@ it("creates a terminal through the worker and streams output", async () => {
   expect(snapshots).toBe(snapshotsBeforeOutput);
 });
 
+it("creates an unowned terminal through the worker", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-unowned-"));
+  temporaryDirs.push(cwd);
+  manager = createWorkerTerminalManager();
+  const session = trackTerminal(
+    await manager.createTerminal({
+      cwd,
+      name: "Utility",
+      ...nodeTerminalCommand("setInterval(() => {}, 1000)"),
+    }),
+  );
+
+  expect(session.workspaceId).toBeUndefined();
+  await expect(manager.getTerminals(cwd, { workspaceId: "workspace-1" })).resolves.toEqual([]);
+  await expect(manager.getTerminals(cwd)).resolves.toEqual([session]);
+});
+
 it("delivers rapid small writes complete and in order through worker coalescing", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-coalesce-"));
   temporaryDirs.push(cwd);

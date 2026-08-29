@@ -73,6 +73,18 @@ it("returns existing terminals on subsequent calls", async () => {
   expect(second.length).toBe(1);
 });
 
+it("creates an unowned terminal for daemon-level utilities", async () => {
+  manager = createTerminalManager();
+  const cwd = mkdtempSync(join(tmpdir(), "terminal-manager-unowned-"));
+  temporaryDirs.push(cwd);
+
+  const created = await manager.createTerminal({ cwd, name: "Utility" });
+
+  expect(created.workspaceId).toBeUndefined();
+  await expect(manager.getTerminals(cwd, { workspaceId: "workspace-1" })).resolves.toEqual([]);
+  await expect(manager.getTerminals(cwd)).resolves.toEqual([created]);
+});
+
 it("throws for relative paths", async () => {
   manager = createTerminalManager();
   await expect(manager.getTerminals("tmp")).rejects.toThrow("cwd must be absolute path");

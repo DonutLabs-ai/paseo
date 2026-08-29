@@ -35,6 +35,7 @@ import { QuittingOverlay } from "@/components/quitting-overlay";
 import { KeyboardShortcutsDialog } from "@/components/keyboard-shortcuts-dialog";
 import { AppDiagnosticHost } from "@/components/app-diagnostic-host";
 import { LeftSidebar } from "@/components/left-sidebar";
+import { SidebarActivityBar } from "@/components/sidebar/sidebar-activity-bar";
 import { WindowSidebarMenuToggle } from "@/components/headers/menu-header";
 import { DesktopWindowControls } from "@/components/desktop/window-controls";
 import { SidebarModelProvider } from "@/components/sidebar/sidebar-model";
@@ -56,6 +57,7 @@ import {
   canDesktopAppSidebarShare,
   resolveDesktopAppChromeLayout,
   resolveDesktopAppContentMinimum,
+  resolveDesktopSidebarPresentation,
   resolveDesktopSidebarVisibility,
 } from "@/components/desktop-sidebar-layout";
 import { isNative, isWeb } from "@/constants/platform";
@@ -532,6 +534,17 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
       viewportWidth,
     }),
   });
+  const desktopSidebarPresentation = resolveDesktopSidebarPresentation({
+    chromeEnabled,
+    isCompactLayout,
+    isMounted: desktopSidebarMounted,
+    isOpen: isDesktopAgentListOpen,
+    canShare: canDesktopAppSidebarShare({
+      contentMinimumWidth: appContentMinimumWidth,
+      requestedSidebarWidth: sidebarWidth,
+      viewportWidth,
+    }),
+  });
   const hasTopLeftWindowControls = useHasWindowChromeObstruction("top-left");
   const appChromeLayout = resolveDesktopAppChromeLayout({
     desktopSidebarRendered: desktopSidebarVisible,
@@ -542,6 +555,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
     <SidebarChrome
       mounted={isCompactLayout ? chromeEnabled : desktopSidebarMounted}
       visible={isCompactLayout ? chromeEnabled : desktopSidebarVisible}
+      showActivityBar={desktopSidebarPresentation === "rail"}
       keyboardShortcutsEnabled={keyboardShortcutsEnabled}
     />
   );
@@ -621,10 +635,12 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
 function SidebarChrome({
   mounted,
   visible,
+  showActivityBar,
   keyboardShortcutsEnabled,
 }: {
   mounted: boolean;
   visible: boolean;
+  showActivityBar: boolean;
   keyboardShortcutsEnabled: boolean;
 }) {
   const isCompactLayout = useIsCompactFormFactor();
@@ -635,6 +651,7 @@ function SidebarChrome({
   return (
     <SidebarModelProvider active={active}>
       {mounted ? <LeftSidebar active={active} /> : null}
+      {showActivityBar ? <SidebarActivityBar /> : null}
       <WorkspaceShortcutTargetsSubscriber enabled={keyboardShortcutsEnabled} />
     </SidebarModelProvider>
   );

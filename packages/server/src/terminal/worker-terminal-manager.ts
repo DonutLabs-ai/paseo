@@ -36,20 +36,6 @@ import type {
 
 const REQUEST_TIMEOUT_MS = 10000;
 
-type RequiredWorkerTerminalInfo = WorkerTerminalInfo & { workspaceId: string };
-
-function requiredWorkspaceId(workspaceId: string | undefined): string {
-  if (workspaceId === undefined) {
-    throw new Error("workspaceId is required");
-  }
-  return workspaceId;
-}
-
-function asRequiredWorkerTerminalInfo(info: WorkerTerminalInfo): RequiredWorkerTerminalInfo {
-  requiredWorkspaceId(info.workspaceId);
-  return info as RequiredWorkerTerminalInfo;
-}
-
 type TerminalWorkerRequestInput = TerminalWorkerRequest extends infer Request
   ? Request extends TerminalWorkerRequest
     ? Omit<Request, "requestId">
@@ -63,7 +49,7 @@ interface PendingRequest {
 }
 
 interface WorkerTerminalRecord {
-  info: RequiredWorkerTerminalInfo;
+  info: WorkerTerminalInfo;
   state: TerminalState;
   activity: TerminalActivity | null;
   // Cached input-mode preamble from the worker (the authoritative tracker lives
@@ -128,12 +114,12 @@ function isResponse(message: TerminalWorkerToParentMessage): message is Terminal
   return message.type === "response";
 }
 
-function cloneTerminalInfo(info: RequiredWorkerTerminalInfo): RequiredWorkerTerminalInfo {
+function cloneTerminalInfo(info: WorkerTerminalInfo): WorkerTerminalInfo {
   return {
     id: info.id,
     name: info.name,
     cwd: info.cwd,
-    workspaceId: info.workspaceId,
+    ...(info.workspaceId !== undefined ? { workspaceId: info.workspaceId } : {}),
     ...(info.title ? { title: info.title } : {}),
     activity: info.activity,
   };
@@ -210,7 +196,7 @@ export function createWorkerTerminalManager(
         id: record.info.id,
         name: record.info.name,
         cwd: record.info.cwd,
-        workspaceId: record.info.workspaceId,
+        ...(record.info.workspaceId !== undefined ? { workspaceId: record.info.workspaceId } : {}),
         ...(record.info.title ? { title: record.info.title } : {}),
         activity: record.activity,
       });
@@ -219,7 +205,7 @@ export function createWorkerTerminalManager(
   }
 
   function registerRecord(input: {
-    info: RequiredWorkerTerminalInfo;
+    info: WorkerTerminalInfo;
     state: TerminalState;
   }): TerminalSession {
     const existing = recordsById.get(input.info.id);
@@ -448,7 +434,7 @@ export function createWorkerTerminalManager(
     record.exitListeners.clear();
     const previousBucket = deriveTerminalActivityStatusBucket(record.activity);
     const removedRecord = removeRecord(message.terminalId);
-    if (previousBucket !== null && removedRecord) {
+    if (previousBucket !== null && removedRecord?.info.workspaceId !== undefined) {
       emitTerminalWorkspaceContributionChanged({
         terminalId: removedRecord.info.id,
         cwd: removedRecord.info.cwd,
@@ -516,17 +502,19 @@ export function createWorkerTerminalManager(
     for (const listener of Array.from(record.activityChangeListeners)) {
       listener(transition);
     }
-    emitTerminalActivityTransition({
-      terminalId: record.info.id,
-      name: record.info.name,
-      cwd: record.info.cwd,
-      workspaceId: record.info.workspaceId,
-      activity: message.activity,
-      previous: message.previous,
-    });
+    if (record.info.workspaceId !== undefined) {
+      emitTerminalActivityTransition({
+        terminalId: record.info.id,
+        name: record.info.name,
+        cwd: record.info.cwd,
+        workspaceId: record.info.workspaceId,
+        activity: message.activity,
+        previous: message.previous,
+      });
+    }
     const previousBucket = deriveTerminalActivityStatusBucket(previousActivity);
     const nextBucket = deriveTerminalActivityStatusBucket(message.activity);
-    if (previousBucket !== nextBucket) {
+    if (previousBucket !== nextBucket && record.info.workspaceId !== undefined) {
       emitTerminalWorkspaceContributionChanged({
         terminalId: record.info.id,
         cwd: record.info.cwd,
@@ -543,7 +531,7 @@ export function createWorkerTerminalManager(
     switch (message.type) {
       case "terminalCreated": {
         registerRecord({
-          info: asRequiredWorkerTerminalInfo(message.terminal),
+          info: message.terminal,
           state: message.state,
         });
         emitTerminalsChanged({
@@ -679,15 +667,13 @@ export function createWorkerTerminalManager(
       return sessions;
     },
 
-    async createTerminal(
-      options: WorkerCreateTerminalOptions & { workspaceId: string },
-    ): Promise<TerminalSession> {
+    async createTerminal(options: WorkerCreateTerminalOptions): Promise<TerminalSession> {
       const terminalId = options.id ?? randomUUID();
       const activityToken = createActivityToken();
       const terminalActivityUrl = managerOptions.getTerminalActivityUrl?.() ?? null;
       terminalActivityTokenById.set(terminalId, activityToken);
       let result: {
-        terminal: RequiredWorkerTerminalInfo;
+        terminal: WorkerTerminalInfo;
         state: TerminalState;
       };
       try {
@@ -700,7 +686,7 @@ export function createWorkerTerminalManager(
             activityUrl: terminalActivityUrl,
           },
         })) as {
-          terminal: RequiredWorkerTerminalInfo;
+          terminal: WorkerTerminalInfo;
           state: TerminalState;
         };
       } catch (error) {

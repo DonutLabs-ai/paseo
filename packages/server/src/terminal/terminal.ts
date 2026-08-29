@@ -77,7 +77,7 @@ export interface TerminalSession {
   id: string;
   name: string;
   cwd: string;
-  workspaceId: string;
+  workspaceId?: string;
   send(msg: ClientMessage): void;
   subscribe(listener: (msg: ServerMessage) => void, options?: TerminalSubscribeOptions): () => void;
   onExit(listener: (info: TerminalExitInfo) => void): () => void;
@@ -118,7 +118,7 @@ function parseCommandFinishedOsc(data: string): TerminalCommandFinishedInfo | nu
 export interface CreateTerminalOptions {
   id?: string;
   cwd: string;
-  workspaceId: string;
+  workspaceId?: string;
   shell?: string;
   env?: Record<string, string>;
   activityEnv?: Record<string, string>;
@@ -951,7 +951,7 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
       env: {
         ...env,
         ...activityEnv,
-        PASEO_WORKSPACE_ID: workspaceId,
+        ...(workspaceId ? { PASEO_WORKSPACE_ID: workspaceId } : {}),
       },
     }),
   });

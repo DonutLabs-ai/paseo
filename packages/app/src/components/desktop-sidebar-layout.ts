@@ -19,6 +19,21 @@ export function resolveDesktopSidebarVisibility(input: {
   );
 }
 
+export type DesktopSidebarPresentation = "hidden" | "rail" | "expanded";
+
+export function resolveDesktopSidebarPresentation(input: {
+  chromeEnabled: boolean;
+  isCompactLayout: boolean;
+  isMounted: boolean;
+  isOpen: boolean;
+  canShare: boolean;
+}): DesktopSidebarPresentation {
+  if (!input.chromeEnabled || input.isCompactLayout || !input.isMounted) {
+    return "hidden";
+  }
+  return input.isOpen && input.canShare ? "expanded" : "rail";
+}
+
 export function resolveDesktopAppChromeLayout(input: {
   desktopSidebarRendered: boolean;
   hasTopLeftWindowControls: boolean;

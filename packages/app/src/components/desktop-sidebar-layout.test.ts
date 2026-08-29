@@ -3,6 +3,7 @@ import {
   canDesktopAppSidebarShare,
   resolveDesktopAppChromeLayout,
   resolveDesktopAppContentMinimum,
+  resolveDesktopSidebarPresentation,
   resolveDesktopSidebarVisibility,
   resolveDesktopSidebarWidth,
 } from "@/components/desktop-sidebar-layout";
@@ -18,6 +19,39 @@ describe("desktop sidebar layout", () => {
         canShare: true,
       }),
     ).toBe(false);
+  });
+
+  it("collapses the desktop sidebar into a rail without removing app navigation", () => {
+    expect(
+      resolveDesktopSidebarPresentation({
+        chromeEnabled: true,
+        isCompactLayout: false,
+        isMounted: true,
+        isOpen: false,
+        canShare: true,
+      }),
+    ).toBe("rail");
+    expect(
+      resolveDesktopSidebarPresentation({
+        chromeEnabled: true,
+        isCompactLayout: false,
+        isMounted: true,
+        isOpen: true,
+        canShare: true,
+      }),
+    ).toBe("expanded");
+  });
+
+  it("uses the rail when the expanded sidebar cannot share the viewport", () => {
+    expect(
+      resolveDesktopSidebarPresentation({
+        chromeEnabled: true,
+        isCompactLayout: false,
+        isMounted: true,
+        isOpen: true,
+        canShare: false,
+      }),
+    ).toBe("rail");
   });
 
   it("keeps the sidebar toggle window-owned beside left window controls", () => {

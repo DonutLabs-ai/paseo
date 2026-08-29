@@ -8,6 +8,10 @@ import type { AgentManager, AgentMetricsSnapshot } from "./agent/agent-manager.j
 import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
+import {
+  createUtilityTerminalService,
+  type UtilityTerminalService,
+} from "../terminal/utility-terminal-service.js";
 import type pino from "pino";
 import type { ProjectRegistry, WorkspaceRegistry } from "./workspace-registry.js";
 import type { ProjectUpdate } from "./workspace-reconciliation-service.js";
@@ -567,6 +571,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly mcpBaseUrl: string | null;
   private speech!: SpeechService | null;
   private terminalManager!: TerminalManager | null;
+  private readonly utilityTerminalService: UtilityTerminalService | null;
   private serviceProxy!: ServiceProxySubsystem | null;
   private scriptRuntimeStore!: WorkspaceScriptRuntimeStore | null;
   private getDaemonTcpPort!: (() => number | null) | null;
@@ -700,6 +705,13 @@ export class VoiceAssistantWebSocketServer {
       serviceProxyPublicBaseUrl,
       resolveScriptHealth,
     });
+    this.utilityTerminalService = this.terminalManager
+      ? createUtilityTerminalService({
+          paseoHome,
+          terminalManager: this.terminalManager,
+          logger: this.logger,
+        })
+      : null;
     if (!providerSnapshotManager) {
       throw new Error("providerSnapshotManager is required");
     }
@@ -1447,6 +1459,7 @@ export class VoiceAssistantWebSocketServer {
       sttLanguage: this.speech?.resolveSttLanguage() ?? "en",
       tts: () => this.speech?.resolveTts() ?? null,
       terminalManager: this.terminalManager,
+      utilityTerminalService: this.utilityTerminalService,
       providerSnapshotManager: this.providerSnapshotManager,
       providerUsageService: this.providerUsageService,
       hubExecutionAgents: options.hubExecutionAgents,

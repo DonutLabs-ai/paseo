@@ -12,6 +12,11 @@ import type {
   TerminalInput,
   UnsubscribeTerminalRequest,
   UnsubscribeTerminalsRequest,
+  UtilityTerminalCreateRequest,
+  UtilityTerminalListRequest,
+  UtilityTerminalRemoveRequest,
+  UtilityTerminalStartRequest,
+  UtilityTerminalStopRequest,
 } from "../server/messages.js";
 import { killTerminalsForWorkspace as killWorkspaceTerminals } from "../server/workspace-archive-service.js";
 import {
@@ -36,6 +41,7 @@ import type { TerminalManager, TerminalsChangedEvent } from "./terminal-manager.
 import { applyTerminalSize } from "./terminal-size-ownership.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import { terminalSubscriptionKey } from "@getpaseo/protocol/terminal-subscription-key";
+import type { UtilityTerminalService } from "./utility-terminal-service.js";
 
 const MAX_TERMINAL_STREAM_SLOTS = 256;
 
@@ -83,6 +89,7 @@ export interface TerminalSessionControllerOptions {
   // Bytes queued on the client transport but not yet sent, or null when the
   // transport exposes no backpressure signal (e.g. the multiplexed relay socket).
   getClientBufferedAmount?: () => number | null;
+  utilityTerminalService?: UtilityTerminalService | null;
 }
 
 interface TerminalWorkspaceRef {
@@ -105,7 +112,12 @@ type TerminalDispatchableMessage =
   | TerminalInput
   | KillTerminalRequest
   | CaptureTerminalRequest
-  | RenameTerminalRequest;
+  | RenameTerminalRequest
+  | UtilityTerminalListRequest
+  | UtilityTerminalCreateRequest
+  | UtilityTerminalStartRequest
+  | UtilityTerminalStopRequest
+  | UtilityTerminalRemoveRequest;
 
 const TERMINAL_MESSAGE_TYPES: ReadonlySet<TerminalDispatchableMessage["type"]> = new Set([
   "subscribe_terminals_request",
@@ -118,6 +130,11 @@ const TERMINAL_MESSAGE_TYPES: ReadonlySet<TerminalDispatchableMessage["type"]> =
   "kill_terminal_request",
   "capture_terminal_request",
   "terminal.rename.request",
+  "utility_terminal.list.request",
+  "utility_terminal.create.request",
+  "utility_terminal.start.request",
+  "utility_terminal.stop.request",
+  "utility_terminal.remove.request",
 ]);
 
 export class TerminalSessionController {
@@ -131,6 +148,7 @@ export class TerminalSessionController {
   private readonly listTerminalWorkspaceRoots: () => Promise<readonly string[]>;
   private readonly clientSupportsWrapReflow: () => boolean;
   private readonly getClientBufferedAmount: () => number | null;
+  private readonly utilityTerminalService: UtilityTerminalService | null;
   private readonly terminalSizeOwner = {};
 
   // A subscription is scoped to a (cwd, workspaceId) pair, keyed by
@@ -142,6 +160,7 @@ export class TerminalSessionController {
     { cwd: string; workspaceId: string | undefined }
   >();
   private unsubscribeTerminalsChanged: (() => void) | null = null;
+  private unsubscribeUtilityTerminalsChanged: (() => void) | null = null;
   private readonly exitSubscriptions = new Map<string, () => void>();
   private readonly activeStreams = new Map<number, ActiveTerminalStream>();
   private readonly idToSlot = new Map<string, number>();
@@ -160,6 +179,7 @@ export class TerminalSessionController {
       (async () => (await this.listTerminalWorkspaceRefs()).map((workspace) => workspace.cwd));
     this.clientSupportsWrapReflow = options.clientSupportsWrapReflow ?? (() => false);
     this.getClientBufferedAmount = options.getClientBufferedAmount ?? (() => 0);
+    this.utilityTerminalService = options.utilityTerminalService ?? null;
   }
 
   start(): void {
@@ -207,6 +227,16 @@ export class TerminalSessionController {
         return this.handleCaptureTerminalRequest(msg);
       case "terminal.rename.request":
         return this.handleRenameTerminalRequest(msg);
+      case "utility_terminal.list.request":
+        return this.handleUtilityTerminalListRequest(msg);
+      case "utility_terminal.create.request":
+        return this.handleUtilityTerminalCreateRequest(msg);
+      case "utility_terminal.start.request":
+        return this.handleUtilityTerminalStartRequest(msg);
+      case "utility_terminal.stop.request":
+        return this.handleUtilityTerminalStopRequest(msg);
+      case "utility_terminal.remove.request":
+        return this.handleUtilityTerminalRemoveRequest(msg);
       default:
         return undefined;
     }
@@ -274,6 +304,10 @@ export class TerminalSessionController {
       this.unsubscribeTerminalsChanged();
       this.unsubscribeTerminalsChanged = null;
     }
+    if (this.unsubscribeUtilityTerminalsChanged) {
+      this.unsubscribeUtilityTerminalsChanged();
+      this.unsubscribeUtilityTerminalsChanged = null;
+    }
     this.subscribedDirectories.clear();
 
     for (const unsubscribeExit of this.exitSubscriptions.values()) {
@@ -310,7 +344,7 @@ export class TerminalSessionController {
     terminals: Array<{
       id: string;
       name: string;
-      workspaceId: string;
+      workspaceId?: string;
       title?: string;
       activity: TerminalActivity | null;
     }>;
@@ -329,7 +363,7 @@ export class TerminalSessionController {
   ): {
     id: string;
     name: string;
-    workspaceId: string;
+    workspaceId?: string;
     title?: string;
     activity: TerminalActivity | null;
   } {
@@ -338,7 +372,7 @@ export class TerminalSessionController {
     return {
       id: terminal.id,
       name: terminal.name,
-      workspaceId: terminal.workspaceId,
+      ...(terminal.workspaceId !== undefined ? { workspaceId: terminal.workspaceId } : {}),
       ...(title ? { title } : {}),
       activity,
     };
@@ -439,6 +473,130 @@ export class TerminalSessionController {
         },
       });
     }
+  }
+
+  private ensureUtilityTerminalSubscription(): void {
+    if (!this.utilityTerminalService || this.unsubscribeUtilityTerminalsChanged) {
+      return;
+    }
+    this.unsubscribeUtilityTerminalsChanged = this.utilityTerminalService.subscribe((terminals) => {
+      this.emit({
+        type: "utility_terminals.changed",
+        payload: { terminals },
+      });
+    });
+  }
+
+  private async handleUtilityTerminalListRequest(msg: UtilityTerminalListRequest): Promise<void> {
+    this.ensureUtilityTerminalSubscription();
+    if (!this.utilityTerminalService) {
+      this.emit({
+        type: "utility_terminal.list.response",
+        payload: {
+          requestId: msg.requestId,
+          terminals: [],
+          error: "Utility terminal service is not available",
+        },
+      });
+      return;
+    }
+    this.emit({
+      type: "utility_terminal.list.response",
+      payload: {
+        requestId: msg.requestId,
+        terminals: this.utilityTerminalService.list(),
+        error: null,
+      },
+    });
+  }
+
+  private async handleUtilityTerminalCreateRequest(
+    msg: UtilityTerminalCreateRequest,
+  ): Promise<void> {
+    this.ensureUtilityTerminalSubscription();
+    try {
+      const terminal = await this.requireUtilityTerminalService().create({
+        name: msg.name,
+        cwd: msg.cwd,
+        command: msg.command,
+        args: msg.args,
+      });
+      this.emit({
+        type: "utility_terminal.create.response",
+        payload: { requestId: msg.requestId, terminal, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "utility_terminal.create.response",
+        payload: { requestId: msg.requestId, terminal: null, error: this.errorMessage(error) },
+      });
+    }
+  }
+
+  private async handleUtilityTerminalStartRequest(msg: UtilityTerminalStartRequest): Promise<void> {
+    this.ensureUtilityTerminalSubscription();
+    try {
+      const terminal = await this.requireUtilityTerminalService().start(msg.id);
+      this.emit({
+        type: "utility_terminal.start.response",
+        payload: { requestId: msg.requestId, terminal, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "utility_terminal.start.response",
+        payload: { requestId: msg.requestId, terminal: null, error: this.errorMessage(error) },
+      });
+    }
+  }
+
+  private async handleUtilityTerminalStopRequest(msg: UtilityTerminalStopRequest): Promise<void> {
+    this.ensureUtilityTerminalSubscription();
+    try {
+      const terminal = await this.requireUtilityTerminalService().stop(msg.id);
+      this.emit({
+        type: "utility_terminal.stop.response",
+        payload: { requestId: msg.requestId, terminal, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "utility_terminal.stop.response",
+        payload: { requestId: msg.requestId, terminal: null, error: this.errorMessage(error) },
+      });
+    }
+  }
+
+  private async handleUtilityTerminalRemoveRequest(
+    msg: UtilityTerminalRemoveRequest,
+  ): Promise<void> {
+    this.ensureUtilityTerminalSubscription();
+    try {
+      const removed = await this.requireUtilityTerminalService().remove(msg.id);
+      this.emit({
+        type: "utility_terminal.remove.response",
+        payload: { requestId: msg.requestId, id: msg.id, removed, error: null },
+      });
+    } catch (error) {
+      this.emit({
+        type: "utility_terminal.remove.response",
+        payload: {
+          requestId: msg.requestId,
+          id: msg.id,
+          removed: false,
+          error: this.errorMessage(error),
+        },
+      });
+    }
+  }
+
+  private requireUtilityTerminalService(): UtilityTerminalService {
+    if (!this.utilityTerminalService) {
+      throw new Error("Utility terminal service is not available");
+    }
+    return this.utilityTerminalService;
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
   }
 
   private async getAllTerminalSessions(): Promise<TerminalSession[]> {
@@ -562,7 +720,7 @@ export class TerminalSessionController {
             id: session.id,
             name: session.name,
             cwd: session.cwd,
-            workspaceId: session.workspaceId,
+            ...(session.workspaceId !== undefined ? { workspaceId: session.workspaceId } : {}),
             ...(session.getTitle() ? { title: session.getTitle() } : {}),
             activity: session.getActivity(),
           },

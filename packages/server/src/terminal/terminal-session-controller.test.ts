@@ -7,12 +7,16 @@ import {
   decodeTerminalStreamFrame,
   type TerminalStreamFrame,
 } from "@getpaseo/protocol/binary-frames/index";
-import type { TerminalCell, TerminalState } from "@getpaseo/protocol/messages";
+import type { TerminalCell, TerminalState, UtilityTerminalInfo } from "@getpaseo/protocol/messages";
 import type { ServerMessage, TerminalSession, TerminalStateSnapshot } from "./terminal.js";
 import { TerminalSessionController } from "./terminal-session-controller.js";
 import type { TerminalManager, TerminalsChangedEvent } from "./terminal-manager.js";
 import { isSameOrDescendantPath } from "../server/path-utils.js";
 import { PluginSessionSocket } from "../server/plugins/session-socket.js";
+import type {
+  UtilityTerminalListener,
+  UtilityTerminalService,
+} from "./utility-terminal-service.js";
 
 function deferred<T>(): {
   promise: Promise<T>;
@@ -183,6 +187,64 @@ function listSession(input: {
     killAndWait: vi.fn(),
   };
 }
+
+describe("terminal-session-controller utility terminals", () => {
+  test("lists utility terminals and subscribes the requesting client to changes", async () => {
+    const outboundMessages: SessionOutboundMessage[] = [];
+    let changeListener: UtilityTerminalListener | null = null;
+    const terminal: UtilityTerminalInfo = {
+      id: "utility-1",
+      name: "Process Compose",
+      cwd: "/repo",
+      command: "process-compose",
+      args: [],
+      status: "running",
+      terminalId: "terminal-1",
+      exitCode: null,
+      createdAt: "2026-08-29T00:00:00.000Z",
+      updatedAt: "2026-08-29T00:00:00.000Z",
+    };
+    const utilityTerminalService: UtilityTerminalService = {
+      list: () => [terminal],
+      create: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      remove: vi.fn(),
+      subscribe(listener) {
+        changeListener = listener;
+        return () => {
+          changeListener = null;
+        };
+      },
+    };
+    const controller = new TerminalSessionController({
+      terminalManager: null,
+      utilityTerminalService,
+      emit: (message) => outboundMessages.push(message),
+      emitBinary: vi.fn(),
+      hasBinaryChannel: () => true,
+      isPathWithinRoot: isSameOrDescendantPath,
+      sessionLogger: createLogger(),
+    });
+
+    await controller.dispatch({ type: "utility_terminal.list.request", requestId: "req-list" });
+
+    expect(outboundMessages).toEqual([
+      {
+        type: "utility_terminal.list.response",
+        payload: { requestId: "req-list", terminals: [terminal], error: null },
+      },
+    ]);
+    if (!changeListener) {
+      throw new Error("Expected a utility terminal change subscription");
+    }
+    changeListener([{ ...terminal, status: "stopped", terminalId: null }]);
+    expect(outboundMessages.at(-1)).toEqual({
+      type: "utility_terminals.changed",
+      payload: { terminals: [{ ...terminal, status: "stopped", terminalId: null }] },
+    });
+  });
+});
 
 describe("terminal-session-controller legacy terminal creation", () => {
   test("resolves a missing workspaceId from the active workspace root", async () => {

@@ -6,8 +6,7 @@ import { createValidatedPersistStorage } from "@/storage/validated-persist-stora
 
 export interface UtilityTrayTarget {
   serverId: string;
-  workspaceId: string;
-  scriptName: string;
+  utilityTerminalId: string;
 }
 
 interface UtilityTrayState {
@@ -20,8 +19,7 @@ interface UtilityTrayState {
 
 const UtilityTrayTargetSchema = z.strictObject({
   serverId: z.string().trim().min(1),
-  workspaceId: z.string().trim().min(1),
-  scriptName: z.string().trim().min(1),
+  utilityTerminalId: z.string().trim().min(1),
 });
 
 const UtilityTrayPersistedStateSchema = z.strictObject({

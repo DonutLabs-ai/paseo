@@ -90,6 +90,11 @@ import type {
   AgentRewindResponseMessage,
   ListTerminalsResponse,
   CreateTerminalResponse,
+  UtilityTerminalListResponse,
+  UtilityTerminalCreateResponse,
+  UtilityTerminalStartResponse,
+  UtilityTerminalStopResponse,
+  UtilityTerminalRemoveResponse,
   SubscribeTerminalResponse,
   SubscribeTerminalRequest,
   CloseItemsResponse,
@@ -501,6 +506,11 @@ type DictationFinishAcceptedPayload = Extract<
 type AgentPermissionResolvedPayload = AgentPermissionResolvedMessage["payload"];
 type ListTerminalsPayload = ListTerminalsResponse["payload"];
 type CreateTerminalPayload = CreateTerminalResponse["payload"];
+export type UtilityTerminalListPayload = UtilityTerminalListResponse["payload"];
+export type UtilityTerminalCreatePayload = UtilityTerminalCreateResponse["payload"];
+export type UtilityTerminalStartPayload = UtilityTerminalStartResponse["payload"];
+export type UtilityTerminalStopPayload = UtilityTerminalStopResponse["payload"];
+export type UtilityTerminalRemovePayload = UtilityTerminalRemoveResponse["payload"];
 export type RenameTerminalResult = z.infer<typeof RenameTerminalResponseSchema>["payload"];
 type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
 type CloseItemsPayload = CloseItemsResponse["payload"];
@@ -5243,6 +5253,58 @@ export class DaemonClient {
       type: "unsubscribe_terminals_request",
       cwd: input.cwd,
       ...(input.workspaceId !== undefined ? { workspaceId: input.workspaceId } : {}),
+    });
+  }
+
+  async listUtilityTerminals(requestId?: string): Promise<UtilityTerminalListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"utility_terminal.list.response">({
+      requestId,
+      message: { type: "utility_terminal.list.request" },
+    });
+  }
+
+  async createUtilityTerminal(
+    input: {
+      name: string;
+      cwd: string;
+      command?: string | null;
+      args?: string[];
+    },
+    requestId?: string,
+  ): Promise<UtilityTerminalCreatePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"utility_terminal.create.response">({
+      requestId,
+      message: {
+        type: "utility_terminal.create.request",
+        name: input.name,
+        cwd: input.cwd,
+        command: input.command,
+        args: input.args,
+      },
+    });
+  }
+
+  async startUtilityTerminal(id: string, requestId?: string): Promise<UtilityTerminalStartPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"utility_terminal.start.response">({
+      requestId,
+      message: { type: "utility_terminal.start.request", id },
+    });
+  }
+
+  async stopUtilityTerminal(id: string, requestId?: string): Promise<UtilityTerminalStopPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"utility_terminal.stop.response">({
+      requestId,
+      message: { type: "utility_terminal.stop.request", id },
+    });
+  }
+
+  async removeUtilityTerminal(
+    id: string,
+    requestId?: string,
+  ): Promise<UtilityTerminalRemovePayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"utility_terminal.remove.response">({
+      requestId,
+      message: { type: "utility_terminal.remove.request", id },
     });
   }
 

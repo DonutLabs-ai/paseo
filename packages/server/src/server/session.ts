@@ -27,6 +27,7 @@ import type {
   TerminalWorkspaceContributionChangedEvent,
 } from "../terminal/terminal-manager.js";
 import { TerminalSessionController } from "../terminal/terminal-session-controller.js";
+import type { UtilityTerminalService } from "../terminal/utility-terminal-service.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import type { BinaryFrame } from "@getpaseo/protocol/binary-frames/index";
 import { CursorError } from "./pagination/cursor.js";
@@ -500,6 +501,7 @@ export interface SessionOptions {
   sttLanguage?: string;
   tts: Resolvable<TextToSpeechProvider | null>;
   terminalManager: TerminalManager | null;
+  utilityTerminalService?: UtilityTerminalService | null;
   providerSnapshotManager: ProviderSnapshotManager;
   providerUsageService: ProviderUsageService;
   hubExecutionAgents?: HubExecutionAgents;
@@ -987,6 +989,7 @@ export class Session {
     this.terminalManager = terminalManager;
     this.terminalController = new TerminalSessionController({
       terminalManager,
+      utilityTerminalService: options.utilityTerminalService,
       emit: (msg) => this.emit(msg),
       emitBinary: (frame) => this.emitBinary(frame),
       hasBinaryChannel: () => this.onBinaryMessage !== null,

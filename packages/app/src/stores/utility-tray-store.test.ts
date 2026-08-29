@@ -22,20 +22,18 @@ describe("utility tray store", () => {
     storage = createMemoryStorage();
   });
 
-  it("persists the script identity without persisting visibility", async () => {
+  it("persists the utility terminal identity without persisting visibility", async () => {
     const first = createUtilityTrayStore(storage);
     first.getState().selectTarget({
       serverId: "server-1",
-      workspaceId: "workspace-1",
-      scriptName: "watchers",
+      utilityTerminalId: "utility-1",
     });
 
     const second = createUtilityTrayStore(storage);
     await second.persist.rehydrate();
     expect(second.getState().target).toEqual({
       serverId: "server-1",
-      workspaceId: "workspace-1",
-      scriptName: "watchers",
+      utilityTerminalId: "utility-1",
     });
     expect(second.getState().isOpen).toBe(false);
   });
