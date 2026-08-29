@@ -7,16 +7,18 @@ import {
   Text,
   View,
   type GestureResponderEvent,
+  type LayoutChangeEvent,
   type PressableStateCallbackType,
   type ViewStyle,
 } from "react-native";
-import { Columns2, GitBranch, GitPullRequest, Plus, Rows2, X } from "lucide-react-native";
+import { ArrowUp, Columns2, GitBranch, GitPullRequest, Plus, Rows2, X } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { router } from "expo-router";
 import { SidebarMenuToggle } from "@/components/headers/menu-header";
 import { ScreenHeader } from "@/components/headers/screen-header";
 import { ScreenTitle } from "@/components/headers/screen-title";
 import { DiffStat } from "@/components/diff-stat";
+import { AdaptiveTextInput } from "@/components/adaptive-text-input";
 import { StatusRing } from "@/components/status-ring";
 import { STATUS_RING_FRAME_SIZE } from "@/components/status-ring/geometry";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
@@ -48,7 +50,17 @@ import { findAdjacentPane } from "@/utils/split-navigation";
 import type { SplitNode, SplitPane } from "@/stores/workspace-layout-store";
 import { useWorkspaceArchive } from "@/workspace/use-workspace-archive";
 import { toWorktreeArchiveRisk } from "@/git/worktree-archive-warning";
+import {
+  dispatchComposerAgentMessage,
+  queueComposerMessage,
+  type QueueWriter,
+} from "@/composer/actions";
+import { createMessageSubmissionWriter } from "@/composer/submission/writer";
+import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
+import { selectAgentTurnPresentation, useSessionStore } from "@/stores/session-store";
 import { CockpitToggleButton } from "./cockpit-toggle-button";
+import { shouldShowCockpitQuickReply } from "./cockpit-card-presentation";
+import { resolveCockpitQuickReplyAction } from "./cockpit-quick-reply";
 import {
   COCKPIT_CARD_GAP,
   COCKPIT_HORIZONTAL_PADDING,
@@ -72,6 +84,15 @@ const PR_STATE_LABEL_KEYS = {
   merged: "workspace.git.pr.states.merged",
   closed: "workspace.git.pr.states.closed",
 } as const;
+
+interface CockpitCardSize {
+  width: number;
+  height: number;
+}
+
+function encodeNoQuickReplyImages(): Promise<Array<{ data: string; mimeType: string }>> {
+  return Promise.resolve([]);
+}
 
 function collectWorkspaceKeys(projects: readonly SidebarProjectEntry[]): string[] {
   const keys: string[] = [];
@@ -456,6 +477,7 @@ function CockpitWorkspaceCard({
 }) {
   const { t } = useTranslation();
   const [isArchiving, setIsArchiving] = useState(false);
+  const [cardSize, setCardSize] = useState<CockpitCardSize>({ width: 0, height: 0 });
   const archiveController = useWorkspaceArchive({
     serverId: workspace.serverId,
     workspaceId: workspace.workspaceId,
@@ -490,83 +512,110 @@ function CockpitWorkspaceCard({
   });
 
   const accessibilityLabel = `${title}, ${t(STATUS_LABEL_KEYS[workspace.statusBucket])}`;
-  const cardStyle = useCallback(
-    (state: PressableStateCallbackType & { hovered?: boolean }) =>
-      cockpitCardStyle(state, isFocused),
+  const rootStyle = useMemo(
+    () => [styles.card, isFocused ? styles.cardFocused : null],
     [isFocused],
   );
+  const handleLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextSize = {
+      width: Math.floor(event.nativeEvent.layout.width),
+      height: Math.floor(event.nativeEvent.layout.height),
+    };
+    setCardSize((current) =>
+      current.width === nextSize.width && current.height === nextSize.height ? current : nextSize,
+    );
+  }, []);
+  const showQuickReply = shouldShowCockpitQuickReply({
+    ...cardSize,
+    hasAgent: workspace.agentId !== null,
+  });
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
+    <View
       onFocus={handleFocus}
-      onPressIn={handleFocus}
-      onPress={handlePress}
-      style={cardStyle}
+      onLayout={handleLayout}
+      style={rootStyle}
       testID={`cockpit-workspace-card-${workspace.workspaceKey}`}
     >
-      <View style={styles.cardHeader}>
-        <CockpitStatusIndicator bucket={workspace.statusBucket} />
-        <View style={styles.cardTitleGroup}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
-            {title}
-          </Text>
-          <Text style={styles.statusText} numberOfLines={1}>
-            {t(STATUS_LABEL_KEYS[workspace.statusBucket])}
-          </Text>
-        </View>
-        {workspace.diffStat ? (
-          <DiffStat
-            additions={workspace.diffStat.additions}
-            deletions={workspace.diffStat.deletions}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        onFocus={handleFocus}
+        onPressIn={handleFocus}
+        onPress={handlePress}
+        style={cockpitCardContentStyle}
+      >
+        <View style={styles.cardHeader}>
+          <CockpitStatusIndicator bucket={workspace.statusBucket} />
+          <View style={styles.cardTitleGroup}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {title}
+            </Text>
+            <Text style={styles.statusText} numberOfLines={1}>
+              {t(STATUS_LABEL_KEYS[workspace.statusBucket])}
+            </Text>
+          </View>
+          {workspace.diffStat ? (
+            <DiffStat
+              additions={workspace.diffStat.additions}
+              deletions={workspace.diffStat.deletions}
+            />
+          ) : null}
+          <CockpitPaneActions
+            paneId={pane.id}
+            closeLabel={t("sidebar.workspace.actions.archiveWorkspace")}
+            closeDisabled={isArchiving}
+            onFocus={onFocus}
+            onSplit={onSplit}
+            onClose={handleArchive}
           />
-        ) : null}
-        <CockpitPaneActions
-          paneId={pane.id}
-          closeLabel={t("sidebar.workspace.actions.archiveWorkspace")}
-          closeDisabled={isArchiving}
-          onFocus={onFocus}
-          onSplit={onSplit}
-          onClose={handleArchive}
+        </View>
+
+        <View style={styles.metaRow}>
+          {projectName ? (
+            <Text style={styles.projectName} numberOfLines={1}>
+              {projectName}
+            </Text>
+          ) : null}
+          {workspace.currentBranch ? (
+            <View style={styles.metaItem}>
+              <ThemedGitBranch size={13} />
+              <Text style={styles.metaText} numberOfLines={1}>
+                {workspace.currentBranch}
+              </Text>
+            </View>
+          ) : null}
+          {workspace.prHint ? (
+            <View style={styles.metaItem}>
+              <ThemedGitPullRequest size={13} />
+              <Text style={styles.metaText} numberOfLines={1}>
+                #{workspace.prHint.number} · {t(PR_STATE_LABEL_KEYS[workspace.prHint.state])}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <CockpitCardActivity workspace={workspace} />
+      </Pressable>
+      {showQuickReply && workspace.agentId ? (
+        <CockpitQuickReply
+          agentId={workspace.agentId}
+          serverId={workspace.serverId}
+          onFocus={handleFocus}
         />
-      </View>
+      ) : null}
+    </View>
+  );
+}
 
-      <View style={styles.metaRow}>
-        {projectName ? (
-          <Text style={styles.projectName} numberOfLines={1}>
-            {projectName}
-          </Text>
-        ) : null}
-        {workspace.currentBranch ? (
-          <View style={styles.metaItem}>
-            <ThemedGitBranch size={13} />
-            <Text style={styles.metaText} numberOfLines={1}>
-              {workspace.currentBranch}
-            </Text>
-          </View>
-        ) : null}
-        {workspace.prHint ? (
-          <View style={styles.metaItem}>
-            <ThemedGitPullRequest size={13} />
-            <Text style={styles.metaText} numberOfLines={1}>
-              #{workspace.prHint.number} · {t(PR_STATE_LABEL_KEYS[workspace.prHint.state])}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-
-      <ActivityBlock
-        label={t("cockpit.labels.latestReply")}
-        text={workspace.latestReply}
-        emptyText={
-          workspace.latestPrompt
-            ? t("cockpit.empty.waitingForReply")
-            : t("cockpit.empty.noActivity")
-        }
-        emphasized={workspace.activityPreviewKind === "reply"}
-        lines={3}
-      />
+function CockpitCardActivity({ workspace }: { workspace: SidebarWorkspaceEntry }) {
+  const { t } = useTranslation();
+  const newestRepliesFirst = useMemo(
+    () => workspace.recentReplies.toReversed(),
+    [workspace.recentReplies],
+  );
+  return (
+    <View style={styles.activityRegion}>
       {workspace.latestPrompt ? (
         <ActivityBlock
           label={t("cockpit.labels.prompt")}
@@ -576,7 +625,207 @@ function CockpitWorkspaceCard({
           lines={2}
         />
       ) : null}
-    </Pressable>
+      <View style={styles.repliesBlock}>
+        <Text
+          style={
+            workspace.activityPreviewKind === "reply"
+              ? styles.activityLabelCurrent
+              : styles.activityLabel
+          }
+        >
+          {t("cockpit.labels.recentReplies")}
+        </Text>
+        {newestRepliesFirst.length > 0 ? (
+          <View style={styles.repliesViewport}>
+            {newestRepliesFirst.map((reply, index) => (
+              <View key={reply.id} style={styles.replyItem}>
+                <Text
+                  style={index === 0 ? styles.replyTextLatest : styles.replyText}
+                  numberOfLines={4}
+                >
+                  {reply.text}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.activityTextEmpty} numberOfLines={2}>
+            {workspace.latestPrompt
+              ? t("cockpit.empty.waitingForReply")
+              : t("cockpit.empty.noActivity")}
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function CockpitQuickReply({
+  serverId,
+  agentId,
+  onFocus,
+}: {
+  serverId: string;
+  agentId: string;
+  onFocus: () => void;
+}) {
+  const { t } = useTranslation();
+  const {
+    settings: { sendBehavior },
+  } = useAppSettings();
+  const client = useHostRuntimeClient(serverId);
+  const isConnected = useHostRuntimeIsConnected(serverId);
+  const setQueuedMessages = useSessionStore((state) => state.setQueuedMessages);
+  const isAgentRunning = useSessionStore(
+    (state) => selectAgentTurnPresentation(state.sessions[serverId], agentId).isActive,
+  );
+  const hasPendingPermission = useSessionStore((state) => {
+    const permissions = state.sessions[serverId]?.pendingPermissions;
+    if (!permissions) return false;
+    for (const permission of permissions.values()) {
+      if (permission.agentId === agentId) return true;
+    }
+    return false;
+  });
+  const [draft, setDraft] = useState("");
+  const [resetKey, setResetKey] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const quickReplyAction = useMemo(
+    () =>
+      resolveCockpitQuickReplyAction({
+        sendBehavior,
+        isAgentRunning,
+        hasPendingPermission,
+      }),
+    [hasPendingPermission, isAgentRunning, sendBehavior],
+  );
+  const queueWriter = useMemo<QueueWriter>(
+    () => ({
+      read: (targetAgentId) =>
+        useSessionStore.getState().sessions[serverId]?.queuedMessages.get(targetAgentId) ?? [],
+      write: (updater) => setQueuedMessages(serverId, updater),
+    }),
+    [serverId, setQueuedMessages],
+  );
+
+  const submit = useCallback(async () => {
+    const text = draft.trim();
+    if (!text || isSubmitting) return;
+    setError(null);
+    if (quickReplyAction.kind === "queue") {
+      const result = queueComposerMessage({
+        agentId,
+        text,
+        attachments: [],
+        queue: queueWriter,
+      });
+      if (!result.queued) return;
+      setDraft("");
+      setResetKey((current) => current + 1);
+      return;
+    }
+    if (!client || !isConnected) {
+      setError(t("workspace.terminal.hostDisconnected"));
+      return;
+    }
+
+    const activeTurnId =
+      quickReplyAction.activeTurnBehavior === "steer"
+        ? (useSessionStore.getState().sessions[serverId]?.agents.get(agentId)?.activeTurn?.turnId ??
+          undefined)
+        : undefined;
+    setIsSubmitting(true);
+    try {
+      await dispatchComposerAgentMessage({
+        client,
+        agentId,
+        text,
+        attachments: [],
+        encodeImages: encodeNoQuickReplyImages,
+        submission: createMessageSubmissionWriter(serverId),
+        activeTurnBehavior: quickReplyAction.activeTurnBehavior,
+        activeTurnId,
+      });
+      setDraft("");
+      setResetKey((current) => current + 1);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : t("composer.errors.failedToSend"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [
+    agentId,
+    client,
+    draft,
+    isConnected,
+    isSubmitting,
+    queueWriter,
+    quickReplyAction,
+    serverId,
+    t,
+  ]);
+  const handleSubmit = useCallback(() => {
+    void submit();
+  }, [submit]);
+  const handleChangeText = useCallback((text: string) => {
+    setDraft(text);
+    setError(null);
+  }, []);
+  const requiresConnection = quickReplyAction.kind === "send";
+  const sendDisabled =
+    isSubmitting || (requiresConnection && !isConnected) || draft.trim().length === 0;
+  const sendAccessibilityState = useMemo(() => ({ disabled: sendDisabled }), [sendDisabled]);
+  const sendButtonStyle = useCallback(
+    (state: PressableStateCallbackType & { hovered?: boolean }) => {
+      const result = quickReplySendButtonStyle(state);
+      if (sendDisabled) result.push(styles.quickReplySendButtonDisabled);
+      return result;
+    },
+    [sendDisabled],
+  );
+
+  return (
+    <View style={styles.quickReplyArea}>
+      <View style={styles.quickReplyRow}>
+        <AdaptiveTextInput
+          accessibilityLabel={t("composer.input.accessibilityLabel")}
+          autoCapitalize="sentences"
+          autoCorrect
+          blurOnSubmit={false}
+          editable={!isSubmitting && (!requiresConnection || isConnected)}
+          initialValue=""
+          onChangeText={handleChangeText}
+          onFocus={onFocus}
+          onSubmitEditing={handleSubmit}
+          placeholder={t("composer.placeholders.fallback")}
+          resetKey={resetKey}
+          returnKeyType="send"
+          style={styles.quickReplyInput}
+          testID={`cockpit-quick-reply-input-${agentId}`}
+        />
+        <Pressable
+          accessibilityLabel={t("composer.input.sendMessage")}
+          accessibilityRole="button"
+          accessibilityState={sendAccessibilityState}
+          disabled={sendDisabled}
+          onPress={handleSubmit}
+          style={sendButtonStyle}
+          testID={`cockpit-quick-reply-send-${agentId}`}
+        >
+          {isSubmitting ? (
+            <LoadingSpinner color={styles.spinner.color} size="small" />
+          ) : (
+            <ThemedArrowUp size={15} />
+          )}
+        </Pressable>
+      </View>
+      {error ? (
+        <Text style={styles.quickReplyError} numberOfLines={1}>
+          {error}
+        </Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -756,14 +1005,21 @@ function ActivityBlock({
   );
 }
 
-function cockpitCardStyle(
+function cockpitCardContentStyle(
   state: PressableStateCallbackType & { hovered?: boolean },
-  focused: boolean,
 ): ViewStyle[] {
-  const result: ViewStyle[] = [styles.card];
+  const result: ViewStyle[] = [styles.cardContent];
   if (state.hovered) result.push(styles.cardHovered);
   if (state.pressed) result.push(styles.cardPressed);
-  if (focused) result.push(styles.cardFocused);
+  return result;
+}
+
+function quickReplySendButtonStyle(
+  state: PressableStateCallbackType & { hovered?: boolean },
+): ViewStyle[] {
+  const result: ViewStyle[] = [styles.quickReplySendButton];
+  if (state.hovered) result.push(styles.quickReplySendButtonHovered);
+  if (state.pressed) result.push(styles.quickReplySendButtonPressed);
   return result;
 }
 
@@ -791,6 +1047,9 @@ const ThemedClose = withUnistyles(X, (theme) => ({
 }));
 const ThemedPlus = withUnistyles(Plus, (theme) => ({
   color: theme.colors.foregroundMuted,
+}));
+const ThemedArrowUp = withUnistyles(ArrowUp, (theme) => ({
+  color: theme.colors.foreground,
 }));
 
 const styles = StyleSheet.create((theme) => ({
@@ -840,19 +1099,23 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     minHeight: 210,
-    padding: theme.spacing[4],
-    gap: theme.spacing[3],
     borderRadius: theme.borderRadius.xl,
     borderWidth: theme.borderWidth[1],
     borderColor: theme.colors.borderAccent,
     backgroundColor: theme.colors.surface1,
+    overflow: "hidden",
+  },
+  cardContent: {
+    flex: 1,
+    minHeight: 0,
+    padding: theme.spacing[4],
+    gap: theme.spacing[3],
     userSelect: "none",
   },
   cardFocused: {
     borderColor: theme.colors.accent,
   },
   cardHovered: {
-    borderColor: theme.colors.surface3,
     backgroundColor: theme.colors.surface2,
   },
   cardPressed: {
@@ -943,6 +1206,41 @@ const styles = StyleSheet.create((theme) => ({
   activityBlock: {
     gap: theme.spacing[1],
   },
+  activityRegion: {
+    flex: 1,
+    minHeight: 0,
+    gap: theme.spacing[3],
+  },
+  repliesBlock: {
+    flex: 1,
+    minHeight: 0,
+    gap: theme.spacing[1],
+  },
+  repliesViewport: {
+    flex: 1,
+    minHeight: 0,
+    flexDirection: "column-reverse",
+    overflow: "hidden",
+    gap: theme.spacing[2],
+  },
+  replyItem: {
+    flexShrink: 0,
+    paddingTop: theme.spacing[2],
+    borderTopWidth: theme.borderWidth[1],
+    borderTopColor: theme.colors.border,
+  },
+  replyText: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.base,
+    fontWeight: theme.fontWeight.normal,
+    lineHeight: 20,
+  },
+  replyTextLatest: {
+    color: theme.colors.foreground,
+    fontSize: theme.fontSize.base,
+    fontWeight: theme.fontWeight.normal,
+    lineHeight: 20,
+  },
   activityLabel: {
     color: theme.colors.foregroundExtraMuted,
     fontSize: theme.fontSize.sm,
@@ -964,6 +1262,55 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.normal,
     lineHeight: 20,
+  },
+  quickReplyArea: {
+    flexShrink: 0,
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    gap: theme.spacing[1],
+    borderTopWidth: theme.borderWidth[1],
+    borderTopColor: theme.colors.border,
+    backgroundColor: theme.colors.surface1,
+  },
+  quickReplyRow: {
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+  },
+  quickReplyInput: {
+    flex: 1,
+    minWidth: 0,
+    height: 32,
+    paddingHorizontal: theme.spacing[2],
+    paddingVertical: theme.spacing[1],
+    borderWidth: theme.borderWidth[1],
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface0,
+    fontSize: theme.fontSize.sm,
+  },
+  quickReplySendButton: {
+    width: 30,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surface2,
+  },
+  quickReplySendButtonHovered: {
+    backgroundColor: theme.colors.surface3,
+  },
+  quickReplySendButtonPressed: {
+    opacity: 0.72,
+  },
+  quickReplySendButtonDisabled: {
+    opacity: 0.4,
+  },
+  quickReplyError: {
+    color: theme.colors.destructive,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 15,
   },
   emptyPane: {
     padding: theme.spacing[2],

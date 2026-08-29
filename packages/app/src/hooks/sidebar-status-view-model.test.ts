@@ -36,6 +36,7 @@ function ws(
     agentId: null,
     latestPrompt: null,
     latestReply: null,
+    recentReplies: [],
     activityPreview: null,
     activityPreviewKind: null,
     workspaceKey: input.workspaceKey,

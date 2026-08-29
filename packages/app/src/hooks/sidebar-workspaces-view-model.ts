@@ -14,6 +14,7 @@ import { shortenPath } from "@/utils/shorten-path";
 import type { WorkspaceAgentActivity } from "@/utils/workspace-agent-activity";
 import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
 import { selectWorkspaceActivityPreview } from "@/utils/workspace-activity-preview";
+import type { WorkspaceReplyPreview } from "@/utils/workspace-activity-preview";
 
 const EMPTY_PROJECTS: SidebarProjectEntry[] = [];
 
@@ -57,6 +58,7 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   agentId: string | null;
   latestPrompt: string | null;
   latestReply: string | null;
+  recentReplies: WorkspaceReplyPreview[];
   activityPreview: string | null;
   activityPreviewKind: "prompt" | "reply" | null;
 }
@@ -179,6 +181,7 @@ export function createSidebarWorkspaceEntry(input: {
     : {
         latestPrompt: null,
         latestReply: null,
+        recentReplies: [],
         activityPreview: null,
         activityPreviewKind: null,
       };

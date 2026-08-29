@@ -1040,6 +1040,7 @@ export const ar: TranslationResources = {
     },
     labels: {
       latestReply: "أحدث رد",
+      recentReplies: "الردود الأخيرة",
       prompt: "المطالبة",
     },
     empty: {

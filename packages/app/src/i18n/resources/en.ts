@@ -1049,6 +1049,7 @@ export const en = {
     },
     labels: {
       latestReply: "Latest reply",
+      recentReplies: "Recent replies",
       prompt: "Prompt",
     },
     empty: {

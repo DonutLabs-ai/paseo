@@ -36,6 +36,7 @@ function workspace(
     agentId: null,
     latestPrompt: null,
     latestReply: null,
+    recentReplies: [],
     activityPreview: null,
     activityPreviewKind: null,
   };

@@ -1032,6 +1032,7 @@ export const zhCN: TranslationResources = {
     },
     labels: {
       latestReply: "最新回复",
+      recentReplies: "最近回复",
       prompt: "任务",
     },
     empty: {

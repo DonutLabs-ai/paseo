@@ -1047,6 +1047,7 @@ export const ko: TranslationResources = {
     },
     labels: {
       latestReply: "최신 답변",
+      recentReplies: "최근 답변",
       prompt: "프롬프트",
     },
     empty: {

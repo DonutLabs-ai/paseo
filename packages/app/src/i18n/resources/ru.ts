@@ -1055,6 +1055,7 @@ export const ru: TranslationResources = {
     },
     labels: {
       latestReply: "Последний ответ",
+      recentReplies: "Последние ответы",
       prompt: "Запрос",
     },
     empty: {

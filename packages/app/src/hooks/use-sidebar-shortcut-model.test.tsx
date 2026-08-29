@@ -39,6 +39,7 @@ function workspace(projectKey: string, workspaceId: string): SidebarWorkspaceEnt
     agentId: null,
     latestPrompt: null,
     latestReply: null,
+    recentReplies: [],
     activityPreview: null,
     activityPreviewKind: null,
   };

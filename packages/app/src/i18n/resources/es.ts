@@ -1074,6 +1074,7 @@ export const es: TranslationResources = {
     },
     labels: {
       latestReply: "Última respuesta",
+      recentReplies: "Respuestas recientes",
       prompt: "Instrucción",
     },
     empty: {

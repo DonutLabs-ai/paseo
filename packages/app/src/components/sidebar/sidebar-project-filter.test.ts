@@ -31,6 +31,7 @@ function workspace(workspaceId: string, projectViewKey: string): SidebarWorkspac
     agentId: null,
     latestPrompt: null,
     latestReply: null,
+    recentReplies: [],
     activityPreview: null,
     activityPreviewKind: null,
   };

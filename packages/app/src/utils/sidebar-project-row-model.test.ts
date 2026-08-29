@@ -34,6 +34,7 @@ function workspace(overrides: Partial<SidebarWorkspaceEntry> = {}): SidebarWorks
     agentId: null,
     latestPrompt: null,
     latestReply: null,
+    recentReplies: [],
     activityPreview: null,
     activityPreviewKind: null,
     statusEnteredAt: null,

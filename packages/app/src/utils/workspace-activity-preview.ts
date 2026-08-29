@@ -3,6 +3,7 @@ import { createMarkdownParser } from "@/utils/markdown-parser";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
 
 const MAX_PREVIEW_LENGTH = 1_000;
+const MAX_RECENT_REPLIES = 6;
 const INTERNAL_CITATION_BLOCK = /<(oai-[a-z0-9-]+-citation)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi;
 const previewMarkdownParser = createMarkdownParser({ linkify: true });
 // Preview projection never opens a parsed destination. Accept every scheme so local file images
@@ -13,11 +14,18 @@ previewMarkdownParser.validateLink = () => true;
 export interface WorkspaceActivityPreview {
   latestPrompt: string | null;
   latestReply: string | null;
+  recentReplies: WorkspaceReplyPreview[];
   activityPreview: string | null;
   activityPreviewKind: "prompt" | "reply" | null;
 }
 
+export interface WorkspaceReplyPreview {
+  id: string;
+  text: string;
+}
+
 interface PreviewMessage {
+  id: string;
   text: string;
   timestamp: Date;
 }
@@ -79,10 +87,46 @@ function findLatestMessage(
     }
     const text = normalizePreviewText(item.text);
     if (text) {
-      return { text, timestamp: item.timestamp };
+      return { id: item.id, text, timestamp: item.timestamp };
     }
   }
   return null;
+}
+
+function collectRecentMessages(input: {
+  tail: readonly StreamItem[];
+  head: readonly StreamItem[];
+  kind: "user_message" | "assistant_message";
+  limit: number;
+}): PreviewMessage[] {
+  const messagesById = new Map<string, PreviewMessage & { order: number }>();
+  const collect = (items: readonly StreamItem[], orderOffset: number) => {
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      if (item?.kind !== input.kind) continue;
+      const text = normalizePreviewText(item.text);
+      if (!text) continue;
+      const order = orderOffset + index;
+      const candidate = { id: item.id, text, timestamp: item.timestamp, order };
+      const existing = messagesById.get(item.id);
+      if (
+        !existing ||
+        candidate.timestamp > existing.timestamp ||
+        (candidate.timestamp.getTime() === existing.timestamp.getTime() &&
+          candidate.order > existing.order)
+      ) {
+        messagesById.set(item.id, candidate);
+      }
+    }
+  };
+  collect(input.tail, 0);
+  collect(input.head, input.tail.length);
+  return Array.from(messagesById.values())
+    .sort(
+      (left, right) =>
+        left.timestamp.getTime() - right.timestamp.getTime() || left.order - right.order,
+    )
+    .slice(-input.limit);
 }
 
 function selectLatestMessage(input: {
@@ -116,7 +160,12 @@ export function selectWorkspaceActivityPreview(input: {
   status: SidebarStateBucket;
 }): WorkspaceActivityPreview {
   const prompt = selectLatestMessage({ ...input, kind: "user_message" });
-  const reply = selectLatestMessage({ ...input, kind: "assistant_message" });
+  const recentReplyMessages = collectRecentMessages({
+    ...input,
+    kind: "assistant_message",
+    limit: MAX_RECENT_REPLIES,
+  });
+  const reply = recentReplyMessages.at(-1) ?? null;
   const shouldShowPrompt =
     input.status === "running" &&
     prompt !== null &&
@@ -130,6 +179,7 @@ export function selectWorkspaceActivityPreview(input: {
   return {
     latestPrompt: prompt?.text ?? null,
     latestReply: reply?.text ?? null,
+    recentReplies: recentReplyMessages.map(({ id, text }) => ({ id, text })),
     activityPreview: activity?.text ?? null,
     activityPreviewKind,
   };

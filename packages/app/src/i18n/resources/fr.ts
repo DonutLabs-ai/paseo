@@ -1073,6 +1073,7 @@ export const fr: TranslationResources = {
     },
     labels: {
       latestReply: "Dernière réponse",
+      recentReplies: "Réponses récentes",
       prompt: "Instruction",
     },
     empty: {

@@ -45,6 +45,7 @@ function workspace(input: {
     agentId: null,
     latestPrompt: null,
     latestReply: null,
+    recentReplies: [],
     activityPreview: null,
     activityPreviewKind: null,
   };

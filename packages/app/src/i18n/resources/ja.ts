@@ -1051,6 +1051,7 @@ export const ja: TranslationResources = {
     },
     labels: {
       latestReply: "最新の返信",
+      recentReplies: "最近の返信",
       prompt: "プロンプト",
     },
     empty: {

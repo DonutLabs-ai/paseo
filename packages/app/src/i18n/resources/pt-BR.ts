@@ -1065,6 +1065,7 @@ export const ptBR: TranslationResources = {
     },
     labels: {
       latestReply: "Resposta mais recente",
+      recentReplies: "Respostas recentes",
       prompt: "Instrução",
     },
     empty: {

@@ -29,9 +29,53 @@ describe("selectWorkspaceActivityPreview", () => {
     expect(result).toEqual({
       latestPrompt: "Old prompt",
       latestReply: "Implementing the cockpit now.",
+      recentReplies: [
+        { id: "assistant_message-2", text: "Old reply" },
+        { id: "assistant_message-3", text: "Implementing the cockpit now." },
+      ],
       activityPreview: "Implementing the cockpit now.",
       activityPreviewKind: "reply",
     });
+  });
+
+  it("keeps recent replies in chronological order and deduplicates reconciled messages", () => {
+    const result = selectWorkspaceActivityPreview({
+      tail: [
+        message("assistant_message", "First", 1),
+        message("assistant_message", "Second from tail", 2),
+      ],
+      head: [
+        { ...message("assistant_message", "Second from head", 2), id: "assistant_message-2" },
+        message("assistant_message", "Third", 3),
+      ],
+      status: "done",
+    });
+
+    expect(result.recentReplies).toEqual([
+      { id: "assistant_message-1", text: "First" },
+      { id: "assistant_message-2", text: "Second from head" },
+      { id: "assistant_message-3", text: "Third" },
+    ]);
+    expect(result.latestReply).toBe("Third");
+  });
+
+  it("limits reply history to the six newest replies", () => {
+    const result = selectWorkspaceActivityPreview({
+      tail: Array.from({ length: 8 }, (_, index) =>
+        message("assistant_message", `Reply ${index + 1}`, index + 1),
+      ),
+      head: [],
+      status: "done",
+    });
+
+    expect(result.recentReplies.map((reply) => reply.text)).toEqual([
+      "Reply 3",
+      "Reply 4",
+      "Reply 5",
+      "Reply 6",
+      "Reply 7",
+      "Reply 8",
+    ]);
   });
 
   it("does not let a stale live reply hide a newer authoritative reply", () => {
@@ -43,6 +87,10 @@ describe("selectWorkspaceActivityPreview", () => {
 
     expect(result.latestReply).toBe("Current reply");
     expect(result.activityPreview).toBe("Current reply");
+    expect(result.recentReplies).toEqual([
+      { id: "assistant_message-2", text: "Stale live reply" },
+      { id: "assistant_message-3", text: "Current reply" },
+    ]);
   });
 
   it("shows a new prompt while the running agent has not replied yet", () => {
@@ -170,6 +218,7 @@ describe("selectWorkspaceActivityPreview", () => {
     expect(selectWorkspaceActivityPreview({ tail: [], head: [], status: "done" })).toEqual({
       latestPrompt: null,
       latestReply: null,
+      recentReplies: [],
       activityPreview: null,
       activityPreviewKind: null,
     });
