@@ -587,7 +587,7 @@ process.stdin.on("data", (chunk) => {
   });
   const session = await registry[providerId].createClient(createTestLogger()).createSession({
     provider: providerId,
-    cwd: "/workspace/project",
+    cwd: tempDir,
     modeId: "auto",
     model: "custom-model",
   });

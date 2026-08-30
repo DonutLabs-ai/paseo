@@ -2771,8 +2771,23 @@ export const UtilityTerminalInfoSchema = z.object({
   command: z.string().nullable(),
   args: z.array(z.string()),
   status: z.enum(["running", "stopped"]),
+  // COMPAT(utilityTerminalDesiredState): defaults preserve interoperability with
+  // daemons released before utility terminals survived daemon restarts.
+  desiredState: z.enum(["running", "stopped"]).optional().default("stopped"),
   terminalId: z.string().nullable(),
   exitCode: z.number().int().nullable(),
+  lastExit: z
+    .object({
+      exitCode: z.number().int().nullable(),
+      signal: z.number().int().positive().nullable(),
+      lastOutputLines: z.array(z.string()),
+      reason: z.enum(["process-exit", "daemon-shutdown", "launch-failed", "legacy"]),
+      message: z.string().nullable(),
+      at: z.string().datetime(),
+    })
+    .nullable()
+    .optional()
+    .default(null),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

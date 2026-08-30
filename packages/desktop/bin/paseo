@@ -36,6 +36,8 @@ elif [ -x "${RESOURCES_DIR}/../Paseo.bin" ]; then
   APP_EXECUTABLE="${RESOURCES_DIR}/../Paseo.bin"
 elif [ -x "${RESOURCES_DIR}/../Paseo" ]; then
   APP_EXECUTABLE="${RESOURCES_DIR}/../Paseo"
+elif [ -x "${RESOURCES_DIR}/../paseo-arucil" ]; then
+  APP_EXECUTABLE="${RESOURCES_DIR}/../paseo-arucil"
 else
   echo "Bundled Paseo executable not found relative to ${RESOURCES_DIR}" >&2
   exit 1

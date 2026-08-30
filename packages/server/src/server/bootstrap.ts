@@ -9,6 +9,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { Logger } from "pino";
 import { z } from "zod";
 import { createBranchChangeRouteHandler } from "./script-route-branch-handler.js";
+import { startWebSocketRuntime } from "./websocket-startup.js";
 
 export type ListenTarget =
   | { type: "tcp"; host: string; port: number }
@@ -1651,9 +1652,7 @@ export async function createPaseoDaemon(
               orchestrationSkills,
               workspaceLabelService,
             );
-            pluginRuntime.bindPaseoSessionHost(wsServer);
-            await pluginRuntime.start();
-            wsServer.beginAcceptingConnections();
+            await startWebSocketRuntime({ server: wsServer, pluginRuntime });
             relayRuntime = createRelayRuntime({
               config: {
                 enabled: relayEnabled,
@@ -1712,7 +1711,7 @@ export async function createPaseoDaemon(
     workspaceReconciliation.dispose();
     scriptHealthMonitor.stop();
     // Freeze both ingress and registration before taking the agent closure snapshot.
-    wsServer?.prepareForShutdown();
+    await wsServer?.prepareForShutdown();
     agentManager.prepareForShutdown();
     await closeAllAgents(logger, agentManager);
     await agentManager.flushForShutdown().catch(() => undefined);

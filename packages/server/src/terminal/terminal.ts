@@ -952,6 +952,7 @@ export async function createTerminal(options: CreateTerminalOptions): Promise<Te
         ...env,
         ...activityEnv,
         ...(workspaceId ? { PASEO_WORKSPACE_ID: workspaceId } : {}),
+        ...(process.platform === "win32" ? {} : { PWD: cwd }),
       },
     }),
   });

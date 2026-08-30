@@ -36,7 +36,7 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   },
   daemon: {
     manageBuiltInDaemon: true,
-    keepRunningAfterQuit: false,
+    keepRunningAfterQuit: true,
   },
 };
 
@@ -69,10 +69,12 @@ const MigrationsSchema = z
   .looseObject({
     legacyRendererSettingsImported: z.boolean().catch(false),
     daemonStopOnQuitDefaultApplied: z.boolean().catch(false),
+    utilityTerminalDaemonPersistenceDefaultApplied: z.boolean().catch(false),
   })
   .catch(() => ({
     legacyRendererSettingsImported: false,
     daemonStopOnQuitDefaultApplied: false,
+    utilityTerminalDaemonPersistenceDefaultApplied: false,
   }));
 
 const PersistedDocumentSchema = z
@@ -118,6 +120,7 @@ function buildDefaultDocument(): PersistedDesktopSettingsDocument {
     migrations: {
       legacyRendererSettingsImported: false,
       daemonStopOnQuitDefaultApplied: true,
+      utilityTerminalDaemonPersistenceDefaultApplied: true,
     },
   };
 }
@@ -207,22 +210,37 @@ function hasLegacyRendererOwnedPatch(patch: DesktopSettingsPatch): boolean {
 }
 
 function coerceDocument(input: unknown): PersistedDesktopSettingsDocument {
-  const document = PersistedDocumentSchema.parse(input);
-  if (document.migrations.daemonStopOnQuitDefaultApplied) {
-    return document;
-  }
-
-  return {
-    ...document,
-    settings: {
-      ...document.settings,
-      daemon: {
-        ...document.settings.daemon,
-        keepRunningAfterQuit: DEFAULT_DESKTOP_SETTINGS.daemon.keepRunningAfterQuit,
+  let document = PersistedDocumentSchema.parse(input);
+  if (!document.migrations.daemonStopOnQuitDefaultApplied) {
+    document = {
+      ...document,
+      settings: {
+        ...document.settings,
+        daemon: {
+          ...document.settings.daemon,
+          keepRunningAfterQuit: false,
+        },
       },
-    },
-    migrations: { ...document.migrations, daemonStopOnQuitDefaultApplied: true },
-  };
+      migrations: { ...document.migrations, daemonStopOnQuitDefaultApplied: true },
+    };
+  }
+  if (!document.migrations.utilityTerminalDaemonPersistenceDefaultApplied) {
+    document = {
+      ...document,
+      settings: {
+        ...document.settings,
+        daemon: {
+          ...document.settings.daemon,
+          keepRunningAfterQuit: true,
+        },
+      },
+      migrations: {
+        ...document.migrations,
+        utilityTerminalDaemonPersistenceDefaultApplied: true,
+      },
+    };
+  }
+  return document;
 }
 
 export function createDesktopSettingsStore({

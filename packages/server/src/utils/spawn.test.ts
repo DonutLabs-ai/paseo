@@ -71,6 +71,28 @@ describe("execCommand", () => {
     expect(result.stderr).toBe("");
   });
 
+  test.runIf(process.platform !== "win32")(
+    "sets PWD to the provided cwd instead of inheriting the daemon PWD",
+    async () => {
+      const cwd = realpathSync(mkdtempSync(path.join(tmpdir(), "spawn-pwd-test-")));
+      tempDirs.push(cwd);
+
+      const result = await execCommand(
+        process.execPath,
+        ["-e", "console.log(JSON.stringify({ cwd: process.cwd(), pwd: process.env.PWD }))"],
+        {
+          cwd,
+          env: {
+            PATH: process.env.PATH,
+            PWD: "/stale-daemon-working-directory",
+          },
+        },
+      );
+
+      expect(JSON.parse(result.stdout.trim())).toEqual({ cwd, pwd: cwd });
+    },
+  );
+
   test("treats env as the replacement base and finalizes external command env", async () => {
     const result = await execCommand(process.execPath, ["-e", printEnvScript], {
       baseEnv: {
@@ -158,6 +180,35 @@ describe("execCommand", () => {
       PASEO_SUPERVISED: null,
     });
   });
+
+  test.runIf(process.platform !== "win32")(
+    "spawnProcess gives the child a PWD matching its cwd",
+    async () => {
+      const cwd = realpathSync(mkdtempSync(path.join(tmpdir(), "spawn-child-pwd-test-")));
+      tempDirs.push(cwd);
+      const child = spawnProcess(
+        process.execPath,
+        ["-e", "console.log(JSON.stringify({ cwd: process.cwd(), pwd: process.env.PWD }))"],
+        {
+          cwd,
+          env: {
+            PATH: process.env.PATH,
+            PWD: "/stale-daemon-working-directory",
+          },
+        },
+      );
+
+      const stdoutChunks: Buffer[] = [];
+      child.stdout?.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+      const exitCode = await new Promise<number | null>((resolve, reject) => {
+        child.on("error", reject);
+        child.on("close", resolve);
+      });
+
+      expect(exitCode).toBe(0);
+      expect(JSON.parse(Buffer.concat(stdoutChunks).toString().trim())).toEqual({ cwd, pwd: cwd });
+    },
+  );
 
   test("internal env mode preserves Paseo-owned launcher env", async () => {
     const result = await execCommand(process.execPath, ["-e", printEnvScript], {

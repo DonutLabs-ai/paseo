@@ -58,6 +58,26 @@ function targetMatchesEntry(target: UtilityTrayTarget, entry: HostUtilityTermina
 
 function noOp(): void {}
 
+function describeUtilityTerminalExit(terminal: UtilityTerminalInfo): string | null {
+  const lastExit = terminal.lastExit;
+  if (lastExit?.reason === "launch-failed") {
+    return lastExit.message ? `Failed to start: ${lastExit.message}` : "Failed to start";
+  }
+  if (lastExit?.signal !== null && lastExit?.signal !== undefined) {
+    return `Exited after signal ${lastExit.signal}`;
+  }
+  if (lastExit?.exitCode !== null && lastExit?.exitCode !== undefined) {
+    return `Exited with code ${lastExit.exitCode}`;
+  }
+  if (lastExit?.reason === "daemon-shutdown") {
+    return "Interrupted by daemon restart";
+  }
+  if (terminal.exitCode !== null) {
+    return `Exited with code ${terminal.exitCode}`;
+  }
+  return null;
+}
+
 function replaceUtilityTerminal(
   terminals: UtilityTerminalInfo[],
   replacement: UtilityTerminalInfo,
@@ -426,12 +446,17 @@ function UtilityTrayContent({
       />
     );
   }
+  const exitDescription = describeUtilityTerminalExit(selectedEntry.terminal);
+  const exitOutput = selectedEntry.terminal.lastExit?.lastOutputLines.join("\n").trim() ?? "";
   return (
     <View style={styles.centerState}>
       <Text style={styles.stateTitle}>{selectedEntry.terminal.name}</Text>
       <Text style={styles.stateText}>{selectedEntry.terminal.cwd}</Text>
-      {selectedEntry.terminal.exitCode !== null ? (
-        <Text style={styles.stateText}>Exited with code {selectedEntry.terminal.exitCode}</Text>
+      {exitDescription ? <Text style={styles.stateText}>{exitDescription}</Text> : null}
+      {exitOutput ? (
+        <Text selectable style={styles.exitOutput} numberOfLines={8}>
+          {exitOutput}
+        </Text>
       ) : null}
       {mutationError ? <Text style={styles.errorText}>{mutationError}</Text> : null}
       <Button size="sm" loading={isMutating} testID="utility-tray-start" onPress={onStart}>
@@ -796,6 +821,18 @@ const styles = StyleSheet.create((theme) => ({
   },
   errorText: {
     color: theme.colors.destructive,
+    fontSize: theme.fontSize.sm,
+  },
+  exitOutput: {
+    width: "100%",
+    maxWidth: 640,
+    padding: theme.spacing[3],
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.surface1,
+    color: theme.colors.foregroundMuted,
+    fontFamily: "monospace",
     fontSize: theme.fontSize.sm,
   },
   terminalList: {

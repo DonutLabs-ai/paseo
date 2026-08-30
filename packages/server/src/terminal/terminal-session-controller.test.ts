@@ -199,8 +199,10 @@ describe("terminal-session-controller utility terminals", () => {
       command: "process-compose",
       args: [],
       status: "running",
+      desiredState: "running",
       terminalId: "terminal-1",
       exitCode: null,
+      lastExit: null,
       createdAt: "2026-08-29T00:00:00.000Z",
       updatedAt: "2026-08-29T00:00:00.000Z",
     };
@@ -210,6 +212,8 @@ describe("terminal-session-controller utility terminals", () => {
       start: vi.fn(),
       stop: vi.fn(),
       remove: vi.fn(),
+      restoreInterruptedTerminals: vi.fn(),
+      prepareForShutdown: vi.fn(),
       subscribe(listener) {
         changeListener = listener;
         return () => {

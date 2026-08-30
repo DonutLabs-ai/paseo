@@ -8,7 +8,7 @@ import type { TerminalExitInfo, TerminalSession } from "./terminal.js";
 import type { TerminalManager } from "./terminal-manager.js";
 import { ensurePrivateFile, writePrivateFileAtomicSync } from "../server/private-files.js";
 
-const UtilityTerminalRecordSchema = z.object({
+const UtilityTerminalRecordV1Schema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   cwd: z.string().min(1),
@@ -21,10 +21,34 @@ const UtilityTerminalRecordSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
-const UtilityTerminalFileSchema = z.object({
+const UtilityTerminalFileV1Schema = z.object({
   version: z.literal(1),
-  terminals: z.array(UtilityTerminalRecordSchema),
+  terminals: z.array(UtilityTerminalRecordV1Schema),
 });
+
+const UtilityTerminalLastExitSchema = z.object({
+  exitCode: z.number().int().nullable(),
+  signal: z.number().int().positive().nullable(),
+  lastOutputLines: z.array(z.string()),
+  reason: z.enum(["process-exit", "daemon-shutdown", "launch-failed", "legacy"]),
+  message: z.string().nullable(),
+  at: z.string().datetime(),
+});
+
+const UtilityTerminalRecordV2Schema = UtilityTerminalRecordV1Schema.extend({
+  desiredState: z.enum(["running", "stopped"]),
+  lastExit: UtilityTerminalLastExitSchema.nullable(),
+});
+
+const UtilityTerminalFileV2Schema = z.object({
+  version: z.literal(2),
+  terminals: z.array(UtilityTerminalRecordV2Schema),
+});
+
+const UtilityTerminalFileSchema = z.union([
+  UtilityTerminalFileV2Schema,
+  UtilityTerminalFileV1Schema,
+]);
 
 interface UtilityTerminalServiceOptions {
   paseoHome: string;
@@ -48,6 +72,8 @@ export interface UtilityTerminalService {
   stop(id: string): Promise<UtilityTerminalInfo>;
   remove(id: string): Promise<boolean>;
   subscribe(listener: UtilityTerminalListener): () => void;
+  restoreInterruptedTerminals(): Promise<void>;
+  prepareForShutdown(): Promise<void>;
 }
 
 function isMissingFileError(error: unknown): boolean {
@@ -60,7 +86,17 @@ function isMissingFileError(error: unknown): boolean {
 }
 
 function cloneRecord(record: UtilityTerminalInfo): UtilityTerminalInfo {
-  return { ...record, args: [...record.args] };
+  return {
+    ...record,
+    args: [...record.args],
+    lastExit: record.lastExit
+      ? { ...record.lastExit, lastOutputLines: [...record.lastExit.lastOutputLines] }
+      : null,
+  };
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function normalizeCommand(command: string | null | undefined): string | null {
@@ -88,6 +124,7 @@ class FileBackedUtilityTerminalService implements UtilityTerminalService {
   private readonly listeners = new Set<UtilityTerminalListener>();
   private readonly exitSubscriptions = new Map<string, () => void>();
   private mutationTail: Promise<void> = Promise.resolve();
+  private shuttingDown = false;
 
   constructor(options: UtilityTerminalServiceOptions) {
     this.terminalManager = options.terminalManager;
@@ -114,8 +151,10 @@ class FileBackedUtilityTerminalService implements UtilityTerminalService {
         command: normalizeCommand(input.command),
         args: [...(input.args ?? [])],
         status: "stopped",
+        desiredState: "running",
         terminalId: null,
         exitCode: null,
+        lastExit: null,
         createdAt: now,
         updatedAt: now,
       };
@@ -131,6 +170,7 @@ class FileBackedUtilityTerminalService implements UtilityTerminalService {
 
   start(id: string): Promise<UtilityTerminalInfo> {
     return this.enqueueMutation(async () => {
+      this.assertNotShuttingDown();
       const record = this.requireRecord(id);
       if (record.status === "running") {
         return cloneRecord(record);
@@ -146,12 +186,31 @@ class FileBackedUtilityTerminalService implements UtilityTerminalService {
     return this.enqueueMutation(async () => {
       const record = this.requireRecord(id);
       if (record.status === "stopped" || !record.terminalId) {
-        return cloneRecord(record);
+        const stopped = this.toStoppedRecord(record, {
+          desiredState: "stopped",
+          exitCode: record.exitCode,
+          lastExit: record.lastExit,
+        });
+        this.records.set(id, stopped);
+        this.persistAndEmit();
+        return cloneRecord(stopped);
       }
       const terminalId = record.terminalId;
-      await this.terminalManager.killTerminalAndWait(terminalId);
       this.detachExitSubscription(terminalId);
-      const stopped = this.toStoppedRecord(record, null);
+      try {
+        await this.terminalManager.killTerminalAndWait(terminalId);
+      } catch (error) {
+        const session = this.terminalManager.getTerminal(terminalId);
+        if (session) {
+          this.attachExitSubscription(record.id, session);
+        }
+        throw error;
+      }
+      const stopped = this.toStoppedRecord(record, {
+        desiredState: "stopped",
+        exitCode: null,
+        lastExit: null,
+      });
       this.records.set(id, stopped);
       this.persistAndEmit();
       return cloneRecord(stopped);
@@ -165,8 +224,17 @@ class FileBackedUtilityTerminalService implements UtilityTerminalService {
         return false;
       }
       if (record.terminalId) {
-        await this.terminalManager.killTerminalAndWait(record.terminalId);
-        this.detachExitSubscription(record.terminalId);
+        const terminalId = record.terminalId;
+        this.detachExitSubscription(terminalId);
+        try {
+          await this.terminalManager.killTerminalAndWait(terminalId);
+        } catch (error) {
+          const session = this.terminalManager.getTerminal(terminalId);
+          if (session) {
+            this.attachExitSubscription(record.id, session);
+          }
+          throw error;
+        }
       }
       this.records.delete(id);
       this.persistAndEmit();
@@ -181,6 +249,88 @@ class FileBackedUtilityTerminalService implements UtilityTerminalService {
     };
   }
 
+  restoreInterruptedTerminals(): Promise<void> {
+    return this.enqueueMutation(async () => {
+      this.assertNotShuttingDown();
+      const interrupted = Array.from(this.records.values()).filter(
+        (record) => record.desiredState === "running" && record.status === "stopped",
+      );
+      for (const record of interrupted) {
+        try {
+          const running = await this.launch(record);
+          this.records.set(record.id, running);
+          this.logger.info(
+            { utilityTerminalId: record.id, terminalId: running.terminalId },
+            "Restored utility terminal after daemon restart",
+          );
+        } catch (error) {
+          const now = new Date().toISOString();
+          this.records.set(
+            record.id,
+            this.toStoppedRecord(record, {
+              desiredState: "stopped",
+              exitCode: null,
+              lastExit: {
+                exitCode: null,
+                signal: null,
+                lastOutputLines: [],
+                reason: "launch-failed",
+                message: describeError(error),
+                at: now,
+              },
+              updatedAt: now,
+            }),
+          );
+          this.logger.error(
+            { err: error, utilityTerminalId: record.id },
+            "Failed to restore utility terminal after daemon restart",
+          );
+        }
+      }
+      if (interrupted.length > 0) {
+        this.persistAndEmit();
+      }
+    });
+  }
+
+  prepareForShutdown(): Promise<void> {
+    return this.enqueueMutation(async () => {
+      this.shuttingDown = true;
+      const now = new Date().toISOString();
+      let interrupted = 0;
+      for (const record of this.records.values()) {
+        if (record.status !== "running" || !record.terminalId) {
+          continue;
+        }
+        interrupted += 1;
+        this.detachExitSubscription(record.terminalId);
+        this.records.set(
+          record.id,
+          this.toStoppedRecord(record, {
+            desiredState: "running",
+            exitCode: null,
+            lastExit: {
+              exitCode: null,
+              signal: null,
+              lastOutputLines: [],
+              reason: "daemon-shutdown",
+              message: null,
+              at: now,
+            },
+            updatedAt: now,
+          }),
+        );
+      }
+      if (interrupted > 0) {
+        this.persistAndEmit();
+        this.logger.info(
+          { count: interrupted },
+          "Saved running utility terminals for daemon restart",
+        );
+      }
+    });
+  }
+
   private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
     const scheduled = this.mutationTail.then(operation);
     // Keep the sequencing tail usable after a failed caller operation. The
@@ -193,6 +343,7 @@ class FileBackedUtilityTerminalService implements UtilityTerminalService {
   }
 
   private async launch(record: UtilityTerminalInfo): Promise<UtilityTerminalInfo> {
+    this.assertNotShuttingDown();
     const session = await this.terminalManager.createTerminal({
       cwd: record.cwd,
       name: record.name,
@@ -203,8 +354,10 @@ class FileBackedUtilityTerminalService implements UtilityTerminalService {
     return {
       ...record,
       status: "running",
+      desiredState: "running",
       terminalId: session.id,
       exitCode: null,
+      lastExit: null,
       updatedAt: new Date().toISOString(),
     };
   }
@@ -225,21 +378,50 @@ class FileBackedUtilityTerminalService implements UtilityTerminalService {
     if (!record || record.terminalId !== terminalId) {
       return;
     }
-    this.records.set(recordId, this.toStoppedRecord(record, info.exitCode));
+    const now = new Date().toISOString();
+    this.records.set(
+      recordId,
+      this.toStoppedRecord(record, {
+        desiredState: "stopped",
+        exitCode: info.exitCode,
+        lastExit: {
+          exitCode: info.exitCode,
+          signal: info.signal,
+          lastOutputLines: [...info.lastOutputLines],
+          reason: "process-exit",
+          message: null,
+          at: now,
+        },
+        updatedAt: now,
+      }),
+    );
     this.persistAndEmit();
   }
 
   private toStoppedRecord(
     record: UtilityTerminalInfo,
-    exitCode: number | null,
+    options: {
+      desiredState: UtilityTerminalInfo["desiredState"];
+      exitCode: number | null;
+      lastExit: UtilityTerminalInfo["lastExit"];
+      updatedAt?: string;
+    },
   ): UtilityTerminalInfo {
     return {
       ...record,
       status: "stopped",
+      desiredState: options.desiredState,
       terminalId: null,
-      exitCode,
-      updatedAt: new Date().toISOString(),
+      exitCode: options.exitCode,
+      lastExit: options.lastExit,
+      updatedAt: options.updatedAt ?? new Date().toISOString(),
     };
+  }
+
+  private assertNotShuttingDown(): void {
+    if (this.shuttingDown) {
+      throw new Error("Utility terminal service is shutting down");
+    }
   }
 
   private detachExitSubscription(terminalId: string): void {
@@ -269,23 +451,69 @@ class FileBackedUtilityTerminalService implements UtilityTerminalService {
 
     const parsedJson: unknown = JSON.parse(raw);
     const file = UtilityTerminalFileSchema.parse(parsedJson);
-    let normalizedRunningRecords = 0;
-    for (const persisted of file.terminals) {
-      const record = cloneRecord(persisted);
-      if (record.status === "running" || record.terminalId !== null) {
-        normalizedRunningRecords += 1;
-        this.records.set(record.id, this.toStoppedRecord(record, null));
+    let shouldPersist = file.version === 1;
+    let interruptedRecords = 0;
+    const records =
+      file.version === 1
+        ? file.terminals.map((persisted) => this.migrateV1Record(persisted))
+        : file.terminals.map((persisted) => cloneRecord(persisted));
+    for (const record of records) {
+      if (record.desiredState === "running" || record.status === "running") {
+        interruptedRecords += 1;
+        shouldPersist = true;
+        const now = new Date().toISOString();
+        this.records.set(
+          record.id,
+          this.toStoppedRecord(record, {
+            desiredState: "running",
+            exitCode: null,
+            lastExit: {
+              exitCode: null,
+              signal: null,
+              lastOutputLines: [],
+              reason: "daemon-shutdown",
+              message: null,
+              at: now,
+            },
+            updatedAt: now,
+          }),
+        );
       } else {
         this.records.set(record.id, record);
       }
     }
-    if (normalizedRunningRecords > 0) {
+    if (shouldPersist) {
       this.persist();
+    }
+    if (interruptedRecords > 0) {
       this.logger.info(
-        { count: normalizedRunningRecords },
-        "Marked utility terminals stopped after daemon restart",
+        { count: interruptedRecords },
+        "Loaded utility terminals interrupted by daemon restart",
       );
     }
+  }
+
+  private migrateV1Record(
+    persisted: z.infer<typeof UtilityTerminalRecordV1Schema>,
+  ): UtilityTerminalInfo {
+    const wasRunning = persisted.status === "running" || persisted.terminalId !== null;
+    return {
+      ...persisted,
+      status: wasRunning ? "stopped" : persisted.status,
+      desiredState: wasRunning ? "running" : "stopped",
+      terminalId: null,
+      lastExit:
+        !wasRunning && persisted.exitCode !== null
+          ? {
+              exitCode: persisted.exitCode,
+              signal: null,
+              lastOutputLines: [],
+              reason: "legacy",
+              message: null,
+              at: persisted.updatedAt,
+            }
+          : null,
+    };
   }
 
   private persistAndEmit(): void {
@@ -297,8 +525,8 @@ class FileBackedUtilityTerminalService implements UtilityTerminalService {
   }
 
   private persist(): void {
-    const file: z.infer<typeof UtilityTerminalFileSchema> = {
-      version: 1,
+    const file: z.infer<typeof UtilityTerminalFileV2Schema> = {
+      version: 2,
       terminals: this.list(),
     };
     writePrivateFileAtomicSync(this.filePath, `${JSON.stringify(file, null, 2)}\n`);

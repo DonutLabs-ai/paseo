@@ -1,6 +1,7 @@
 import { execFile, spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { extname } from "node:path";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 
 import { createExternalCommandProcessEnv, type ProcessEnvRecord } from "../server/paseo-env.js";
 import {
@@ -52,6 +53,13 @@ function shouldUseWindowsShell(
   return process.platform === "win32" && !hasPathSeparator(command) && !extname(command);
 }
 
+function createWorkingDirectoryEnv(cwd: SpawnOptions["cwd"]): ProcessEnvRecord {
+  if (process.platform === "win32" || cwd === undefined) {
+    return {};
+  }
+  return { PWD: typeof cwd === "string" ? cwd : fileURLToPath(cwd) };
+}
+
 export function spawnProcess(
   command: string,
   args: string[],
@@ -65,13 +73,15 @@ export function spawnProcess(
   const shouldQuoteForShell = isWindows && shell !== false;
   const resolvedCommand = shouldQuoteForShell ? quoteWindowsCommand(command) : command;
   const resolvedArgs = shouldQuoteForShell ? args.map(quoteWindowsArgument) : args;
+  const workingDirectoryEnv = createWorkingDirectoryEnv(spawnOptions.cwd);
   const childEnv =
     options?.envMode === "internal"
-      ? ({ ...resolvedBaseEnv, ...envOverlay } as NodeJS.ProcessEnv)
+      ? ({ ...resolvedBaseEnv, ...envOverlay, ...workingDirectoryEnv } as NodeJS.ProcessEnv)
       : createExternalCommandProcessEnv(
           command,
           resolvedBaseEnv,
           ...(envOverlay ? [envOverlay] : []),
+          workingDirectoryEnv,
         );
 
   return spawn(resolvedCommand, resolvedArgs, {
@@ -95,13 +105,15 @@ export async function execCommand(
   const shouldQuoteForShell = isWindows && shell !== false;
   const resolvedCommand = shouldQuoteForShell ? quoteWindowsCommand(command) : command;
   const resolvedArgs = shouldQuoteForShell ? args.map(quoteWindowsArgument) : args;
+  const workingDirectoryEnv = createWorkingDirectoryEnv(options?.cwd);
   const childEnv =
     options?.envMode === "internal"
-      ? ({ ...resolvedBaseEnv, ...envOverlay } as NodeJS.ProcessEnv)
+      ? ({ ...resolvedBaseEnv, ...envOverlay, ...workingDirectoryEnv } as NodeJS.ProcessEnv)
       : createExternalCommandProcessEnv(
           command,
           resolvedBaseEnv,
           ...(envOverlay ? [envOverlay] : []),
+          workingDirectoryEnv,
         );
 
   return execFileAsync(resolvedCommand, resolvedArgs, {

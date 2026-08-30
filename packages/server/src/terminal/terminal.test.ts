@@ -425,6 +425,26 @@ describe("createTerminal", () => {
     expect(session.cwd).toBe(realpathSync(tmpdir()));
   });
 
+  it.runIf(isPlatform("linux", "darwin"))("sets the child PWD to the terminal cwd", async () => {
+    const workingDir = realpathSync(mkdtempSync(join(tmpdir(), "paseo-terminal-pwd-")));
+    temporaryDirs.push(workingDir);
+    const session = trackSession(
+      await createTerminal({
+        workspaceId: "ws-test",
+        cwd: workingDir,
+        cols: 500,
+        env: { PWD: "/stale-daemon-working-directory" },
+        command: process.execPath,
+        args: [
+          "-e",
+          "console.log(process.cwd()); console.log(process.env.PWD); setInterval(() => {}, 100000);",
+        ],
+      }),
+    );
+
+    await waitForLines(session, [workingDir, workingDir]);
+  });
+
   it("uses custom name when provided", async () => {
     const shell = isPlatform("win32")
       ? (process.env.ComSpec ?? "C:\\Windows\\System32\\cmd.exe")

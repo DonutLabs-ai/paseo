@@ -35,7 +35,7 @@ export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
   },
   daemon: {
     manageBuiltInDaemon: true,
-    keepRunningAfterQuit: false,
+    keepRunningAfterQuit: true,
   },
 };
 

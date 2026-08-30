@@ -24,6 +24,7 @@ interface FakeTerminalManager {
   manager: TerminalManager;
   createCalls: Array<Parameters<TerminalManager["createTerminal"]>[0]>;
   handles: Map<string, FakeTerminalHandle>;
+  failNextCreate(error: Error): void;
 }
 
 const cleanupDirectories: string[] = [];
@@ -114,10 +115,16 @@ function createFakeTerminalManager(): FakeTerminalManager {
   const handles = new Map<string, FakeTerminalHandle>();
   const createCalls: Array<Parameters<TerminalManager["createTerminal"]>[0]> = [];
   let nextId = 1;
+  let nextCreateError: Error | null = null;
   const manager: TerminalManager = {
     getTerminals: async () => Array.from(handles.values(), (handle) => handle.session),
     createTerminal: async (options) => {
       createCalls.push(options);
+      if (nextCreateError) {
+        const error = nextCreateError;
+        nextCreateError = null;
+        throw error;
+      }
       const handle = createFakeTerminal(`terminal-${nextId++}`, options);
       handles.set(handle.session.id, handle);
       return handle.session;
@@ -144,7 +151,14 @@ function createFakeTerminalManager(): FakeTerminalManager {
     subscribeTerminalActivity: () => () => undefined,
     subscribeTerminalWorkspaceContributionChanged: () => () => undefined,
   };
-  return { manager, createCalls, handles };
+  return {
+    manager,
+    createCalls,
+    handles,
+    failNextCreate(error) {
+      nextCreateError = error;
+    },
+  };
 }
 
 describe("utility terminal service", () => {
@@ -167,6 +181,7 @@ describe("utility terminal service", () => {
     expect(created).toMatchObject({
       name: "Process Compose",
       status: "running",
+      desiredState: "running",
       terminalId: "terminal-1",
     });
     expect(fake.createCalls).toEqual([
@@ -202,13 +217,30 @@ describe("utility terminal service", () => {
       expect(service.list()[0]).toMatchObject({
         id: created.id,
         status: "stopped",
+        desiredState: "stopped",
         terminalId: null,
         exitCode: 7,
+        lastExit: {
+          exitCode: 7,
+          signal: null,
+          lastOutputLines: ["failed"],
+          reason: "process-exit",
+          message: null,
+        },
       });
     });
+
+    const restartedManager = createFakeTerminalManager();
+    const restarted = createUtilityTerminalService({
+      paseoHome,
+      terminalManager: restartedManager.manager,
+      logger: pino({ enabled: false }),
+    });
+    await restarted.restoreInterruptedTerminals();
+    expect(restartedManager.createCalls).toHaveLength(0);
   });
 
-  it("restores persisted definitions as stopped after daemon restart", async () => {
+  it("relaunches terminals interrupted by daemon shutdown", async () => {
     const paseoHome = await createPaseoHome();
     const firstManager = createFakeTerminalManager();
     const first = createUtilityTerminalService({
@@ -217,6 +249,7 @@ describe("utility terminal service", () => {
       logger: pino({ enabled: false }),
     });
     const created = await first.create({ name: "Watcher", cwd: "/repo", command: "watch" });
+    await first.prepareForShutdown();
 
     const secondManager = createFakeTerminalManager();
     const restored = createUtilityTerminalService({
@@ -230,10 +263,62 @@ describe("utility terminal service", () => {
         id: created.id,
         name: "Watcher",
         status: "stopped",
+        desiredState: "running",
         terminalId: null,
+        lastExit: expect.objectContaining({ reason: "daemon-shutdown" }),
       }),
     ]);
-    expect(secondManager.createCalls).toHaveLength(0);
+    await restored.restoreInterruptedTerminals();
+    expect(restored.list()).toEqual([
+      expect.objectContaining({
+        id: created.id,
+        name: "Watcher",
+        status: "running",
+        desiredState: "running",
+        terminalId: "terminal-1",
+        lastExit: null,
+      }),
+    ]);
+    expect(secondManager.createCalls).toEqual([
+      expect.objectContaining({ cwd: "/repo", command: "watch" }),
+    ]);
+  });
+
+  it("retains a failed restore as stopped instead of retrying forever", async () => {
+    const paseoHome = await createPaseoHome();
+    const firstManager = createFakeTerminalManager();
+    const first = createUtilityTerminalService({
+      paseoHome,
+      terminalManager: firstManager.manager,
+      logger: pino({ enabled: false }),
+    });
+    const created = await first.create({ name: "Watcher", cwd: "/repo", command: "watch" });
+    await first.prepareForShutdown();
+
+    const secondManager = createFakeTerminalManager();
+    secondManager.failNextCreate(new Error("watch executable not found"));
+    const restored = createUtilityTerminalService({
+      paseoHome,
+      terminalManager: secondManager.manager,
+      logger: pino({ enabled: false }),
+    });
+
+    await restored.restoreInterruptedTerminals();
+
+    expect(restored.list()).toEqual([
+      expect.objectContaining({
+        id: created.id,
+        status: "stopped",
+        desiredState: "stopped",
+        terminalId: null,
+        lastExit: expect.objectContaining({
+          reason: "launch-failed",
+          message: "watch executable not found",
+        }),
+      }),
+    ]);
+    await restored.restoreInterruptedTerminals();
+    expect(secondManager.createCalls).toHaveLength(1);
   });
 
   it("starts, stops, and removes a retained definition", async () => {
@@ -247,12 +332,43 @@ describe("utility terminal service", () => {
     const created = await service.create({ name: "Worker", cwd: "/repo" });
 
     const stopped = await service.stop(created.id);
-    expect(stopped).toMatchObject({ status: "stopped", terminalId: null });
+    expect(stopped).toMatchObject({
+      status: "stopped",
+      desiredState: "stopped",
+      terminalId: null,
+    });
 
     const restarted = await service.start(created.id);
     expect(restarted).toMatchObject({ status: "running", terminalId: "terminal-2" });
 
     await expect(service.remove(created.id)).resolves.toBe(true);
     expect(service.list()).toEqual([]);
+  });
+
+  it("does not restore a terminal that the user stopped", async () => {
+    const paseoHome = await createPaseoHome();
+    const firstManager = createFakeTerminalManager();
+    const first = createUtilityTerminalService({
+      paseoHome,
+      terminalManager: firstManager.manager,
+      logger: pino({ enabled: false }),
+    });
+    const created = await first.create({ name: "Worker", cwd: "/repo" });
+    await first.stop(created.id);
+
+    const secondManager = createFakeTerminalManager();
+    const restored = createUtilityTerminalService({
+      paseoHome,
+      terminalManager: secondManager.manager,
+      logger: pino({ enabled: false }),
+    });
+    await restored.restoreInterruptedTerminals();
+
+    expect(restored.list()[0]).toMatchObject({
+      id: created.id,
+      status: "stopped",
+      desiredState: "stopped",
+    });
+    expect(secondManager.createCalls).toHaveLength(0);
   });
 });

@@ -84,7 +84,7 @@ describe("desktop-settings", () => {
       notifications: { playSound: true },
       daemon: {
         manageBuiltInDaemon: true,
-        keepRunningAfterQuit: false,
+        keepRunningAfterQuit: true,
       },
     });
   });
@@ -203,7 +203,7 @@ describe("desktop-settings", () => {
     expect(persisted).toBe(raw);
   });
 
-  it("resets the pre-existing keep-running default so the daemon stops with the app", async () => {
+  it("migrates the daemon to keep running for global utility terminals", async () => {
     const userDataPath = await createTempUserDataDir();
     directories.add(userDataPath);
     await writeFile(
@@ -221,7 +221,7 @@ describe("desktop-settings", () => {
 
     const settings = await store.get();
 
-    expect(settings.daemon.keepRunningAfterQuit).toBe(false);
+    expect(settings.daemon.keepRunningAfterQuit).toBe(true);
   });
 
   it("keeps an explicit keep-running choice across restarts", async () => {
@@ -316,7 +316,7 @@ describe("desktop-settings", () => {
     expect(next).toEqual({
       releaseChannel: "beta",
       notifications: { playSound: false },
-      daemon: { manageBuiltInDaemon: true, keepRunningAfterQuit: false },
+      daemon: { manageBuiltInDaemon: true, keepRunningAfterQuit: true },
     });
   });
 

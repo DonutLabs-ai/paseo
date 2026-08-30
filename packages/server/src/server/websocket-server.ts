@@ -1046,8 +1046,13 @@ export class VoiceAssistantWebSocketServer {
     connectionLogger.info("Hub session attached");
   }
 
-  public prepareForShutdown(): void {
+  public async restoreUtilityTerminals(): Promise<void> {
+    await this.utilityTerminalService?.restoreInterruptedTerminals();
+  }
+
+  public async prepareForShutdown(): Promise<void> {
     this.connectionLifecycle = "stopping";
+    await this.utilityTerminalService?.prepareForShutdown();
   }
 
   public beginAcceptingConnections(): void {
@@ -1057,7 +1062,7 @@ export class VoiceAssistantWebSocketServer {
   }
 
   public async close(): Promise<void> {
-    this.prepareForShutdown();
+    await this.prepareForShutdown();
     this.unsubscribeSpeechReadiness?.();
     this.unsubscribeSpeechReadiness = null;
     this.unsubscribeDaemonConfigChange?.();
