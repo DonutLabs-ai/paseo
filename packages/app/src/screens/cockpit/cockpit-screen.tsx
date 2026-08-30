@@ -12,6 +12,9 @@ import {
   type ViewStyle,
 } from "react-native";
 import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
   ArrowUp,
   BellRing,
   Columns2,
@@ -81,11 +84,13 @@ import { useCockpitAgentUsage, type CockpitAgentUsage } from "./use-cockpit-agen
 import {
   COCKPIT_CARD_GAP,
   COCKPIT_HORIZONTAL_PADDING,
+  collectCockpitPanes,
   filterCockpitLayout,
   findCockpitPane,
   getCockpitLayoutMinimumHeight,
   getCockpitPaneWorkspaceKey,
   type CockpitLayout,
+  type CockpitPaneMoveDirection,
 } from "./cockpit-layout";
 
 const STATUS_LABEL_KEYS = {
@@ -105,6 +110,24 @@ const PR_STATE_LABEL_KEYS = {
 interface CockpitCardSize {
   width: number;
   height: number;
+}
+
+type CockpitPaneMoveTargets = Record<CockpitPaneMoveDirection, string | null>;
+
+function buildCockpitPaneMoveTargets(
+  layout: CockpitLayout | null,
+): ReadonlyMap<string, CockpitPaneMoveTargets> {
+  const targets = new Map<string, CockpitPaneMoveTargets>();
+  if (!layout) return targets;
+  for (const pane of collectCockpitPanes(layout.root)) {
+    targets.set(pane.id, {
+      left: findAdjacentPane(layout.root, pane.id, "left"),
+      right: findAdjacentPane(layout.root, pane.id, "right"),
+      up: findAdjacentPane(layout.root, pane.id, "up"),
+      down: findAdjacentPane(layout.root, pane.id, "down"),
+    });
+  }
+  return targets;
 }
 
 function encodeNoQuickReplyImages(): Promise<Array<{ data: string; mimeType: string }>> {
@@ -191,6 +214,7 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   const layout = useCockpitLayoutStore((state) => state.layout);
   const reconcileWorkspaces = useCockpitLayoutStore((state) => state.reconcileWorkspaces);
   const splitPane = useCockpitLayoutStore((state) => state.splitPane);
+  const movePane = useCockpitLayoutStore((state) => state.movePane);
   const addEmptyPane = useCockpitLayoutStore((state) => state.addEmptyPane);
   const closePane = useCockpitLayoutStore((state) => state.closePane);
   const focusPane = useCockpitLayoutStore((state) => state.focusPane);
@@ -243,6 +267,10 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   const visibleLayout = useMemo(
     () => filterCockpitLayout(layout, visibleWorkspaceKeys),
     [layout, visibleWorkspaceKeys],
+  );
+  const moveTargetsByPane = useMemo(
+    () => buildCockpitPaneMoveTargets(visibleLayout),
+    [visibleLayout],
   );
   const focusedWorkspace = useMemo(
     () =>
@@ -308,6 +336,14 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
     (paneId: string, position: "right" | "down") => splitPane(paneId, position),
     [splitPane],
   );
+  const handleMovePane = useCallback(
+    (paneId: string, direction: CockpitPaneMoveDirection) => {
+      const targetPaneId = moveTargetsByPane.get(paneId)?.[direction] ?? null;
+      if (!targetPaneId) return;
+      movePane({ paneId, targetPaneId, direction });
+    },
+    [movePane, moveTargetsByPane],
+  );
   const splitRightKeys = useShortcutKeys("workspace-pane-split-right");
   const headerLeft = useMemo(
     () => (
@@ -369,12 +405,20 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
         return true;
       }
 
-      let direction: "left" | "right" | "up" | "down" | null = null;
+      let direction: CockpitPaneMoveDirection | null = null;
       if (action.id === "workspace.pane.focus.left") direction = "left";
       if (action.id === "workspace.pane.focus.right") direction = "right";
       if (action.id === "workspace.pane.focus.up") direction = "up";
       if (action.id === "workspace.pane.focus.down") direction = "down";
+      if (action.id === "workspace.pane.move-tab.left") direction = "left";
+      if (action.id === "workspace.pane.move-tab.right") direction = "right";
+      if (action.id === "workspace.pane.move-tab.up") direction = "up";
+      if (action.id === "workspace.pane.move-tab.down") direction = "down";
       if (!direction || !visibleLayout?.focusedPaneId) return false;
+      if (action.id.startsWith("workspace.pane.move-tab.")) {
+        handleMovePane(visibleLayout.focusedPaneId, direction);
+        return true;
+      }
       const adjacentPaneId = findAdjacentPane(
         visibleLayout.root,
         visibleLayout.focusedPaneId,
@@ -383,7 +427,7 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
       if (adjacentPaneId) handleFocusPane(adjacentPaneId);
       return true;
     },
-    [addEmptyPane, handleFocusPane, splitPane, visibleLayout],
+    [addEmptyPane, handleFocusPane, handleMovePane, splitPane, visibleLayout],
   );
 
   useKeyboardActionHandler({
@@ -395,6 +439,10 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
       "workspace.pane.focus.right",
       "workspace.pane.focus.up",
       "workspace.pane.focus.down",
+      "workspace.pane.move-tab.left",
+      "workspace.pane.move-tab.right",
+      "workspace.pane.move-tab.up",
+      "workspace.pane.move-tab.down",
     ] as const,
     enabled: isRouteFocused && layoutHydrated && !isInitialLoad,
     priority: 200,
@@ -432,7 +480,9 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
             workspaceTitleSource={workspaceTitleSource}
             agentUsageByWorkspace={agentUsageByWorkspace}
             snoozedAtByWorkspace={snoozedAtByWorkspace}
+            moveTargetsByPane={moveTargetsByPane}
             onFocusPane={handleFocusPane}
+            onMovePane={handleMovePane}
             onSplitPane={handleSplitPane}
             onClosePane={handleClosePane}
             onSetSnoozed={handleSetSnoozed}
@@ -459,7 +509,9 @@ function CockpitSplitNodeView({
   workspaceTitleSource,
   agentUsageByWorkspace,
   snoozedAtByWorkspace,
+  moveTargetsByPane,
   onFocusPane,
+  onMovePane,
   onSplitPane,
   onClosePane,
   onSetSnoozed,
@@ -471,7 +523,9 @@ function CockpitSplitNodeView({
   workspaceTitleSource: "title" | "branch";
   agentUsageByWorkspace: ReadonlyMap<string, CockpitAgentUsage>;
   snoozedAtByWorkspace: Readonly<Record<string, string>>;
+  moveTargetsByPane: ReadonlyMap<string, CockpitPaneMoveTargets>;
   onFocusPane: (paneId: string) => void;
+  onMovePane: (paneId: string, direction: CockpitPaneMoveDirection) => void;
   onSplitPane: (paneId: string, position: "right" | "down") => void;
   onClosePane: (paneId: string) => void;
   onSetSnoozed: (workspaceKey: string, snoozed: boolean) => void;
@@ -483,7 +537,9 @@ function CockpitSplitNodeView({
         <CockpitEmptyPane
           pane={node.pane}
           isFocused={node.pane.id === focusedPaneId}
+          moveTargets={moveTargetsByPane.get(node.pane.id) ?? null}
           onFocus={onFocusPane}
+          onMove={onMovePane}
           onSplit={onSplitPane}
           onClose={onClosePane}
         />
@@ -496,11 +552,16 @@ function CockpitSplitNodeView({
         pane={node.pane}
         workspace={workspace}
         projectName={projectNamesByWorkspace.get(workspaceKey) ?? null}
-        title={resolveSidebarWorkspacePrimaryLabel({ workspace, workspaceTitleSource })}
+        title={resolveSidebarWorkspacePrimaryLabel({
+          workspace,
+          workspaceTitleSource,
+        })}
         agentUsage={agentUsageByWorkspace.get(workspaceKey) ?? null}
         isSnoozed={Boolean(snoozedAtByWorkspace[workspaceKey])}
         isFocused={node.pane.id === focusedPaneId}
+        moveTargets={moveTargetsByPane.get(node.pane.id) ?? null}
         onFocus={onFocusPane}
+        onMove={onMovePane}
         onSplit={onSplitPane}
         onClose={onClosePane}
         onSetSnoozed={onSetSnoozed}
@@ -525,7 +586,9 @@ function CockpitSplitNodeView({
             workspaceTitleSource={workspaceTitleSource}
             agentUsageByWorkspace={agentUsageByWorkspace}
             snoozedAtByWorkspace={snoozedAtByWorkspace}
+            moveTargetsByPane={moveTargetsByPane}
             onFocusPane={onFocusPane}
+            onMovePane={onMovePane}
             onSplitPane={onSplitPane}
             onClosePane={onClosePane}
             onSetSnoozed={onSetSnoozed}
@@ -544,7 +607,9 @@ function CockpitWorkspaceCard({
   agentUsage,
   isSnoozed,
   isFocused,
+  moveTargets,
   onFocus,
+  onMove,
   onSplit,
   onClose,
   onSetSnoozed,
@@ -556,7 +621,9 @@ function CockpitWorkspaceCard({
   agentUsage: CockpitAgentUsage | null;
   isSnoozed: boolean;
   isFocused: boolean;
+  moveTargets: CockpitPaneMoveTargets | null;
   onFocus: (paneId: string) => void;
+  onMove: (paneId: string, direction: CockpitPaneMoveDirection) => void;
   onSplit: (paneId: string, position: "right" | "down") => void;
   onClose: (paneId: string) => void;
   onSetSnoozed: (workspaceKey: string, snoozed: boolean) => void;
@@ -564,7 +631,10 @@ function CockpitWorkspaceCard({
   const { t } = useTranslation();
   const [isArchiving, setIsArchiving] = useState(false);
   const [isNoteOpen, setIsNoteOpen] = useState(false);
-  const [cardSize, setCardSize] = useState<CockpitCardSize>({ width: 0, height: 0 });
+  const [cardSize, setCardSize] = useState<CockpitCardSize>({
+    width: 0,
+    height: 0,
+  });
   const client = useHostRuntimeClient(workspace.serverId);
   const isConnected = useHostRuntimeIsConnected(workspace.serverId);
   const archiveController = useWorkspaceArchive({
@@ -715,7 +785,9 @@ function CockpitWorkspaceCard({
             closeLabel={t("sidebar.workspace.actions.archiveWorkspace")}
             closeDisabled={isArchiving}
             snoozeAction={snoozeAction}
+            moveTargets={moveTargets}
             onFocus={onFocus}
+            onMove={onMove}
             onSplit={onSplit}
             onClose={handleArchive}
           />
@@ -990,13 +1062,17 @@ function CockpitQuickReply({
 function CockpitEmptyPane({
   pane,
   isFocused,
+  moveTargets,
   onFocus,
+  onMove,
   onSplit,
   onClose,
 }: {
   pane: SplitPane;
   isFocused: boolean;
+  moveTargets: CockpitPaneMoveTargets | null;
   onFocus: (paneId: string) => void;
+  onMove: (paneId: string, direction: CockpitPaneMoveDirection) => void;
   onSplit: (paneId: string, position: "right" | "down") => void;
   onClose: (paneId: string) => void;
 }) {
@@ -1030,7 +1106,9 @@ function CockpitEmptyPane({
           paneId={pane.id}
           closeLabel={t("workspace.tabs.actions.closePane")}
           snoozeAction={null}
+          moveTargets={moveTargets}
           onFocus={onFocus}
+          onMove={onMove}
           onSplit={onSplit}
           onClose={handleClose}
         />
@@ -1052,7 +1130,9 @@ function CockpitPaneActions({
   closeLabel,
   closeDisabled = false,
   snoozeAction,
+  moveTargets,
   onFocus,
+  onMove,
   onSplit,
   onClose,
 }: {
@@ -1060,13 +1140,19 @@ function CockpitPaneActions({
   closeLabel: string;
   closeDisabled?: boolean;
   snoozeAction: { label: string; active: boolean; onToggle: () => void } | null;
+  moveTargets: CockpitPaneMoveTargets | null;
   onFocus: (paneId: string) => void;
+  onMove: (paneId: string, direction: CockpitPaneMoveDirection) => void;
   onSplit: (paneId: string, position: "right" | "down") => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   const splitRightKeys = useShortcutKeys("workspace-pane-split-right");
   const splitDownKeys = useShortcutKeys("workspace-pane-split-down");
+  const moveLeftKeys = useShortcutKeys("workspace-pane-move-tab-left");
+  const moveRightKeys = useShortcutKeys("workspace-pane-move-tab-right");
+  const moveUpKeys = useShortcutKeys("workspace-pane-move-tab-up");
+  const moveDownKeys = useShortcutKeys("workspace-pane-move-tab-down");
   const closeKeys = useShortcutKeys("workspace-pane-close");
   const preparePaneAction = useCallback(
     (event: GestureResponderEvent) => {
@@ -1096,45 +1182,117 @@ function CockpitPaneActions({
     },
     [onClose, preparePaneAction],
   );
+  const handleMoveLeft = useCallback(
+    (event: GestureResponderEvent) => {
+      preparePaneAction(event);
+      onMove(paneId, "left");
+    },
+    [onMove, paneId, preparePaneAction],
+  );
+  const handleMoveRight = useCallback(
+    (event: GestureResponderEvent) => {
+      preparePaneAction(event);
+      onMove(paneId, "right");
+    },
+    [onMove, paneId, preparePaneAction],
+  );
+  const handleMoveUp = useCallback(
+    (event: GestureResponderEvent) => {
+      preparePaneAction(event);
+      onMove(paneId, "up");
+    },
+    [onMove, paneId, preparePaneAction],
+  );
+  const handleMoveDown = useCallback(
+    (event: GestureResponderEvent) => {
+      preparePaneAction(event);
+      onMove(paneId, "down");
+    },
+    [onMove, paneId, preparePaneAction],
+  );
 
   return (
-    <View style={styles.paneActions}>
-      {snoozeAction ? (
-        <CockpitSnoozeActionButton
-          paneId={paneId}
-          action={snoozeAction}
-          preparePaneAction={preparePaneAction}
-        />
-      ) : null}
-      <ToolbarControls>
+    <View style={styles.paneActionsStack}>
+      <ToolbarControls testID={`cockpit-pane-move-actions-${paneId}`}>
         <ToolbarButton
-          label={t("workspace.tabs.actions.splitRight")}
-          shortcut={splitRightKeys}
-          testID={`cockpit-pane-split-right-${paneId}`}
-          onPress={handleSplitRight}
+          compact
+          label={t("cockpit.actions.moveLeft")}
+          shortcut={moveLeftKeys}
+          disabled={!moveTargets?.left}
+          testID={`cockpit-pane-move-left-${paneId}`}
+          onPress={handleMoveLeft}
         >
-          <ThemedColumns2 size={14} />
+          <ThemedArrowLeft size={13} />
         </ToolbarButton>
         <ToolbarButton
-          label={t("workspace.tabs.actions.splitDown")}
-          shortcut={splitDownKeys}
-          testID={`cockpit-pane-split-down-${paneId}`}
-          onPress={handleSplitDown}
+          compact
+          label={t("cockpit.actions.moveRight")}
+          shortcut={moveRightKeys}
+          disabled={!moveTargets?.right}
+          testID={`cockpit-pane-move-right-${paneId}`}
+          onPress={handleMoveRight}
         >
-          <ThemedRows2 size={14} />
+          <ThemedArrowRight size={13} />
+        </ToolbarButton>
+        <ToolbarButton
+          compact
+          label={t("cockpit.actions.moveUp")}
+          shortcut={moveUpKeys}
+          disabled={!moveTargets?.up}
+          testID={`cockpit-pane-move-up-${paneId}`}
+          onPress={handleMoveUp}
+        >
+          <ThemedArrowUpMuted size={13} />
+        </ToolbarButton>
+        <ToolbarButton
+          compact
+          label={t("cockpit.actions.moveDown")}
+          shortcut={moveDownKeys}
+          disabled={!moveTargets?.down}
+          testID={`cockpit-pane-move-down-${paneId}`}
+          onPress={handleMoveDown}
+        >
+          <ThemedArrowDown size={13} />
         </ToolbarButton>
       </ToolbarControls>
-      <ToolbarControls>
-        <ToolbarButton
-          label={closeLabel}
-          shortcut={closeKeys}
-          disabled={closeDisabled}
-          testID={`cockpit-pane-close-${paneId}`}
-          onPress={handleClose}
-        >
-          <ThemedClose size={14} />
-        </ToolbarButton>
-      </ToolbarControls>
+      <View style={styles.paneActions}>
+        {snoozeAction ? (
+          <CockpitSnoozeActionButton
+            paneId={paneId}
+            action={snoozeAction}
+            preparePaneAction={preparePaneAction}
+          />
+        ) : null}
+        <ToolbarControls>
+          <ToolbarButton
+            label={t("workspace.tabs.actions.splitRight")}
+            shortcut={splitRightKeys}
+            testID={`cockpit-pane-split-right-${paneId}`}
+            onPress={handleSplitRight}
+          >
+            <ThemedColumns2 size={14} />
+          </ToolbarButton>
+          <ToolbarButton
+            label={t("workspace.tabs.actions.splitDown")}
+            shortcut={splitDownKeys}
+            testID={`cockpit-pane-split-down-${paneId}`}
+            onPress={handleSplitDown}
+          >
+            <ThemedRows2 size={14} />
+          </ToolbarButton>
+        </ToolbarControls>
+        <ToolbarControls>
+          <ToolbarButton
+            label={closeLabel}
+            shortcut={closeKeys}
+            disabled={closeDisabled}
+            testID={`cockpit-pane-close-${paneId}`}
+            onPress={handleClose}
+          >
+            <ThemedClose size={14} />
+          </ToolbarButton>
+        </ToolbarControls>
+      </View>
     </View>
   );
 }
@@ -1267,6 +1425,18 @@ const ThemedPlus = withUnistyles(Plus, (theme) => ({
 }));
 const ThemedArrowUp = withUnistyles(ArrowUp, (theme) => ({
   color: theme.colors.foreground,
+}));
+const ThemedArrowLeft = withUnistyles(ArrowLeft, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const ThemedArrowRight = withUnistyles(ArrowRight, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const ThemedArrowUpMuted = withUnistyles(ArrowUp, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const ThemedArrowDown = withUnistyles(ArrowDown, (theme) => ({
+  color: theme.colors.foregroundMuted,
 }));
 const ThemedMoon = withUnistyles(Moon, (theme) => ({
   color: theme.colors.foregroundMuted,
@@ -1426,6 +1596,11 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
+  },
+  paneActionsStack: {
+    flexShrink: 0,
+    alignItems: "flex-end",
+    gap: 1,
   },
   metaRow: {
     minHeight: 18,

@@ -14,9 +14,11 @@ import {
   focusCockpitPane,
   focusCockpitWorkspace,
   getCockpitPaneWorkspaceKey,
+  moveCockpitPane,
   splitCockpitPane,
   type CockpitLayout,
   type CockpitLayoutIdSource,
+  type CockpitPaneMoveDirection,
 } from "@/screens/cockpit/cockpit-layout";
 
 const CockpitSplitNodeStorageSchema: z.ZodType<CockpitLayout["root"]> = z.lazy(() =>
@@ -73,6 +75,11 @@ export interface CockpitLayoutState {
     preferredWorkspaceKey?: string | null;
   }) => void;
   splitPane: (paneId: string, position: "right" | "down") => void;
+  movePane: (input: {
+    paneId: string;
+    targetPaneId: string;
+    direction: CockpitPaneMoveDirection;
+  }) => void;
   addEmptyPane: () => void;
   closePane: (paneId: string) => void;
   focusPane: (paneId: string) => void;
@@ -122,7 +129,11 @@ export function createCockpitLayoutStore(ids: CockpitLayoutIdSource = defaultWor
             let layout = state.layout;
             for (const workspaceKey of uniqueKeys) {
               if (assignedKeys.has(workspaceKey)) continue;
-              layout = addWorkspaceToCockpitLayout({ layout, workspaceKey, ids });
+              layout = addWorkspaceToCockpitLayout({
+                layout,
+                workspaceKey,
+                ids,
+              });
               assignedKeys.add(workspaceKey);
             }
             if (layout && preferredWorkspaceKey) {
@@ -137,6 +148,18 @@ export function createCockpitLayoutStore(ids: CockpitLayoutIdSource = defaultWor
               layout: state.layout,
               targetPaneId: paneId,
               position,
+              ids,
+            });
+            return layout ? { layout } : state;
+          }),
+        movePane: ({ paneId, targetPaneId, direction }) =>
+          set((state) => {
+            if (!state.layout) return state;
+            const layout = moveCockpitPane({
+              layout: state.layout,
+              paneId,
+              targetPaneId,
+              direction,
               ids,
             });
             return layout ? { layout } : state;

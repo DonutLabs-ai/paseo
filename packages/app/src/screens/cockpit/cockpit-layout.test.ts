@@ -6,6 +6,7 @@ import {
   createDefaultCockpitLayout,
   filterCockpitLayout,
   getCockpitPaneWorkspaceKey,
+  moveCockpitPane,
   splitCockpitPane,
   type CockpitLayoutIdSource,
 } from "./cockpit-layout";
@@ -201,6 +202,69 @@ describe("cockpit pane layout", () => {
     if (layout.root.kind !== "group") throw new Error("Expected horizontal group");
     expect(layout.root.group.sizes).toEqual([0.5, 0.5]);
     expect(collectCockpitPanes(layout.root).map(getCockpitPaneWorkspaceKey)).toEqual(["a", "c"]);
+  });
+
+  it("moves a card into the adjacent row without swapping workspace assignments", () => {
+    const ids = createIds();
+    const initial = requireLayout(
+      createDefaultCockpitLayout({
+        workspaceKeys: ["a", "b", "c", "d", "e", "f"],
+        ids,
+      }),
+    );
+    const panes = collectCockpitPanes(initial.root);
+    const targetPane = requireItem(panes.find((pane) => getCockpitPaneWorkspaceKey(pane) === "b"));
+    const movedPane = requireItem(panes.find((pane) => getCockpitPaneWorkspaceKey(pane) === "e"));
+    const layout = requireLayout(
+      moveCockpitPane({
+        layout: initial,
+        paneId: movedPane.id,
+        targetPaneId: targetPane.id,
+        direction: "up",
+        ids,
+      }),
+    );
+
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected vertical root group");
+    expect(
+      layout.root.group.children.map((row) =>
+        collectCockpitPanes(row).map(getCockpitPaneWorkspaceKey),
+      ),
+    ).toEqual([
+      ["a", "b", "e", "c"],
+      ["d", "f"],
+    ]);
+    expect(layout.root.group.children[0]?.kind).toBe("group");
+    const firstRow = requireItem(layout.root.group.children[0]);
+    if (firstRow.kind !== "group") throw new Error("Expected first row group");
+    expect(firstRow.group.sizes).toEqual([0.25, 0.25, 0.25, 0.25]);
+    expect(layout.focusedPaneId).toBe(movedPane.id);
+  });
+
+  it("moves a card within a row by insertion and shifts the intervening cards", () => {
+    const ids = createIds();
+    const initial = requireLayout(
+      createDefaultCockpitLayout({ workspaceKeys: ["a", "b", "c"], ids }),
+    );
+    const panes = collectCockpitPanes(initial.root);
+    const sourcePane = requireItem(panes.find((pane) => getCockpitPaneWorkspaceKey(pane) === "a"));
+    const targetPane = requireItem(panes.find((pane) => getCockpitPaneWorkspaceKey(pane) === "b"));
+    const layout = requireLayout(
+      moveCockpitPane({
+        layout: initial,
+        paneId: sourcePane.id,
+        targetPaneId: targetPane.id,
+        direction: "right",
+        ids,
+      }),
+    );
+
+    expect(collectCockpitPanes(layout.root).map(getCockpitPaneWorkspaceKey)).toEqual([
+      "b",
+      "a",
+      "c",
+    ]);
   });
 
   it("filters cards without mutating the persisted layout topology", () => {
