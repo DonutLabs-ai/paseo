@@ -1,6 +1,7 @@
 # Build output
 dist/
 release/
+release-arucil/
 
 # Dependencies
 node_modules/
