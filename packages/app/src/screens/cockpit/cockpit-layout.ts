@@ -1,6 +1,6 @@
 import type { SplitNode, SplitPane, WorkspaceLayout } from "@/stores/workspace-layout-store";
 
-export const COCKPIT_CARD_GAP = 8;
+export const COCKPIT_CARD_GAP = 1;
 export const COCKPIT_CARD_MIN_HEIGHT = 210;
 export const COCKPIT_DEFAULT_COLUMNS = 3;
 export const COCKPIT_HORIZONTAL_PADDING = 8;

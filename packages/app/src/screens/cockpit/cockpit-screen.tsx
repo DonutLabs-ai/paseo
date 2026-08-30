@@ -1245,12 +1245,16 @@ const styles = StyleSheet.create((theme) => ({
   layoutRoot: {
     flexGrow: 1,
     minWidth: 0,
+    borderWidth: theme.borderWidth[1],
+    borderColor: theme.colors.surface4,
+    backgroundColor: theme.colors.surface4,
   },
   splitGroup: {
     flex: 1,
     minWidth: 0,
     minHeight: 0,
     gap: COCKPIT_CARD_GAP,
+    backgroundColor: theme.colors.surface4,
   },
   splitGroupHorizontal: {
     flexDirection: "row",
@@ -1268,9 +1272,6 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
     minHeight: 210,
-    borderRadius: theme.borderRadius.xl,
-    borderWidth: theme.borderWidth[1],
-    borderColor: theme.colors.borderAccent,
     backgroundColor: theme.colors.surface1,
     overflow: "hidden",
   },
@@ -1282,7 +1283,11 @@ const styles = StyleSheet.create((theme) => ({
     userSelect: "none",
   },
   cardFocused: {
-    borderColor: theme.colors.accent,
+    zIndex: 1,
+    outlineColor: theme.colors.accentBright,
+    outlineOffset: -2,
+    outlineStyle: "solid",
+    outlineWidth: 2,
   },
   cardSnoozed: {
     opacity: 0.52,
