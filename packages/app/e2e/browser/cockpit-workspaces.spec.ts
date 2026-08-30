@@ -94,13 +94,64 @@ test("opens a workspace script in the global utility tray across workspace and c
     await page.getByTestId("utility-tray-close").click();
     await expect(page.getByTestId("utility-tray-overlay")).toHaveCount(0);
 
-    await page.keyboard.press("Control+Alt+C");
+    await page.keyboard.press("F9");
     await expect(page).toHaveURL(/\/cockpit$/);
     await expect(trigger).toHaveCount(1);
     await expect(trigger).toBeVisible();
     await trigger.click();
     await expect(page.getByTestId("utility-tray-overlay")).toBeVisible();
     await expect(page.locator(".xterm-screen")).toBeVisible({ timeout: 15_000 });
+  } finally {
+    await workspace.cleanup();
+  }
+});
+
+test("dismisses the utility tray after an outside press", async ({ page }) => {
+  await gotoAppShell(page);
+
+  const trigger = page.getByTestId("utility-tray-trigger");
+  await expect(trigger).toBeVisible({ timeout: 30_000 });
+  await trigger.click();
+  await expect(page.getByTestId("utility-tray-overlay")).toBeVisible();
+  await page.getByTestId("sidebar-settings").click();
+  await expect(page.getByTestId("utility-tray-overlay")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/settings\/general$/);
+
+  await trigger.click();
+  await expect(page.getByTestId("utility-tray-overlay")).toBeVisible();
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(page.getByTestId("utility-tray-overlay")).toHaveCount(0);
+});
+
+test("focuses the cockpit card when its quick reply input receives focus", async ({ page }) => {
+  const workspace = await seedMockAgentWorkspace({
+    repoPrefix: "cockpit-quick-reply-focus-",
+    title: "Cockpit quick reply focus",
+    initialPrompt: "Verify quick reply focus",
+  });
+
+  try {
+    await openAgentRoute(page, workspace);
+    await page.getByTestId("cockpit-mode-toggle").click();
+
+    const workspaceKey = `${getServerId()}:${workspace.workspaceId}`;
+    const card = page.getByTestId(`cockpit-workspace-card-${workspaceKey}`);
+    const input = page.getByTestId(`cockpit-quick-reply-input-${workspace.agentId}`);
+    await expect(input).toBeVisible({ timeout: 30_000 });
+    const focusedFrame = await card.evaluate((element) => getComputedStyle(element).boxShadow);
+
+    await page.keyboard.press("Control+\\");
+    const emptyPane = page.getByTestId(/^cockpit-empty-pane-/);
+    await expect(emptyPane).toBeVisible();
+    await expect
+      .poll(async () => card.evaluate((element) => getComputedStyle(element).boxShadow))
+      .not.toBe(focusedFrame);
+
+    await input.click();
+    await expect(input).toBeFocused();
+    await expect
+      .poll(async () => card.evaluate((element) => getComputedStyle(element).boxShadow))
+      .toBe(focusedFrame);
   } finally {
     await workspace.cleanup();
   }
@@ -124,7 +175,7 @@ test("reopens cockpit after creating a workspace from an empty pane", async ({ p
       workspaceId: workspace.workspaceId,
     });
 
-    await page.keyboard.press("Control+Alt+C");
+    await page.keyboard.press("F9");
     await expect(page).toHaveURL(/\/cockpit$/);
     await page.keyboard.press("Control+\\");
     const emptyPane = page.getByTestId(/^cockpit-empty-pane-/);
@@ -160,7 +211,7 @@ test("reopens cockpit after creating a workspace from an empty pane", async ({ p
       workspaceId: createdWorkspace.id,
     });
 
-    await page.keyboard.press("Control+Alt+C");
+    await page.keyboard.press("F9");
     await expect(page).toHaveURL(/\/cockpit$/);
     await expect(
       page.getByTestId(`cockpit-workspace-card-${serverId}:${createdWorkspace.id}`),
@@ -195,13 +246,13 @@ test("opens cockpit when persisted pane focus differs from the active workspace"
       workspaceId: secondWorkspace.workspaceId,
     });
 
-    await page.keyboard.press("Control+Alt+C");
+    await page.keyboard.press("F9");
     await expect(page).toHaveURL(/\/cockpit$/);
     await expect(
       page.getByTestId(`cockpit-workspace-card-${serverId}:${firstWorkspace.workspaceId}`),
     ).toBeVisible({ timeout: 30_000 });
 
-    await page.keyboard.press("Control+Alt+C");
+    await page.keyboard.press("F9");
     await expect(page).toHaveURL(
       new RegExp(`/h/${serverId}/workspace/${firstWorkspace.workspaceId}`),
     );
@@ -211,7 +262,7 @@ test("opens cockpit when persisted pane focus differs from the active workspace"
       workspaceId: secondWorkspace.workspaceId,
     });
 
-    await page.keyboard.press("Control+Alt+C");
+    await page.keyboard.press("F9");
     await expect(page).toHaveURL(/\/cockpit$/);
     await expect(
       page.getByTestId(`cockpit-workspace-card-${serverId}:${secondWorkspace.workspaceId}`),
@@ -232,7 +283,7 @@ test("persists equal cockpit panes and reflows after an empty pane closes", asyn
 
   try {
     await openAgentRoute(page, workspace);
-    await page.keyboard.press("Control+Alt+C");
+    await page.keyboard.press("F9");
     await expect(page).toHaveURL(/\/cockpit$/);
 
     const workspaceKey = `${getServerId()}:${workspace.workspaceId}`;

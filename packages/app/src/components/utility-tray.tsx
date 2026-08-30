@@ -35,6 +35,8 @@ const ThemedSquare = withUnistyles(Square);
 const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedX = withUnistyles(X);
 const mutedIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const UTILITY_TRAY_PANEL_NATIVE_ID = "utility-tray-panel";
+const UTILITY_TRAY_TRIGGER_NATIVE_ID = "utility-tray-trigger";
 
 interface HostUtilityTerminal {
   hostLabel: string;
@@ -78,6 +80,7 @@ export function UtilityTrayTrigger() {
   return (
     <ToolbarButton
       label="Utility terminals"
+      nativeID={UTILITY_TRAY_TRIGGER_NATIVE_ID}
       selected={isOpen}
       testID="utility-tray-trigger"
       onPress={toggle}
@@ -141,14 +144,34 @@ export function UtilityTrayHost() {
   }, [isOpen, selectedEntry, target]);
 
   useEffect(() => {
-    if (!isOpen || typeof document === "undefined") return;
+    if (!isOpen || typeof document === "undefined" || typeof window === "undefined") return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
       close();
     };
+    const handlePointerDown = (event: PointerEvent) => {
+      const eventTarget = event.target;
+      if (!(eventTarget instanceof Element)) {
+        close();
+        return;
+      }
+      if (
+        eventTarget.closest(`#${UTILITY_TRAY_PANEL_NATIVE_ID}`) ||
+        eventTarget.closest(`#${UTILITY_TRAY_TRIGGER_NATIVE_ID}`)
+      ) {
+        return;
+      }
+      close();
+    };
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("blur", close);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("blur", close);
+    };
   }, [close, isOpen]);
 
   const handleHostUpdate = useCallback((serverId: string, terminals: UtilityTerminalInfo[]) => {
@@ -271,7 +294,11 @@ export function UtilityTrayHost() {
           onError={handleHostError}
         />
       ))}
-      <View style={[styles.panel, panelFrame]}>
+      <View
+        nativeID={UTILITY_TRAY_PANEL_NATIVE_ID}
+        style={[styles.panel, panelFrame]}
+        testID="utility-tray-panel"
+      >
         <View style={styles.header}>
           <ThemedSquareTerminal size={15} uniProps={mutedIconMapping} />
           <Text style={styles.title} numberOfLines={1}>

@@ -1341,10 +1341,7 @@ const styles = StyleSheet.create((theme) => ({
   },
   cardFocused: {
     zIndex: 1,
-    outlineColor: theme.colors.accentBright,
-    outlineOffset: -2,
-    outlineStyle: "solid",
-    outlineWidth: 2,
+    boxShadow: `inset 0 0 0 2px ${theme.colors.accentBright}`,
   },
   cardSnoozed: {
     opacity: 0.52,
