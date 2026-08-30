@@ -941,9 +941,11 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     },
   },
   {
+    // Keep this persisted binding id stable so an existing user override is
+    // not lost when the shipped default changes from Ctrl+Alt+C to F9.
     id: "cockpit-toggle-ctrl-alt-c-non-mac",
     action: "cockpit.toggle",
-    combo: "Ctrl+Alt+C",
+    combo: "F9",
     when: { mac: false, commandCenter: false, terminal: false },
     help: {
       id: "toggle-cockpit",

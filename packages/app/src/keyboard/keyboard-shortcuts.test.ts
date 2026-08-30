@@ -265,8 +265,8 @@ describe("keyboard-shortcuts", () => {
       action: "cockpit.toggle",
     },
     {
-      name: "matches Ctrl+Alt+C to toggle cockpit on non-mac platforms",
-      event: { key: "c", code: "KeyC", ctrlKey: true, altKey: true },
+      name: "matches F9 to toggle cockpit on non-mac platforms",
+      event: { key: "F9", code: "F9" },
       context: { isMac: false },
       action: "cockpit.toggle",
     },
@@ -696,7 +696,7 @@ describe("keyboard-shortcut help sections", () => {
         "workspace-pane-split-right": ["ctrl", "\\"],
         "workspace-tab-jump-index": ["alt", "1-9"],
         "workspace-tab-close-current": ["ctrl", "W"],
-        "toggle-cockpit": ["ctrl", "alt", "C"],
+        "toggle-cockpit": ["F9"],
       },
     },
     {
