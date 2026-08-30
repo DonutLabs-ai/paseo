@@ -76,6 +76,7 @@ export interface CockpitLayoutState {
   addEmptyPane: () => void;
   closePane: (paneId: string) => void;
   focusPane: (paneId: string) => void;
+  focusWorkspace: (workspaceKey: string) => void;
 }
 
 function createEmptyRootPane(ids: CockpitLayoutIdSource): CockpitLayout {
@@ -166,6 +167,12 @@ export function createCockpitLayoutStore(ids: CockpitLayoutIdSource = defaultWor
           set((state) => {
             if (!state.layout) return state;
             const layout = focusCockpitPane(state.layout, paneId);
+            return layout === state.layout ? state : { layout };
+          }),
+        focusWorkspace: (workspaceKey) =>
+          set((state) => {
+            if (!state.layout) return state;
+            const layout = focusCockpitWorkspace(state.layout, workspaceKey);
             return layout === state.layout ? state : { layout };
           }),
       }),

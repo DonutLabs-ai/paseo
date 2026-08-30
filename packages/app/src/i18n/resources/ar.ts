@@ -1030,6 +1030,8 @@ export const ar: TranslationResources = {
       toggle: "تبديل لوحة المتابعة",
       open: "فتح لوحة المتابعة",
       returnToWorkspace: "العودة إلى مساحة العمل",
+      snooze: "تأجيل",
+      wake: "إعادة التنشيط",
     },
     status: {
       needsInput: "بحاجة إلى إدخال",
@@ -1037,6 +1039,18 @@ export const ar: TranslationResources = {
       running: "قيد العمل",
       attention: "جاهز",
       done: "خامل",
+      snoozed: "مؤجل",
+    },
+    attention: {
+      trigger: "{{count}} عناصر تحتاج إلى الانتباه",
+      title: "مركز الانتباه",
+      empty: "لا شيء يحتاج إلى انتباهك.",
+    },
+    telemetry: {
+      load: "الحمل",
+      memory: "الذاكرة",
+      loading: "جارٍ تحميل المقاييس…",
+      unavailable: "المقاييس غير متاحة",
     },
     labels: {
       latestReply: "أحدث رد",

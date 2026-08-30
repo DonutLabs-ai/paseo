@@ -1039,6 +1039,8 @@ export const en = {
       toggle: "Toggle cockpit",
       open: "Open cockpit",
       returnToWorkspace: "Return to workspace",
+      snooze: "Snooze",
+      wake: "Wake",
     },
     status: {
       needsInput: "Needs input",
@@ -1046,6 +1048,18 @@ export const en = {
       running: "Working",
       attention: "Ready",
       done: "Idle",
+      snoozed: "Snoozed",
+    },
+    attention: {
+      trigger: "{{count}} items need attention",
+      title: "Attention center",
+      empty: "Nothing needs your attention.",
+    },
+    telemetry: {
+      load: "Load",
+      memory: "RAM",
+      loading: "Loading metrics…",
+      unavailable: "Metrics unavailable",
     },
     labels: {
       latestReply: "Latest reply",

@@ -1045,6 +1045,8 @@ export const ru: TranslationResources = {
       toggle: "Переключить панель управления",
       open: "Открыть панель управления",
       returnToWorkspace: "Вернуться в рабочую область",
+      snooze: "Отложить",
+      wake: "Вернуть",
     },
     status: {
       needsInput: "Требуется ввод",
@@ -1052,6 +1054,18 @@ export const ru: TranslationResources = {
       running: "В работе",
       attention: "Готово",
       done: "Ожидание",
+      snoozed: "Отложено",
+    },
+    attention: {
+      trigger: "Требуют внимания: {{count}}",
+      title: "Центр внимания",
+      empty: "Ничего не требует вашего внимания.",
+    },
+    telemetry: {
+      load: "Нагрузка",
+      memory: "RAM",
+      loading: "Загрузка метрик…",
+      unavailable: "Метрики недоступны",
     },
     labels: {
       latestReply: "Последний ответ",

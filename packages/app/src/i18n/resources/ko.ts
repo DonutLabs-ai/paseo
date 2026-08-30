@@ -1037,6 +1037,8 @@ export const ko: TranslationResources = {
       toggle: "콕핏 전환",
       open: "콕핏 열기",
       returnToWorkspace: "워크스페이스로 돌아가기",
+      snooze: "잠시 미루기",
+      wake: "다시 보기",
     },
     status: {
       needsInput: "입력 필요",
@@ -1044,6 +1046,18 @@ export const ko: TranslationResources = {
       running: "작업 중",
       attention: "준비됨",
       done: "대기 중",
+      snoozed: "미뤄짐",
+    },
+    attention: {
+      trigger: "확인 필요 {{count}}개",
+      title: "확인 센터",
+      empty: "확인할 항목이 없습니다.",
+    },
+    telemetry: {
+      load: "부하",
+      memory: "RAM",
+      loading: "메트릭 불러오는 중…",
+      unavailable: "메트릭을 사용할 수 없음",
     },
     labels: {
       latestReply: "최신 답변",

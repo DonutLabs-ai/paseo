@@ -1055,6 +1055,8 @@ export const ptBR: TranslationResources = {
       toggle: "Alternar painel de controle",
       open: "Abrir painel de controle",
       returnToWorkspace: "Voltar ao espaço de trabalho",
+      snooze: "Adiar",
+      wake: "Reativar",
     },
     status: {
       needsInput: "Precisa de atenção",
@@ -1062,6 +1064,18 @@ export const ptBR: TranslationResources = {
       running: "Trabalhando",
       attention: "Pronto",
       done: "Ocioso",
+      snoozed: "Adiado",
+    },
+    attention: {
+      trigger: "{{count}} itens precisam de atenção",
+      title: "Central de atenção",
+      empty: "Nada precisa da sua atenção.",
+    },
+    telemetry: {
+      load: "Carga",
+      memory: "RAM",
+      loading: "Carregando métricas…",
+      unavailable: "Métricas indisponíveis",
     },
     labels: {
       latestReply: "Resposta mais recente",

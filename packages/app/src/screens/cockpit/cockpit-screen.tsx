@@ -11,13 +11,24 @@ import {
   type PressableStateCallbackType,
   type ViewStyle,
 } from "react-native";
-import { ArrowUp, Columns2, GitBranch, GitPullRequest, Plus, Rows2, X } from "lucide-react-native";
+import {
+  ArrowUp,
+  BellRing,
+  Columns2,
+  GitBranch,
+  GitPullRequest,
+  Moon,
+  Plus,
+  Rows2,
+  X,
+} from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { router } from "expo-router";
 import { SidebarMenuToggle } from "@/components/headers/menu-header";
 import { ScreenHeader } from "@/components/headers/screen-header";
 import { ScreenTitle } from "@/components/headers/screen-title";
 import { DiffStat } from "@/components/diff-stat";
+import { ContextWindowMeter } from "@/components/context-window-meter";
 import { AdaptiveTextInput } from "@/components/adaptive-text-input";
 import { StatusRing } from "@/components/status-ring";
 import { STATUS_RING_FRAME_SIZE } from "@/components/status-ring/geometry";
@@ -44,6 +55,7 @@ import {
   useCockpitLayoutStore,
   useCockpitLayoutStoreHydrated,
 } from "@/stores/cockpit-layout-store";
+import { useCockpitSnoozeStore } from "@/stores/cockpit-snooze-store";
 import { buildNewWorkspaceRoute, buildOpenProjectRoute } from "@/utils/host-routes";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { findAdjacentPane } from "@/utils/split-navigation";
@@ -59,8 +71,11 @@ import { createMessageSubmissionWriter } from "@/composer/submission/writer";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { selectAgentTurnPresentation, useSessionStore } from "@/stores/session-store";
 import { CockpitToggleButton } from "./cockpit-toggle-button";
+import { CockpitAttentionMenu } from "./cockpit-attention-menu";
+import { CockpitTelemetryBar } from "./cockpit-telemetry-bar";
 import { shouldShowCockpitQuickReply } from "./cockpit-card-presentation";
 import { resolveCockpitQuickReplyAction } from "./cockpit-quick-reply";
+import { useCockpitAgentUsage, type CockpitAgentUsage } from "./use-cockpit-agent-usage";
 import {
   COCKPIT_CARD_GAP,
   COCKPIT_HORIZONTAL_PADDING,
@@ -166,7 +181,8 @@ export function CockpitScreen() {
 
 function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   const { t } = useTranslation();
-  const { allProjects, workspaceEntriesByKey, isInitialLoad } = useSidebarModel();
+  const { allProjects, allWorkspaceEntriesByKey, workspaceEntriesByKey, isInitialLoad } =
+    useSidebarModel();
   const {
     settings: { workspaceTitleSource },
   } = useAppSettings();
@@ -176,6 +192,9 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   const addEmptyPane = useCockpitLayoutStore((state) => state.addEmptyPane);
   const closePane = useCockpitLayoutStore((state) => state.closePane);
   const focusPane = useCockpitLayoutStore((state) => state.focusPane);
+  const focusWorkspace = useCockpitLayoutStore((state) => state.focusWorkspace);
+  const snoozedAtByWorkspace = useCockpitSnoozeStore((state) => state.snoozedAtByWorkspace);
+  const setSnoozed = useCockpitSnoozeStore((state) => state.setSnoozed);
   const layoutHydrated = useCockpitLayoutStoreHydrated();
   const lastWorkspaceSelection = useLastWorkspaceSelection();
   const allWorkspaceKeys = useMemo(() => collectWorkspaceKeys(allProjects), [allProjects]);
@@ -189,6 +208,19 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   const projectNamesByWorkspace = useMemo(
     () => buildProjectNamesByWorkspace(allProjects),
     [allProjects],
+  );
+  const allWorkspaceEntries = useMemo(
+    () => [...allWorkspaceEntriesByKey.values()],
+    [allWorkspaceEntriesByKey],
+  );
+  const visibleWorkspaceEntries = useMemo(
+    () => [...workspaceEntriesByKey.values()],
+    [workspaceEntriesByKey],
+  );
+  const agentUsageByWorkspace = useCockpitAgentUsage(visibleWorkspaceEntries);
+  const telemetryServerIds = useMemo(
+    () => [...new Set(allWorkspaceEntries.map((workspace) => workspace.serverId))],
+    [allWorkspaceEntries],
   );
 
   useEffect(() => {
@@ -255,6 +287,21 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
     }
   }, [focusedWorkspace]);
   const handleAddPane = useCallback(() => addEmptyPane(), [addEmptyPane]);
+  const handleSetSnoozed = useCallback(
+    (workspaceKey: string, snoozed: boolean) => setSnoozed(workspaceKey, snoozed),
+    [setSnoozed],
+  );
+  const handleSelectAttention = useCallback(
+    (workspace: SidebarWorkspaceEntry) => {
+      if (!visibleWorkspaceKeys.has(workspace.workspaceKey)) {
+        navigateToCockpitWorkspace(workspace);
+        return;
+      }
+      focusWorkspace(workspace.workspaceKey);
+      rememberCockpitWorkspace(workspace);
+    },
+    [focusWorkspace, visibleWorkspaceKeys],
+  );
   const handleSplitPane = useCallback(
     (paneId: string, position: "right" | "down") => splitPane(paneId, position),
     [splitPane],
@@ -272,6 +319,12 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   const headerRight = useMemo(
     () => (
       <View style={styles.headerActions}>
+        <CockpitAttentionMenu
+          workspaces={allWorkspaceEntries}
+          snoozedAtByWorkspace={snoozedAtByWorkspace}
+          workspaceTitleSource={workspaceTitleSource}
+          onSelect={handleSelectAttention}
+        />
         <ToolbarButton
           label={t("workspace.tabs.actions.splitRight")}
           shortcut={splitRightKeys}
@@ -283,7 +336,16 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
         <CockpitToggleButton active onPress={handleReturnToWorkspace} />
       </View>
     ),
-    [handleAddPane, handleReturnToWorkspace, splitRightKeys, t],
+    [
+      allWorkspaceEntries,
+      handleAddPane,
+      handleReturnToWorkspace,
+      handleSelectAttention,
+      snoozedAtByWorkspace,
+      splitRightKeys,
+      t,
+      workspaceTitleSource,
+    ],
   );
 
   const handlePaneKeyboardAction = useCallback(
@@ -366,9 +428,12 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
             workspaceEntriesByKey={workspaceEntriesByKey}
             projectNamesByWorkspace={projectNamesByWorkspace}
             workspaceTitleSource={workspaceTitleSource}
+            agentUsageByWorkspace={agentUsageByWorkspace}
+            snoozedAtByWorkspace={snoozedAtByWorkspace}
             onFocusPane={handleFocusPane}
             onSplitPane={handleSplitPane}
             onClosePane={handleClosePane}
+            onSetSnoozed={handleSetSnoozed}
           />
         </View>
       </ScrollView>
@@ -378,6 +443,7 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   return (
     <View style={styles.screen} testID="cockpit-screen">
       <ScreenHeader left={headerLeft} right={headerRight} />
+      {isRouteFocused ? <CockpitTelemetryBar serverIds={telemetryServerIds} /> : null}
       {content}
     </View>
   );
@@ -389,18 +455,24 @@ function CockpitSplitNodeView({
   workspaceEntriesByKey,
   projectNamesByWorkspace,
   workspaceTitleSource,
+  agentUsageByWorkspace,
+  snoozedAtByWorkspace,
   onFocusPane,
   onSplitPane,
   onClosePane,
+  onSetSnoozed,
 }: {
   node: SplitNode;
   focusedPaneId: string | null;
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectNamesByWorkspace: ReadonlyMap<string, string>;
   workspaceTitleSource: "title" | "branch";
+  agentUsageByWorkspace: ReadonlyMap<string, CockpitAgentUsage>;
+  snoozedAtByWorkspace: Readonly<Record<string, string>>;
   onFocusPane: (paneId: string) => void;
   onSplitPane: (paneId: string, position: "right" | "down") => void;
   onClosePane: (paneId: string) => void;
+  onSetSnoozed: (workspaceKey: string, snoozed: boolean) => void;
 }): ReactElement | null {
   if (node.kind === "pane") {
     const workspaceKey = getCockpitPaneWorkspaceKey(node.pane);
@@ -423,10 +495,13 @@ function CockpitSplitNodeView({
         workspace={workspace}
         projectName={projectNamesByWorkspace.get(workspaceKey) ?? null}
         title={resolveSidebarWorkspacePrimaryLabel({ workspace, workspaceTitleSource })}
+        agentUsage={agentUsageByWorkspace.get(workspaceKey) ?? null}
+        isSnoozed={Boolean(snoozedAtByWorkspace[workspaceKey])}
         isFocused={node.pane.id === focusedPaneId}
         onFocus={onFocusPane}
         onSplit={onSplitPane}
         onClose={onClosePane}
+        onSetSnoozed={onSetSnoozed}
       />
     );
   }
@@ -446,9 +521,12 @@ function CockpitSplitNodeView({
             workspaceEntriesByKey={workspaceEntriesByKey}
             projectNamesByWorkspace={projectNamesByWorkspace}
             workspaceTitleSource={workspaceTitleSource}
+            agentUsageByWorkspace={agentUsageByWorkspace}
+            snoozedAtByWorkspace={snoozedAtByWorkspace}
             onFocusPane={onFocusPane}
             onSplitPane={onSplitPane}
             onClosePane={onClosePane}
+            onSetSnoozed={onSetSnoozed}
           />
         </View>
       ))}
@@ -461,19 +539,25 @@ function CockpitWorkspaceCard({
   workspace,
   projectName,
   title,
+  agentUsage,
+  isSnoozed,
   isFocused,
   onFocus,
   onSplit,
   onClose,
+  onSetSnoozed,
 }: {
   pane: SplitPane;
   workspace: SidebarWorkspaceEntry;
   projectName: string | null;
   title: string;
+  agentUsage: CockpitAgentUsage | null;
+  isSnoozed: boolean;
   isFocused: boolean;
   onFocus: (paneId: string) => void;
   onSplit: (paneId: string, position: "right" | "down") => void;
   onClose: (paneId: string) => void;
+  onSetSnoozed: (workspaceKey: string, snoozed: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [isArchiving, setIsArchiving] = useState(false);
@@ -499,6 +583,17 @@ function CockpitWorkspaceCard({
     handleFocus();
     archiveController.archive();
   }, [archiveController, handleFocus, isArchiving]);
+  const handleToggleSnooze = useCallback(() => {
+    onSetSnoozed(workspace.workspaceKey, !isSnoozed);
+  }, [isSnoozed, onSetSnoozed, workspace.workspaceKey]);
+  const snoozeAction = useMemo(
+    () => ({
+      label: isSnoozed ? t("cockpit.actions.wake") : t("cockpit.actions.snooze"),
+      active: isSnoozed,
+      onToggle: handleToggleSnooze,
+    }),
+    [handleToggleSnooze, isSnoozed, t],
+  );
 
   useKeyboardActionHandler({
     handlerId: `cockpit-pane-close-${pane.id}`,
@@ -511,10 +606,17 @@ function CockpitWorkspaceCard({
     },
   });
 
-  const accessibilityLabel = `${title}, ${t(STATUS_LABEL_KEYS[workspace.statusBucket])}`;
+  const statusLabel = isSnoozed
+    ? t("cockpit.status.snoozed")
+    : t(STATUS_LABEL_KEYS[workspace.statusBucket]);
+  const accessibilityLabel = `${title}, ${statusLabel}`;
   const rootStyle = useMemo(
-    () => [styles.card, isFocused ? styles.cardFocused : null],
-    [isFocused],
+    () => [
+      styles.card,
+      isFocused ? styles.cardFocused : null,
+      isSnoozed ? styles.cardSnoozed : null,
+    ],
+    [isFocused, isSnoozed],
   );
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
     const nextSize = {
@@ -546,13 +648,13 @@ function CockpitWorkspaceCard({
         style={cockpitCardContentStyle}
       >
         <View style={styles.cardHeader}>
-          <CockpitStatusIndicator bucket={workspace.statusBucket} />
+          <CockpitStatusIndicator bucket={workspace.statusBucket} snoozed={isSnoozed} />
           <View style={styles.cardTitleGroup}>
             <Text style={styles.cardTitle} numberOfLines={1}>
               {title}
             </Text>
             <Text style={styles.statusText} numberOfLines={1}>
-              {t(STATUS_LABEL_KEYS[workspace.statusBucket])}
+              {statusLabel}
             </Text>
           </View>
           {workspace.diffStat ? (
@@ -561,10 +663,21 @@ function CockpitWorkspaceCard({
               deletions={workspace.diffStat.deletions}
             />
           ) : null}
+          {agentUsage ? (
+            <ContextWindowMeter
+              maxTokens={agentUsage.contextWindowMaxTokens}
+              usedTokens={agentUsage.contextWindowUsedTokens}
+              totalCostUsd={agentUsage.totalCostUsd}
+              showPercentage
+              serverId={workspace.serverId}
+              provider={agentUsage.provider}
+            />
+          ) : null}
           <CockpitPaneActions
             paneId={pane.id}
             closeLabel={t("sidebar.workspace.actions.archiveWorkspace")}
             closeDisabled={isArchiving}
+            snoozeAction={snoozeAction}
             onFocus={onFocus}
             onSplit={onSplit}
             onClose={handleArchive}
@@ -597,7 +710,7 @@ function CockpitWorkspaceCard({
 
         <CockpitCardActivity workspace={workspace} />
       </Pressable>
-      {showQuickReply && workspace.agentId ? (
+      {!isSnoozed && showQuickReply && workspace.agentId ? (
         <CockpitQuickReply
           agentId={workspace.agentId}
           serverId={workspace.serverId}
@@ -871,6 +984,7 @@ function CockpitEmptyPane({
         <CockpitPaneActions
           paneId={pane.id}
           closeLabel={t("workspace.tabs.actions.closePane")}
+          snoozeAction={null}
           onFocus={onFocus}
           onSplit={onSplit}
           onClose={handleClose}
@@ -892,6 +1006,7 @@ function CockpitPaneActions({
   paneId,
   closeLabel,
   closeDisabled = false,
+  snoozeAction,
   onFocus,
   onSplit,
   onClose,
@@ -899,6 +1014,7 @@ function CockpitPaneActions({
   paneId: string;
   closeLabel: string;
   closeDisabled?: boolean;
+  snoozeAction: { label: string; active: boolean; onToggle: () => void } | null;
   onFocus: (paneId: string) => void;
   onSplit: (paneId: string, position: "right" | "down") => void;
   onClose: () => void;
@@ -938,6 +1054,13 @@ function CockpitPaneActions({
 
   return (
     <View style={styles.paneActions}>
+      {snoozeAction ? (
+        <CockpitSnoozeActionButton
+          paneId={paneId}
+          action={snoozeAction}
+          preparePaneAction={preparePaneAction}
+        />
+      ) : null}
       <ToolbarControls>
         <ToolbarButton
           label={t("workspace.tabs.actions.splitRight")}
@@ -971,7 +1094,47 @@ function CockpitPaneActions({
   );
 }
 
-function CockpitStatusIndicator({ bucket }: { bucket: SidebarWorkspaceEntry["statusBucket"] }) {
+function CockpitSnoozeActionButton({
+  paneId,
+  action,
+  preparePaneAction,
+}: {
+  paneId: string;
+  action: { label: string; active: boolean; onToggle: () => void };
+  preparePaneAction: (event: GestureResponderEvent) => void;
+}) {
+  const handleToggle = useCallback(
+    (event: GestureResponderEvent) => {
+      preparePaneAction(event);
+      action.onToggle();
+    },
+    [action, preparePaneAction],
+  );
+
+  return (
+    <ToolbarControls>
+      <ToolbarButton
+        label={action.label}
+        selected={action.active}
+        testID={`cockpit-pane-snooze-${paneId}`}
+        onPress={handleToggle}
+      >
+        {action.active ? <ThemedBellRing size={14} /> : <ThemedMoon size={14} />}
+      </ToolbarButton>
+    </ToolbarControls>
+  );
+}
+
+function CockpitStatusIndicator({
+  bucket,
+  snoozed,
+}: {
+  bucket: SidebarWorkspaceEntry["statusBucket"];
+  snoozed: boolean;
+}) {
+  if (snoozed) {
+    return <View style={[styles.statusDot, styles.statusDotDone]} />;
+  }
   if (bucket === "running") {
     return (
       <View style={styles.statusRingFrame} testID="cockpit-running-spinner">
@@ -1051,6 +1214,12 @@ const ThemedPlus = withUnistyles(Plus, (theme) => ({
 const ThemedArrowUp = withUnistyles(ArrowUp, (theme) => ({
   color: theme.colors.foreground,
 }));
+const ThemedMoon = withUnistyles(Moon, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const ThemedBellRing = withUnistyles(BellRing, (theme) => ({
+  color: theme.colors.foreground,
+}));
 
 const styles = StyleSheet.create((theme) => ({
   screen: {
@@ -1114,6 +1283,9 @@ const styles = StyleSheet.create((theme) => ({
   },
   cardFocused: {
     borderColor: theme.colors.accent,
+  },
+  cardSnoozed: {
+    opacity: 0.52,
   },
   cardHovered: {
     backgroundColor: theme.colors.surface2,

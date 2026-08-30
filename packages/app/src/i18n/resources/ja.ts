@@ -1041,6 +1041,8 @@ export const ja: TranslationResources = {
       toggle: "コックピットを切り替え",
       open: "コックピットを開く",
       returnToWorkspace: "ワークスペースに戻る",
+      snooze: "スヌーズ",
+      wake: "再表示",
     },
     status: {
       needsInput: "入力待ち",
@@ -1048,6 +1050,18 @@ export const ja: TranslationResources = {
       running: "作業中",
       attention: "準備完了",
       done: "待機中",
+      snoozed: "スヌーズ中",
+    },
+    attention: {
+      trigger: "要確認 {{count}} 件",
+      title: "アテンションセンター",
+      empty: "確認が必要な項目はありません。",
+    },
+    telemetry: {
+      load: "負荷",
+      memory: "RAM",
+      loading: "メトリクスを読み込み中…",
+      unavailable: "メトリクスを利用できません",
     },
     labels: {
       latestReply: "最新の返信",

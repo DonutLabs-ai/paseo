@@ -1064,6 +1064,8 @@ export const es: TranslationResources = {
       toggle: "Alternar panel de control",
       open: "Abrir panel de control",
       returnToWorkspace: "Volver al espacio de trabajo",
+      snooze: "Posponer",
+      wake: "Reactivar",
     },
     status: {
       needsInput: "Requiere atención",
@@ -1071,6 +1073,18 @@ export const es: TranslationResources = {
       running: "Trabajando",
       attention: "Listo",
       done: "Inactivo",
+      snoozed: "Pospuesto",
+    },
+    attention: {
+      trigger: "{{count}} elementos requieren atención",
+      title: "Centro de atención",
+      empty: "Nada requiere tu atención.",
+    },
+    telemetry: {
+      load: "Carga",
+      memory: "RAM",
+      loading: "Cargando métricas…",
+      unavailable: "Métricas no disponibles",
     },
     labels: {
       latestReply: "Última respuesta",

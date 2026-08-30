@@ -13,6 +13,15 @@ import type { ProviderAvailability } from "../../agent/agent-manager.js";
 import type { HubRelationshipManagement } from "../../hub/relationship-controller.js";
 import type { SessionOutboundMessage } from "../../messages.js";
 import type { DaemonConfigReloadResult } from "../../daemon-config-store.js";
+import type { DaemonSystemUsage } from "../../messages.js";
+
+const SYSTEM_USAGE: DaemonSystemUsage = {
+  collectedAt: "2026-08-30T00:00:00.000Z",
+  cpuCount: 8,
+  loadAverage1m: 2,
+  memoryUsedBytes: 8_000,
+  memoryTotalBytes: 16_000,
+};
 
 const tempDirs: string[] = [];
 
@@ -44,6 +53,7 @@ function makeSubsystem(overrides: {
   getWebSocketRuntimeMetrics?: () => DaemonWebSocketRuntimeDiagnosticSnapshot | null;
   hubRelationships?: HubRelationshipManagement;
   reloadConfig?: () => DaemonConfigReloadResult;
+  getSystemUsage?: () => DaemonSystemUsage;
 }) {
   const emitted: SessionOutboundMessage[] = [];
   const restartIntents: Parameters<DaemonSessionHost["emitLifecycleIntent"]>[0][] = [];
@@ -72,6 +82,7 @@ function makeSubsystem(overrides: {
         restartRequiredPaths: [],
         overrideControlledPaths: [],
       })),
+    getSystemUsage: overrides.getSystemUsage ?? (() => SYSTEM_USAGE),
     logger: pino({ level: "silent" }),
   });
   return { subsystem, emitted, paseoHome, restartIntents };
@@ -212,12 +223,13 @@ describe("DaemonSession", () => {
             { provider: "claude", available: true, error: null },
             { provider: "codex", available: false, error: "boom" },
           ],
+          systemUsage: SYSTEM_USAGE,
         },
       },
     ]);
   });
 
-  test("status falls back to null fields and an empty provider list when listing rejects", async () => {
+  test("status preserves independent fields and returns an empty provider list when listing rejects", async () => {
     const { subsystem, emitted } = makeSubsystem({
       serverId: "srv-1",
       daemonVersion: "1.2.3",
@@ -239,9 +251,33 @@ describe("DaemonSession", () => {
           pid: process.pid,
           nodePath: process.execPath,
           startedAt: null,
-          listen: null,
+          listen: "127.0.0.1:6767",
           relay: null,
           providers: [],
+          systemUsage: SYSTEM_USAGE,
+        },
+      },
+    ]);
+  });
+
+  test("status returns a correlated RPC error when system usage collection fails", async () => {
+    const { subsystem, emitted } = makeSubsystem({
+      serverId: "srv-1",
+      getSystemUsage: () => {
+        throw new Error("invalid host metrics");
+      },
+    });
+
+    await subsystem.handleGetStatusRequest({ type: "daemon.get_status.request", requestId: "s-3" });
+
+    expect(emitted).toEqual([
+      {
+        type: "rpc_error",
+        payload: {
+          requestId: "s-3",
+          requestType: "daemon.get_status.request",
+          error: "invalid host metrics",
+          code: "handler_error",
         },
       },
     ]);

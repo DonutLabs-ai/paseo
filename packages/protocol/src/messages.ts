@@ -3410,6 +3410,8 @@ export const ServerInfoStatusPayloadSchema = z
         forgeSearch: z.boolean().optional(),
         // COMPAT(daemonStatusRpc): added in v0.1.76, remove gate after 2026-11-18.
         daemonStatusRpc: z.boolean().optional(),
+        // COMPAT(daemonSystemUsage): added in v0.7.0, remove gate after 2027-08-30.
+        daemonSystemUsage: z.boolean().optional(),
         // COMPAT(daemonConfigReload): added in v0.4.0, remove gate after 2027-02-14.
         daemonConfigReload: z.boolean().optional(),
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
@@ -4634,6 +4636,16 @@ export const DaemonGetStatusResponseSchema = z.object({
           error: z.string().nullable().optional(),
         }),
       ),
+      // COMPAT(daemonSystemUsage): added in v0.7.0, remove optional parsing after 2027-08-30.
+      systemUsage: z
+        .object({
+          collectedAt: z.string().datetime(),
+          cpuCount: z.number().int().positive(),
+          loadAverage1m: z.number().nonnegative(),
+          memoryUsedBytes: z.number().nonnegative(),
+          memoryTotalBytes: z.number().positive(),
+        })
+        .optional(),
     })
     .passthrough(),
 });
@@ -6708,6 +6720,7 @@ export type ListProviderFeaturesResponseMessage = z.infer<
 >;
 export type ListAvailableProvidersResponse = z.infer<typeof ListAvailableProvidersResponseSchema>;
 export type DaemonGetStatusResponse = z.infer<typeof DaemonGetStatusResponseSchema>;
+export type DaemonSystemUsage = NonNullable<DaemonGetStatusResponse["payload"]["systemUsage"]>;
 export type DaemonGetPairingOfferResponse = z.infer<typeof DaemonGetPairingOfferResponseSchema>;
 export type DaemonConfigReloadResponse = z.infer<typeof DaemonConfigReloadResponseSchema>;
 export type DiagnosticsResponse = z.infer<typeof DiagnosticsResponseSchema>;

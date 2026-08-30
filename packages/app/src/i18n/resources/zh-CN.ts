@@ -1022,6 +1022,8 @@ export const zhCN: TranslationResources = {
       toggle: "切换驾驶舱",
       open: "打开驾驶舱",
       returnToWorkspace: "返回工作区",
+      snooze: "暂时搁置",
+      wake: "恢复关注",
     },
     status: {
       needsInput: "等待输入",
@@ -1029,6 +1031,18 @@ export const zhCN: TranslationResources = {
       running: "工作中",
       attention: "已就绪",
       done: "空闲",
+      snoozed: "已搁置",
+    },
+    attention: {
+      trigger: "{{count}} 项需要关注",
+      title: "关注中心",
+      empty: "目前没有需要关注的事项。",
+    },
+    telemetry: {
+      load: "负载",
+      memory: "内存",
+      loading: "正在加载指标…",
+      unavailable: "指标不可用",
     },
     labels: {
       latestReply: "最新回复",

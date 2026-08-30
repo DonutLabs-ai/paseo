@@ -286,6 +286,64 @@ describe("diagnostics message contract", () => {
   });
 });
 
+describe("daemon system usage compatibility", () => {
+  const baseStatusPayload = {
+    requestId: "status-1",
+    serverId: "srv-test",
+    version: "0.7.0",
+    pid: 123,
+    nodePath: "/usr/bin/node",
+    startedAt: "2026-08-30T00:00:00.000Z",
+    listen: "127.0.0.1:6767",
+    relay: null,
+    providers: [],
+  };
+
+  test("accepts an old daemon status response without system usage", () => {
+    const parsed = SessionOutboundMessageSchema.parse({
+      type: "daemon.get_status.response",
+      payload: baseStatusPayload,
+    });
+
+    expect(parsed.type).toBe("daemon.get_status.response");
+    if (parsed.type !== "daemon.get_status.response") {
+      throw new Error("Expected daemon.get_status.response");
+    }
+    expect(parsed.payload.systemUsage).toBeUndefined();
+  });
+
+  test("accepts a typed daemon system usage snapshot and feature gate", () => {
+    const parsed = SessionOutboundMessageSchema.parse({
+      type: "daemon.get_status.response",
+      payload: {
+        ...baseStatusPayload,
+        systemUsage: {
+          collectedAt: "2026-08-30T00:00:00.000Z",
+          cpuCount: 8,
+          loadAverage1m: 2.5,
+          memoryUsedBytes: 8_000,
+          memoryTotalBytes: 16_000,
+        },
+      },
+    });
+    const serverInfo = parseServerInfoStatusPayload({
+      status: "server_info",
+      serverId: "srv-test",
+      features: { daemonSystemUsage: true },
+    });
+
+    expect(parsed.type).toBe("daemon.get_status.response");
+    if (parsed.type !== "daemon.get_status.response") {
+      throw new Error("Expected daemon.get_status.response");
+    }
+    if (!serverInfo) {
+      throw new Error("Expected server info payload to parse");
+    }
+    expect(parsed.payload.systemUsage?.memoryUsedBytes).toBe(8_000);
+    expect(serverInfo.features?.daemonSystemUsage).toBe(true);
+  });
+});
+
 describe("agent detach RPC", () => {
   test("parses the namespaced detach request", () => {
     const parsed = SessionInboundMessageSchema.parse({

@@ -58,6 +58,10 @@ import { showProviderNoticeToast } from "@/utils/provider-notice-toast";
 import { applyCheckoutStatusUpdateFromEvent } from "@/git/checkout-status-cache";
 import { useProviderSubagentStore } from "@/subagents/provider-store";
 import { revalidateSessionAfterResume } from "@/contexts/session-resume-revalidation";
+import {
+  shouldSuppressSnoozedAttentionNotification,
+  useCockpitSnoozeStore,
+} from "@/stores/cockpit-snooze-store";
 
 function consumeForcedTimelineTailReplacement(
   payload: TimelineResponsePayload,
@@ -66,6 +70,19 @@ function consumeForcedTimelineTailReplacement(
   if (payload.direction !== "tail") return payload;
   if (!replacements.delete(payload.agentId)) return payload;
   return { ...payload, reset: true };
+}
+
+function shouldSuppressDesktopAgentAttention(input: {
+  reason: "finished" | "error" | "permission";
+  serverId: string;
+  notification: AgentAttentionNotificationPayload | undefined;
+  fallbackWorkspaceId: string | undefined;
+}): boolean {
+  const workspaceId = input.notification?.data.workspaceId ?? input.fallbackWorkspaceId;
+  if (!workspaceId) return false;
+  const workspaceKey = `${input.serverId}:${workspaceId}`;
+  const isSnoozed = Boolean(useCockpitSnoozeStore.getState().snoozedAtByWorkspace[workspaceKey]);
+  return shouldSuppressSnoozedAttentionNotification(input.reason, isSnoozed);
 }
 
 // Re-export types from session-store and draft-store for backward compatibility
@@ -311,9 +328,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       const appState = appStateRef.current;
       const session = useSessionStore.getState().sessions[serverId];
       const attentionFocusedAgentId = session?.focusedAgentId ?? null;
-      if (params.reason === "error") {
-        return;
-      }
       const isActivelyVisible = getIsAppActivelyVisible(appState);
       const isAwayFromAgent = !isActivelyVisible || attentionFocusedAgentId !== params.agentId;
       if (!isAwayFromAgent) {
@@ -333,6 +347,16 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
         findLatestAssistantMessageText(head) ?? findLatestAssistantMessageText(tail);
       const permissionRequest = getLatestPermissionRequest(session, params.agentId);
       const workspaceId = session?.agents?.get(params.agentId)?.workspaceId;
+      if (
+        shouldSuppressDesktopAgentAttention({
+          reason: params.reason,
+          serverId,
+          notification: params.notification,
+          fallbackWorkspaceId: workspaceId,
+        })
+      ) {
+        return;
+      }
 
       const notification = resolveAgentAttentionNotification({
         notification: params.notification,
@@ -567,6 +591,15 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
     });
 
     const unsubAgentAttention = client.onAgentAttentionRequired((notification) => {
+      const session = useSessionStore.getState().sessions[serverId];
+      const workspaceId =
+        notification.notification?.data.workspaceId ??
+        session?.agents.get(notification.agentId)?.workspaceId;
+      if (workspaceId) {
+        useCockpitSnoozeStore
+          .getState()
+          .wakeForAttention(`${serverId}:${workspaceId}`, notification.reason);
+      }
       if (notification.shouldNotify) {
         notifyAgentAttention(notification);
       }

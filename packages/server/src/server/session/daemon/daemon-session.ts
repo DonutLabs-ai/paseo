@@ -12,6 +12,8 @@ import type { ManagedAgent } from "../../agent/agent-manager.js";
 import type { PersistedProjectRecord, PersistedWorkspaceRecord } from "../../workspace-registry.js";
 import type { HubRelationshipManagement } from "../../hub/relationship-controller.js";
 import type { DaemonConfigReloadResult } from "../../daemon-config-store.js";
+import type { DaemonSystemUsage } from "../../messages.js";
+import { collectDaemonSystemUsage } from "./system-usage.js";
 
 export interface DaemonRuntimeConfig {
   listen: string | null;
@@ -52,6 +54,7 @@ export interface DaemonSessionOptions {
   logger: pino.Logger;
   hubRelationships?: HubRelationshipManagement;
   reloadConfig: () => DaemonConfigReloadResult;
+  getSystemUsage?: () => DaemonSystemUsage;
 }
 
 /**
@@ -77,6 +80,7 @@ export class DaemonSession {
   private readonly selfUpdate: DaemonSelfUpdateSessionController;
   private readonly hubRelationships: HubRelationshipManagement | null;
   private readonly reloadConfig: () => DaemonConfigReloadResult;
+  private readonly getSystemUsage: () => DaemonSystemUsage;
 
   constructor(options: DaemonSessionOptions) {
     this.host = options.host;
@@ -93,6 +97,7 @@ export class DaemonSession {
     this.logger = options.logger;
     this.hubRelationships = options.hubRelationships ?? null;
     this.reloadConfig = options.reloadConfig;
+    this.getSystemUsage = options.getSystemUsage ?? collectDaemonSystemUsage;
     this.selfUpdate = new DaemonSelfUpdateSessionController({
       clientId: this.clientId,
       daemonVersion: this.daemonVersion ?? null,
@@ -156,44 +161,53 @@ export class DaemonSession {
   async handleGetStatusRequest(
     msg: Extract<SessionInboundMessage, { type: "daemon.get_status.request" }>,
   ): Promise<void> {
+    let startedAt: string | null = null;
     try {
       const pidInfo = await getPidLockInfo(this.paseoHome);
-      const providers = (await this.listProviderAvailability()).map((p) => ({
-        provider: p.provider,
-        available: p.available,
-        error: p.error ?? null,
-      }));
-      this.host.emit({
-        type: "daemon.get_status.response",
-        payload: {
-          requestId: msg.requestId,
-          serverId: this.serverId ?? "",
-          version: this.daemonVersion ?? null,
-          pid: process.pid,
-          nodePath: process.execPath,
-          startedAt: pidInfo?.startedAt ?? null,
-          listen: this.daemonRuntimeConfig?.listen ?? null,
-          relay: this.daemonRuntimeConfig?.getRelayConfig() ?? null,
-          providers,
-        },
-      });
+      startedAt = pidInfo?.startedAt ?? null;
     } catch (error) {
-      this.logger.error({ err: error }, "Failed to handle daemon status request");
+      this.logger.error({ err: error }, "Failed to read daemon PID lock status");
+    }
+
+    let providers: ProviderAvailability[] = [];
+    try {
+      providers = await this.listProviderAvailability();
+    } catch (error) {
+      this.logger.error({ err: error }, "Failed to list provider availability for daemon status");
+    }
+
+    let systemUsage: DaemonSystemUsage;
+    try {
+      systemUsage = this.getSystemUsage();
+    } catch (error) {
+      this.logger.error({ err: error }, "Failed to collect daemon system usage");
       this.host.emit({
-        type: "daemon.get_status.response",
+        type: "rpc_error",
         payload: {
           requestId: msg.requestId,
-          serverId: this.serverId ?? "",
-          version: this.daemonVersion ?? null,
-          pid: process.pid,
-          nodePath: process.execPath,
-          startedAt: null,
-          listen: null,
-          relay: null,
-          providers: [],
+          requestType: msg.type,
+          error: error instanceof Error ? error.message : String(error),
+          code: "handler_error",
         },
       });
+      return;
     }
+
+    this.host.emit({
+      type: "daemon.get_status.response",
+      payload: {
+        requestId: msg.requestId,
+        serverId: this.serverId ?? "",
+        version: this.daemonVersion ?? null,
+        pid: process.pid,
+        nodePath: process.execPath,
+        startedAt,
+        listen: this.daemonRuntimeConfig?.listen ?? null,
+        relay: this.daemonRuntimeConfig?.getRelayConfig() ?? null,
+        providers,
+        systemUsage,
+      },
+    });
   }
 
   async handleGetPairingOfferRequest(

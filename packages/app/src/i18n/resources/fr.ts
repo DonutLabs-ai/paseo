@@ -1063,6 +1063,8 @@ export const fr: TranslationResources = {
       toggle: "Basculer le cockpit",
       open: "Ouvrir le cockpit",
       returnToWorkspace: "Revenir à l’espace de travail",
+      snooze: "Mettre en veille",
+      wake: "Réactiver",
     },
     status: {
       needsInput: "Entrée requise",
@@ -1070,6 +1072,18 @@ export const fr: TranslationResources = {
       running: "En cours",
       attention: "Prêt",
       done: "Inactif",
+      snoozed: "En veille",
+    },
+    attention: {
+      trigger: "{{count}} éléments demandent votre attention",
+      title: "Centre d’attention",
+      empty: "Rien ne demande votre attention.",
+    },
+    telemetry: {
+      load: "Charge",
+      memory: "RAM",
+      loading: "Chargement des métriques…",
+      unavailable: "Métriques indisponibles",
     },
     labels: {
       latestReply: "Dernière réponse",

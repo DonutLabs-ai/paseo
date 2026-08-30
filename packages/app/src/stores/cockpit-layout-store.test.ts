@@ -111,4 +111,21 @@ describe("cockpit-layout-store", () => {
     );
     expect(focusedPane && getCockpitPaneWorkspaceKey(focusedPane)).toBe("host:b");
   });
+
+  it("focuses a workspace explicitly from the attention center", async () => {
+    const store = createCockpitLayoutStore(createIds());
+    await store.persist.rehydrate();
+    store.getState().reconcileWorkspaces({
+      workspaceKeys: ["host:a", "host:b"],
+      preferredWorkspaceKey: "host:a",
+    });
+
+    store.getState().focusWorkspace("host:b");
+
+    const layout = requireItem(store.getState().layout);
+    const focusedPane = collectCockpitPanes(layout.root).find(
+      (pane) => pane.id === layout.focusedPaneId,
+    );
+    expect(focusedPane && getCockpitPaneWorkspaceKey(focusedPane)).toBe("host:b");
+  });
 });
