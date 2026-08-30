@@ -1188,7 +1188,7 @@ export const zhCN: TranslationResources = {
         createWorkspaceFor: "为 {{projectName}} 新建 workspace",
         copyPath: "复制路径",
         copyBranchName: "复制分支名称",
-        rename: "重命名 workspace",
+        rename: "编辑备注",
         pin: "置顶",
         unpin: "取消置顶",
         archive: "归档",
@@ -1205,8 +1205,8 @@ export const zhCN: TranslationResources = {
         cancel: "取消",
       },
       rename: {
-        title: "重命名 workspace",
-        submit: "重命名",
+        title: "Workspace 备注",
+        submit: "保存",
         invalidBranchName: "无效的分支名称",
       },
       toasts: {

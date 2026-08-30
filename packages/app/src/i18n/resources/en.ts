@@ -1207,7 +1207,7 @@ export const en = {
         createWorkspaceFor: "Create a new workspace for {{projectName}}",
         copyPath: "Copy path",
         copyBranchName: "Copy branch name",
-        rename: "Rename workspace",
+        rename: "Edit note",
         pin: "Pin to top",
         unpin: "Unpin",
         archive: "Archive",
@@ -1225,8 +1225,8 @@ export const en = {
         cancel: "Cancel",
       },
       rename: {
-        title: "Rename workspace",
-        submit: "Rename",
+        title: "Workspace note",
+        submit: "Save",
         invalidBranchName: "Invalid branch name",
       },
       toasts: {

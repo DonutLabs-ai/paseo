@@ -1223,7 +1223,7 @@ export const ptBR: TranslationResources = {
         createWorkspaceFor: "Criar um novo workspace para {{projectName}}",
         copyPath: "Copiar caminho",
         copyBranchName: "Copiar nome da branch",
-        rename: "Renomear workspace",
+        rename: "Editar nota",
         pin: "Fixar no topo",
         unpin: "Desafixar",
         archive: "Arquivar",
@@ -1241,8 +1241,8 @@ export const ptBR: TranslationResources = {
         cancel: "Cancelar",
       },
       rename: {
-        title: "Renomear workspace",
-        submit: "Renomear",
+        title: "Nota do workspace",
+        submit: "Salvar",
         invalidBranchName: "Nome de branch inválido",
       },
       toasts: {

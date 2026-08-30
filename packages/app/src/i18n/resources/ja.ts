@@ -1210,7 +1210,7 @@ export const ja: TranslationResources = {
         createWorkspaceFor: "{{projectName}}の新しいワークスペースを作成",
         copyPath: "パスをコピー",
         copyBranchName: "ブランチ名をコピー",
-        rename: "ワークスペースの名前を変更",
+        rename: "メモを編集",
         pin: "上部に固定",
         unpin: "固定解除",
         archive: "アーカイブ",
@@ -1228,8 +1228,8 @@ export const ja: TranslationResources = {
         cancel: "キャンセル",
       },
       rename: {
-        title: "ワークスペースの名前を変更",
-        submit: "名前を変更",
+        title: "ワークスペースのメモ",
+        submit: "保存",
         invalidBranchName: "無効なブランチ名",
       },
       toasts: {

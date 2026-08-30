@@ -18,6 +18,7 @@ import {
   GitBranch,
   GitPullRequest,
   Moon,
+  Pencil,
   Plus,
   Rows2,
   X,
@@ -61,6 +62,7 @@ import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { findAdjacentPane } from "@/utils/split-navigation";
 import type { SplitNode, SplitPane } from "@/stores/workspace-layout-store";
 import { useWorkspaceArchive } from "@/workspace/use-workspace-archive";
+import { WorkspaceNoteModal } from "@/workspace/workspace-note-modal";
 import { toWorktreeArchiveRisk } from "@/git/worktree-archive-warning";
 import {
   dispatchComposerAgentMessage,
@@ -561,7 +563,10 @@ function CockpitWorkspaceCard({
 }) {
   const { t } = useTranslation();
   const [isArchiving, setIsArchiving] = useState(false);
+  const [isNoteOpen, setIsNoteOpen] = useState(false);
   const [cardSize, setCardSize] = useState<CockpitCardSize>({ width: 0, height: 0 });
+  const client = useHostRuntimeClient(workspace.serverId);
+  const isConnected = useHostRuntimeIsConnected(workspace.serverId);
   const archiveController = useWorkspaceArchive({
     serverId: workspace.serverId,
     workspaceId: workspace.workspaceId,
@@ -586,6 +591,25 @@ function CockpitWorkspaceCard({
   const handleToggleSnooze = useCallback(() => {
     onSetSnoozed(workspace.workspaceKey, !isSnoozed);
   }, [isSnoozed, onSetSnoozed, workspace.workspaceKey]);
+  const handleOpenNote = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      handleFocus();
+      setIsNoteOpen(true);
+    },
+    [handleFocus],
+  );
+  const handleCloseNote = useCallback(() => setIsNoteOpen(false), []);
+  const handleSubmitNote = useCallback(
+    async (note: string | null) => {
+      if (!client || !isConnected) {
+        throw new Error(t("sidebar.workspace.toasts.hostDisconnected"));
+      }
+      await client.setWorkspaceTitle(workspace.workspaceId, note);
+    },
+    [client, isConnected, t, workspace.workspaceId],
+  );
+  const noteFallbackTitle = workspace.currentBranch ?? workspace.workspaceDirectoryLabel;
   const snoozeAction = useMemo(
     () => ({
       label: isSnoozed ? t("cockpit.actions.wake") : t("cockpit.actions.snooze"),
@@ -650,9 +674,22 @@ function CockpitWorkspaceCard({
         <View style={styles.cardHeader}>
           <CockpitStatusIndicator bucket={workspace.statusBucket} snoozed={isSnoozed} />
           <View style={styles.cardTitleGroup}>
-            <Text style={styles.cardTitle} numberOfLines={1}>
-              {title}
-            </Text>
+            <View style={styles.cardTitleRow}>
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {title}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("sidebar.workspace.actions.rename")}
+                accessibilityHint={noteFallbackTitle}
+                hitSlop={6}
+                onPress={handleOpenNote}
+                style={cockpitNoteButtonStyle}
+                testID={`cockpit-workspace-note-${workspace.workspaceKey}`}
+              >
+                <ThemedPencil size={12} />
+              </Pressable>
+            </View>
             <Text style={styles.statusText} numberOfLines={1}>
               {statusLabel}
             </Text>
@@ -717,6 +754,14 @@ function CockpitWorkspaceCard({
           onFocus={handleFocus}
         />
       ) : null}
+      <WorkspaceNoteModal
+        visible={isNoteOpen}
+        note={workspace.title}
+        fallbackTitle={noteFallbackTitle}
+        onClose={handleCloseNote}
+        onSubmit={handleSubmitNote}
+        testID={`cockpit-workspace-note-modal-${workspace.workspaceKey}`}
+      />
     </View>
   );
 }
@@ -1177,6 +1222,15 @@ function cockpitCardContentStyle(
   return result;
 }
 
+function cockpitNoteButtonStyle(
+  state: PressableStateCallbackType & { hovered?: boolean },
+): ViewStyle[] {
+  const result: ViewStyle[] = [styles.noteButton];
+  if (state.hovered) result.push(styles.noteButtonHovered);
+  if (state.pressed) result.push(styles.noteButtonPressed);
+  return result;
+}
+
 function quickReplySendButtonStyle(
   state: PressableStateCallbackType & { hovered?: boolean },
 ): ViewStyle[] {
@@ -1219,6 +1273,9 @@ const ThemedMoon = withUnistyles(Moon, (theme) => ({
 }));
 const ThemedBellRing = withUnistyles(BellRing, (theme) => ({
   color: theme.colors.foreground,
+}));
+const ThemedPencil = withUnistyles(Pencil, (theme) => ({
+  color: theme.colors.foregroundMuted,
 }));
 
 const styles = StyleSheet.create((theme) => ({
@@ -1308,11 +1365,32 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     minWidth: 0,
   },
+  cardTitleRow: {
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[1],
+  },
   cardTitle: {
+    flexShrink: 1,
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.medium,
     lineHeight: 20,
+  },
+  noteButton: {
+    width: 20,
+    height: 20,
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.borderRadius.sm,
+  },
+  noteButtonHovered: {
+    backgroundColor: theme.colors.surface3,
+  },
+  noteButtonPressed: {
+    backgroundColor: theme.colors.surface4,
   },
   statusText: {
     color: theme.colors.foregroundMuted,

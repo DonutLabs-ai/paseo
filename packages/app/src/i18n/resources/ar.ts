@@ -1198,7 +1198,7 @@ export const ar: TranslationResources = {
         createWorkspaceFor: "قم بإنشاء مساحة عمل جديدة لـ{{projectName}}",
         copyPath: "نسخ المسار",
         copyBranchName: "انسخ اسم الفرع",
-        rename: "إعادة تسمية مساحة العمل",
+        rename: "تحرير الملاحظة",
         pin: "تثبيت في الأعلى",
         unpin: "إلغاء التثبيت",
         archive: "أرشيف",
@@ -1216,8 +1216,8 @@ export const ar: TranslationResources = {
         cancel: "يلغي",
       },
       rename: {
-        title: "إعادة تسمية مساحة العمل",
-        submit: "إعادة تسمية",
+        title: "ملاحظة مساحة العمل",
+        submit: "حفظ",
         invalidBranchName: "اسم الفرع غير صالح",
       },
       toasts: {

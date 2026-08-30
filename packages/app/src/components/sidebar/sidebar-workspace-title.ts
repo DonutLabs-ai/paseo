@@ -3,9 +3,14 @@ import type { WorkspaceTitleSource } from "@/hooks/use-settings";
 import { STATUS_BUCKET_LABELS } from "@/hooks/sidebar-status-view-model";
 
 export function resolveSidebarWorkspacePrimaryLabel(input: {
-  workspace: Pick<SidebarWorkspaceEntry, "name" | "currentBranch">;
+  workspace: Pick<SidebarWorkspaceEntry, "name" | "currentBranch"> & {
+    title?: string | null;
+  };
   workspaceTitleSource: WorkspaceTitleSource;
 }): string {
+  if (input.workspace.title) {
+    return input.workspace.title;
+  }
   if (input.workspaceTitleSource === "branch") {
     return input.workspace.currentBranch ?? input.workspace.name;
   }
@@ -13,7 +18,9 @@ export function resolveSidebarWorkspacePrimaryLabel(input: {
 }
 
 export function resolveSidebarWorkspaceAccessibilityLabel(input: {
-  workspace: Pick<SidebarWorkspaceEntry, "name" | "currentBranch" | "statusBucket">;
+  workspace: Pick<SidebarWorkspaceEntry, "name" | "currentBranch" | "statusBucket"> & {
+    title?: string | null;
+  };
   workspaceTitleSource: WorkspaceTitleSource;
   leadingProjectName?: string | null;
   hostBadgeLabel?: string | null;

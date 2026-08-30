@@ -23,6 +23,19 @@ describe("resolveSidebarWorkspacePrimaryLabel", () => {
     expect(label).toBe("fix/search");
   });
 
+  it("keeps a custom note visible in branch mode", () => {
+    const label = resolveSidebarWorkspacePrimaryLabel({
+      workspace: {
+        name: "Investigate search",
+        title: "Waiting for API decision",
+        currentBranch: "fix/search",
+      },
+      workspaceTitleSource: "branch",
+    });
+
+    expect(label).toBe("Waiting for API decision");
+  });
+
   it("falls back to the workspace name in branch mode without a branch", () => {
     const label = resolveSidebarWorkspacePrimaryLabel({
       workspace: { name: "Local folder", currentBranch: null },

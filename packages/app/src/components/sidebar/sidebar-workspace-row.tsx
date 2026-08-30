@@ -9,7 +9,6 @@ import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list"
 import type { SidebarSurfaceBackdrop } from "@/styles/surface-backdrop";
 import type { DraggableListDragHandleProps } from "@/components/draggable-list.types";
 import type { ShortcutKey } from "@/utils/format-shortcut";
-import { AdaptiveRenameModal } from "@/components/rename-modal";
 import { useToast } from "@/contexts/toast-context";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { toWorktreeArchiveRisk } from "@/git/worktree-archive-warning";
@@ -42,6 +41,7 @@ import {
   useSidebarWorkspaceTrailing,
   type SidebarWorkspaceTrailing,
 } from "@/components/sidebar/workspace-trailing";
+import { WorkspaceNoteModal } from "@/workspace/workspace-note-modal";
 
 function noop() {}
 
@@ -78,7 +78,7 @@ export function SidebarWorkspaceRow({
   const { t } = useTranslation();
   const toast = useToast();
   const [isHidingWorkspace, setIsHidingWorkspace] = useState(false);
-  const [isRenameOpen, setIsRenameOpen] = useState(false);
+  const [isNoteOpen, setIsNoteOpen] = useState(false);
   const isArchiving = workspace.archivingAt !== null || isHidingWorkspace;
 
   const redirectAfterArchive = useCallback(() => {
@@ -135,29 +135,29 @@ export function SidebarWorkspaceRow({
     toast.copied(t("sidebar.workspace.toasts.branchNameCopied"));
   }, [t, toast, workspace.currentBranch]);
 
-  const renameMutation = useMutation({
-    mutationFn: async (title: string) => {
+  const noteMutation = useMutation({
+    mutationFn: async (note: string | null) => {
       const client = getHostRuntimeStore().getClient(workspace.serverId);
       if (!client) {
         throw new Error(t("sidebar.workspace.toasts.hostDisconnected"));
       }
-      await client.setWorkspaceTitle(workspace.workspaceId, title.length === 0 ? null : title);
+      await client.setWorkspaceTitle(workspace.workspaceId, note);
     },
   });
 
-  const handleOpenRename = useCallback(() => {
-    setIsRenameOpen(true);
+  const handleOpenNote = useCallback(() => {
+    setIsNoteOpen(true);
   }, []);
 
-  const handleCloseRename = useCallback(() => {
-    setIsRenameOpen(false);
+  const handleCloseNote = useCallback(() => {
+    setIsNoteOpen(false);
   }, []);
 
-  const handleSubmitRename = useCallback(
-    async (value: string) => {
-      await renameMutation.mutateAsync(value.trim());
+  const handleSubmitNote = useCallback(
+    async (note: string | null) => {
+      await noteMutation.mutateAsync(note);
     },
-    [renameMutation],
+    [noteMutation],
   );
 
   const archiveShortcutKeys = useShortcutKeys("archive-workspace");
@@ -202,18 +202,16 @@ export function SidebarWorkspaceRow({
         onArchive={handleArchive}
         onCopyBranchName={canCopyBranchName ? handleCopyBranchName : undefined}
         onCopyPath={handleCopyPath}
-        onRename={handleOpenRename}
+        onRename={handleOpenNote}
         onMarkAsRead={hasClearableAttention ? handleMarkAsRead : undefined}
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
       />
-      <AdaptiveRenameModal
-        visible={isRenameOpen}
-        title={t("sidebar.workspace.rename.title")}
-        initialValue={workspace.title ?? workspace.name}
-        placeholder={workspace.name}
-        submitLabel={t("sidebar.workspace.rename.submit")}
-        onClose={handleCloseRename}
-        onSubmit={handleSubmitRename}
+      <WorkspaceNoteModal
+        visible={isNoteOpen}
+        note={workspace.title}
+        fallbackTitle={workspace.currentBranch ?? workspace.workspaceDirectoryLabel}
+        onClose={handleCloseNote}
+        onSubmit={handleSubmitNote}
         testID={`sidebar-workspace-rename-modal-${workspace.workspaceKey}`}
       />
     </>

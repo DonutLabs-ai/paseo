@@ -174,6 +174,7 @@ interface RenderOptions {
   onClose?: () => void;
   onSubmit?: (value: string) => Promise<void> | void;
   validate?: (value: string) => string | null;
+  allowEmpty?: boolean;
   maxLength?: number;
 }
 
@@ -187,6 +188,7 @@ function renderModal(options: RenderOptions = {}): void {
     onClose = vi.fn(),
     onSubmit = vi.fn(),
     validate,
+    allowEmpty,
     maxLength,
   } = options;
   act(() => {
@@ -200,6 +202,7 @@ function renderModal(options: RenderOptions = {}): void {
         onClose={onClose}
         onSubmit={onSubmit}
         validate={validate}
+        allowEmpty={allowEmpty}
         maxLength={maxLength}
         testID="rename-modal"
       />,
@@ -326,6 +329,19 @@ describe("RenameModal", () => {
     expect(onSubmit).not.toHaveBeenCalled();
     const errorNode = queryError();
     expect(errorNode?.textContent).toContain("Invalid name");
+  });
+
+  it("submits an empty value when the caller allows clearing", async () => {
+    const onSubmit = vi.fn();
+    const onClose = vi.fn();
+    renderModal({ initialValue: "Pinned note", allowEmpty: true, onSubmit, onClose });
+
+    typeInto("");
+    pressEnter();
+    await flush();
+
+    expect(onSubmit).toHaveBeenCalledWith("");
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("disables the submit button while onSubmit is pending", async () => {

@@ -1232,7 +1232,7 @@ export const fr: TranslationResources = {
         createWorkspaceFor: "Créer un nouvel espace de travail pour{{projectName}}",
         copyPath: "Copier le chemin",
         copyBranchName: "Copier le nom de la branche",
-        rename: "Renommer l'espace de travail",
+        rename: "Modifier la note",
         pin: "Épingler en haut",
         unpin: "Désépingler",
         archive: "Archive",
@@ -1250,8 +1250,8 @@ export const fr: TranslationResources = {
         cancel: "Annuler",
       },
       rename: {
-        title: "Renommer l'espace de travail",
-        submit: "Rebaptiser",
+        title: "Note de l'espace de travail",
+        submit: "Enregistrer",
         invalidBranchName: "Nom de succursale invalide",
       },
       toasts: {

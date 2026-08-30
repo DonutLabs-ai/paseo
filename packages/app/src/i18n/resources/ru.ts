@@ -1214,7 +1214,7 @@ export const ru: TranslationResources = {
         createWorkspaceFor: "Создать новое рабочее пространство для {{projectName}}",
         copyPath: "Копировать путь",
         copyBranchName: "Скопировать имя ветки",
-        rename: "Переименовать рабочее пространство",
+        rename: "Изменить заметку",
         pin: "Закрепить вверху",
         unpin: "Открепить",
         archive: "Архивировать",
@@ -1232,8 +1232,8 @@ export const ru: TranslationResources = {
         cancel: "Отмена",
       },
       rename: {
-        title: "Переименовать рабочее пространство",
-        submit: "Переименовать",
+        title: "Заметка рабочего пространства",
+        submit: "Сохранить",
         invalidBranchName: "Недопустимое имя ветки",
       },
       toasts: {
