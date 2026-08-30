@@ -55,6 +55,7 @@ export function addRunOptions(cmd: Command): Command {
         "--workspace <id>",
         "Run in an existing workspace (defaults to the caller workspace when agent-scoped)",
       )
+      .option("--project <id>", "Create the new workspace in an existing project")
       .option(
         "--image <path>",
         "Attach image(s) to the initial prompt (can be used multiple times)",
@@ -125,6 +126,7 @@ export interface AgentRunOptions extends CommandOptions {
   prNumber?: string;
   forge?: string;
   workspace?: string;
+  project?: string;
   image?: string[];
   cwd?: string;
   env?: string[];
@@ -137,11 +139,12 @@ function resolveNewWorkspaceKind(options: AgentRunOptions): string | undefined {
   return options.newWorkspace ?? (options.worktree ? "worktree" : undefined);
 }
 
-function buildRunWorkspaceSource(options: AgentRunOptions, cwd: string) {
+export function buildRunWorkspaceSource(options: AgentRunOptions, cwd: string) {
   const newWorkspace = resolveNewWorkspaceKind(options) ?? "local";
   return buildWorkspaceSource({
     isolation: newWorkspace,
     path: cwd,
+    project: options.project,
     mode: options.worktreeMode,
     worktreeSlug: options.worktreeSlug ?? options.worktree,
     newBranch: options.newBranch,
@@ -304,6 +307,34 @@ function structuredRunSchema(output: Record<string, unknown>): OutputSchema<Agen
   };
 }
 
+function validateRunProjectOptions(
+  options: Pick<AgentRunOptions, "project" | "workspace">,
+  newWorkspace: string | undefined,
+): void {
+  if (options.project !== undefined && !options.project.trim()) {
+    throw {
+      code: "INVALID_OPTIONS",
+      message: "--project cannot be empty",
+    } satisfies CommandError;
+  }
+
+  if (options.project && options.workspace) {
+    throw {
+      code: "INVALID_OPTIONS",
+      message: "--project and --workspace cannot be combined",
+      details: "A workspace already has a project",
+    } satisfies CommandError;
+  }
+
+  if (options.project && !newWorkspace) {
+    throw {
+      code: "INVALID_OPTIONS",
+      message: "--project requires --new-workspace",
+      details: "Create a new workspace in that project or select an existing workspace",
+    } satisfies CommandError;
+  }
+}
+
 function validateRunWorkspaceOptions(options: AgentRunOptions): void {
   const newWorkspace = resolveNewWorkspaceKind(options);
   if (
@@ -353,6 +384,8 @@ function validateRunWorkspaceOptions(options: AgentRunOptions): void {
       } satisfies CommandError;
     }
   }
+
+  validateRunProjectOptions(options, newWorkspace);
 
   if (options.newWorkspace && options.workspace) {
     throw {

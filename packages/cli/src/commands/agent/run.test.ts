@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Command } from "commander";
 import {
+  buildRunWorkspaceSource,
   resolveExistingRunWorkspace,
   resolveRunCallerAgentId,
   runRunCommand,
@@ -48,6 +50,29 @@ describe("existing run workspace resolution", () => {
   });
 });
 
+describe("new run workspace project placement", () => {
+  it("threads an explicit project into a worktree workspace source", () => {
+    expect(
+      buildRunWorkspaceSource(
+        {
+          newWorkspace: "worktree",
+          project: "prj_automations",
+          base: "origin/develop",
+          worktreeSlug: "tes-123",
+        },
+        "/repo",
+      ),
+    ).toEqual({
+      kind: "worktree",
+      cwd: "/repo",
+      projectId: "prj_automations",
+      action: "branch-off",
+      baseBranch: "origin/develop",
+      worktreeSlug: "tes-123",
+    });
+  });
+});
+
 // validateRunOptions runs before the CLI ever connects to a daemon, so these
 // invalid combinations reject without one running.
 describe("runRunCommand option validation", () => {
@@ -66,7 +91,7 @@ describe("runRunCommand option validation", () => {
   });
 
   async function expectInvalidOptions(options: AgentRunOptions, messageMatch: RegExp) {
-    await expect(runRunCommand("do something", options, {} as never)).rejects.toMatchObject({
+    await expect(runRunCommand("do something", options, new Command())).rejects.toMatchObject({
       code: "INVALID_OPTIONS",
       message: expect.stringMatching(messageMatch),
     });
@@ -79,12 +104,30 @@ describe("runRunCommand option validation", () => {
     );
   });
 
+  it("rejects --project without explicit workspace creation", async () => {
+    await expectInvalidOptions(
+      { project: "prj_automations" },
+      /--project requires --new-workspace/,
+    );
+  });
+
+  it("rejects --project combined with an existing workspace", async () => {
+    await expectInvalidOptions(
+      { project: "prj_automations", workspace: "ws-1" },
+      /--project and --workspace cannot be combined/,
+    );
+  });
+
   it("allows explicit worktree workspace creation through validation", async () => {
     // Explicit workspace creation with no --workspace
     // must clear validation. It still fails later (provider resolution), which
     // is enough to prove the new guard did not reject it.
     await expect(
-      runRunCommand("do something", { newWorkspace: "worktree", provider: undefined }, {} as never),
+      runRunCommand(
+        "do something",
+        { newWorkspace: "worktree", provider: undefined },
+        new Command(),
+      ),
     ).rejects.not.toMatchObject({ code: "INVALID_OPTIONS" });
   });
 
