@@ -22,6 +22,20 @@ describe("Codex app-server transport", () => {
     child.stdin.end();
   });
 
+  test("preserves Unicode line separators inside JSON strings", async () => {
+    const child = createCodexAppServerChildProcess();
+    const client = new CodexAppServerClient(child, createTestLogger());
+    const result = { data: [{ text: "before\u2028middle\u2029after" }] };
+
+    const request = client.request("thread/items/list", {});
+    child.stdout.write(`${JSON.stringify({ id: 1, result })}\n`);
+
+    await expect(request).resolves.toEqual(result);
+    child.stdout.end();
+    child.stderr.end();
+    child.stdin.end();
+  });
+
   test.each([
     "item/commandExecution/requestApproval",
     "item/fileChange/requestApproval",

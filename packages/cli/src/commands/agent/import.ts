@@ -11,6 +11,7 @@ export function addImportOptions(cmd: Command): Command {
     .argument("<id>", "Provider session/thread ID to import")
     .requiredOption("--provider <provider>", "Agent provider id")
     .option("--cwd <path>", "Working directory for providers that require it")
+    .option("--timeout <seconds>", "Maximum time to wait for the import (default: 60)")
     .option(
       "--label <key=value>",
       "Add label(s) to the agent (can be used multiple times)",
@@ -24,6 +25,7 @@ export interface AgentImportOptions extends CommandOptions {
   cwd?: string;
   label?: string[];
   host?: string;
+  timeout?: string;
 }
 
 export type AgentImportCommandResult = SingleResult<AgentRunResult>;
@@ -82,6 +84,23 @@ function parseImportLabels(labelFlags: string[] | undefined): Record<string, str
   return labels;
 }
 
+export function parseImportTimeoutMs(timeout: string | undefined): number | undefined {
+  if (timeout === undefined) {
+    return undefined;
+  }
+
+  const seconds = Number(timeout);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    throw {
+      code: "INVALID_TIMEOUT",
+      message: `Invalid timeout value: ${timeout}`,
+      details: "Timeout must be a positive number of seconds",
+    } satisfies CommandError;
+  }
+
+  return Math.ceil(seconds * 1000);
+}
+
 export function resolveImportCwd(explicitCwd: string | undefined, defaultCwd: string): string {
   const cwd = explicitCwd?.trim() ?? defaultCwd;
   if (!cwd.trim()) {
@@ -127,6 +146,7 @@ export async function runImportCommand(
 
   const provider = parseImportProvider(options.provider);
   const cwd = resolveImportCwd(options.cwd, process.cwd());
+  const timeout = parseImportTimeoutMs(options.timeout);
 
   const labels = parseImportLabels(options.label);
   const client = await connectToDaemonOrThrow(options.host, host);
@@ -136,6 +156,7 @@ export async function runImportCommand(
       provider,
       sessionId,
       cwd,
+      ...(timeout === undefined ? {} : { timeout }),
       ...(Object.keys(labels).length > 0 ? { labels } : {}),
     });
 

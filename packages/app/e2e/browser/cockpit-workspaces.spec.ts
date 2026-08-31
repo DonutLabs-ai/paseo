@@ -13,6 +13,7 @@ import {
   waitForSidebarHydration,
   waitForWorkspaceInSidebar,
 } from "../support/helpers/workspace-ui";
+import { COCKPIT_INLINE_HEADER_MIN_WIDTH } from "../../src/screens/cockpit/cockpit-card-presentation";
 import { STATUS_RING_FRAME_SIZE } from "../../src/components/status-ring/geometry";
 
 const PROMPT = "Build the cockpit workspace overview";
@@ -338,6 +339,74 @@ test("persists equal cockpit panes and reflows after an empty pane closes", asyn
     await expect
       .poll(async () => (await card.boundingBox())?.width ?? 0)
       .toBeGreaterThan(splitCardWidth);
+  } finally {
+    await workspace.cleanup();
+  }
+});
+
+test("keeps cockpit actions inside a narrow card without overlap", async ({ page }) => {
+  const workspace = await seedMockAgentWorkspace({
+    repoPrefix: "cockpit-narrow-actions-",
+    title: "Cockpit narrow actions",
+    initialPrompt: "Verify narrow cockpit action layout",
+  });
+
+  try {
+    await openAgentRoute(page, workspace);
+    await page.keyboard.press("F9");
+    await expect(page).toHaveURL(/\/cockpit$/);
+
+    const workspaceKey = `${getServerId()}:${workspace.workspaceId}`;
+    const card = page.getByTestId(`cockpit-workspace-card-${workspaceKey}`);
+    await expect(card).toBeVisible({ timeout: 30_000 });
+
+    const splitRight = card.getByRole("button", { name: "Split pane right" });
+    for (let index = 0; index < 7; index += 1) {
+      await splitRight.click();
+    }
+
+    const cardBounds = await card.boundingBox();
+    if (!cardBounds) {
+      throw new Error("Expected the narrow cockpit card to have layout bounds");
+    }
+    expect(cardBounds.width).toBeLessThan(COCKPIT_INLINE_HEADER_MIN_WIDTH);
+    expect(cardBounds.width).toBeLessThan(180);
+
+    const actionButtons = [
+      card.locator('[data-testid^="cockpit-pane-move-left-"]'),
+      card.locator('[data-testid^="cockpit-pane-move-right-"]'),
+      card.locator('[data-testid^="cockpit-pane-move-up-"]'),
+      card.locator('[data-testid^="cockpit-pane-move-down-"]'),
+      card.locator('[data-testid^="cockpit-pane-split-right-"]'),
+      card.locator('[data-testid^="cockpit-pane-split-down-"]'),
+      card.locator('[data-testid^="cockpit-pane-snooze-"]'),
+      card.locator('[data-testid^="cockpit-pane-close-"]'),
+    ];
+    const actionBounds = [];
+    for (const button of actionButtons) {
+      await expect(button).toBeVisible();
+      const bounds = await button.boundingBox();
+      if (!bounds) {
+        throw new Error("Expected every cockpit pane action to have layout bounds");
+      }
+      expect(bounds.x).toBeGreaterThanOrEqual(cardBounds.x);
+      expect(bounds.y).toBeGreaterThanOrEqual(cardBounds.y);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(cardBounds.x + cardBounds.width);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(cardBounds.y + cardBounds.height);
+      actionBounds.push(bounds);
+    }
+
+    for (let leftIndex = 0; leftIndex < actionBounds.length; leftIndex += 1) {
+      const left = actionBounds[leftIndex];
+      for (let rightIndex = leftIndex + 1; rightIndex < actionBounds.length; rightIndex += 1) {
+        const right = actionBounds[rightIndex];
+        const overlapWidth =
+          Math.min(left.x + left.width, right.x + right.width) - Math.max(left.x, right.x);
+        const overlapHeight =
+          Math.min(left.y + left.height, right.y + right.height) - Math.max(left.y, right.y);
+        expect(overlapWidth > 0 && overlapHeight > 0).toBe(false);
+      }
+    }
   } finally {
     await workspace.cleanup();
   }

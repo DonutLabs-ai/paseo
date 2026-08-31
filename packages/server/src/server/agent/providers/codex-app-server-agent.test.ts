@@ -1424,7 +1424,12 @@ describe("Codex app-server provider", () => {
       purpose: "history",
     });
 
-    expect(threadRequests).toEqual(["thread/loaded/list", "thread/resume", "thread/read"]);
+    expect(threadRequests).toEqual([
+      "thread/loaded/list",
+      "thread/resume",
+      "thread/read",
+      "thread/read",
+    ]);
     await session.close();
     appServer.assertNoErrors();
   });
@@ -1463,6 +1468,7 @@ describe("Codex app-server provider", () => {
       "thread/resume",
       "thread/unarchive",
       "thread/resume",
+      "thread/read",
       "thread/read",
     ]);
     await session.close();
@@ -3792,7 +3798,7 @@ describe("Codex app-server provider", () => {
     }
 
     expect(requests.map((request) => [request.method, request.params])).toEqual([
-      ["thread/read", { threadId: "test-thread", includeTurns: true }],
+      ["thread/read", { threadId: "test-thread" }],
     ]);
     expect(history).toEqual([
       {
@@ -3815,6 +3821,163 @@ describe("Codex app-server provider", () => {
         },
       },
     ]);
+  });
+
+  test("loads paginated Codex history without requesting full thread hydration", async () => {
+    const session = createSession();
+    const requests: Array<{ method: string; params: unknown }> = [];
+    let turnPage = 0;
+    let firstTurnItemPage = 0;
+    session.client = {
+      request: vi.fn(async (method: string, params: unknown) => {
+        requests.push({ method, params });
+        if (method === "thread/read") {
+          return {
+            thread: {
+              id: "test-thread",
+              historyMode: "paginated",
+              turns: [],
+            },
+          };
+        }
+        if (method === "thread/turns/list") {
+          turnPage += 1;
+          if (turnPage === 1) {
+            return {
+              data: [
+                {
+                  id: "turn-1",
+                  items: [],
+                  itemsView: "notLoaded",
+                  status: "completed",
+                  error: null,
+                },
+              ],
+              nextCursor: "turn-page-2",
+            };
+          }
+          return {
+            data: [
+              {
+                id: "turn-2",
+                items: [],
+                itemsView: "notLoaded",
+                status: "completed",
+                error: null,
+              },
+            ],
+            nextCursor: null,
+          };
+        }
+        if (method === "thread/items/list") {
+          if (requests.at(-1)?.params && JSON.stringify(params).includes('"turnId":"turn-1"')) {
+            firstTurnItemPage += 1;
+            if (firstTurnItemPage === 1) {
+              return {
+                data: [
+                  {
+                    turnId: "turn-1",
+                    item: {
+                      type: "userMessage",
+                      id: "message-user",
+                      content: [{ type: "text", text: "Start the migration." }],
+                    },
+                  },
+                ],
+                nextCursor: "item-page-2",
+              };
+            }
+            return {
+              data: [
+                {
+                  turnId: "turn-1",
+                  item: {
+                    type: "agentMessage",
+                    id: "message-agent",
+                    text: "Migration started.",
+                  },
+                },
+              ],
+              nextCursor: null,
+            };
+          }
+          return {
+            data: [
+              {
+                turnId: "turn-2",
+                item: {
+                  type: "contextCompaction",
+                  id: "compact-history",
+                },
+              },
+            ],
+            nextCursor: null,
+          };
+        }
+        return {};
+      }),
+    };
+
+    await asInternals(session).loadPersistedHistory();
+
+    const history: AgentStreamEvent[] = [];
+    for await (const event of session.streamHistory()) {
+      history.push(event);
+    }
+
+    expect(requests).toEqual([
+      { method: "thread/read", params: { threadId: "test-thread" } },
+      {
+        method: "thread/turns/list",
+        params: {
+          threadId: "test-thread",
+          limit: 100,
+          sortDirection: "asc",
+          itemsView: "notLoaded",
+        },
+      },
+      {
+        method: "thread/items/list",
+        params: {
+          threadId: "test-thread",
+          turnId: "turn-1",
+          limit: 100,
+          sortDirection: "asc",
+        },
+      },
+      {
+        method: "thread/items/list",
+        params: {
+          threadId: "test-thread",
+          turnId: "turn-1",
+          cursor: "item-page-2",
+          limit: 100,
+          sortDirection: "asc",
+        },
+      },
+      {
+        method: "thread/turns/list",
+        params: {
+          threadId: "test-thread",
+          cursor: "turn-page-2",
+          limit: 100,
+          sortDirection: "asc",
+          itemsView: "notLoaded",
+        },
+      },
+      {
+        method: "thread/items/list",
+        params: {
+          threadId: "test-thread",
+          turnId: "turn-2",
+          limit: 100,
+          sortDirection: "asc",
+        },
+      },
+    ]);
+    expect(
+      history.map((event) => (event.type === "timeline" ? event.item.type : event.type)),
+    ).toEqual(["user_message", "assistant_message", "compaction"]);
   });
 
   test("loads mixed legacy and MultiAgentV2 sub-agent history", async () => {
@@ -4570,7 +4733,10 @@ describe("Codex app-server provider", () => {
     expect(session.currentThreadId).toBe("archived-thread-id");
     expect(requests).toEqual([
       { method: "thread/loaded/list", params: {} },
-      { method: "thread/resume", params: { threadId: "archived-thread-id" } },
+      {
+        method: "thread/resume",
+        params: { threadId: "archived-thread-id", excludeTurns: true },
+      },
     ]);
   });
 

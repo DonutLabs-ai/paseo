@@ -1,5 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import readline from "node:readline";
+import { StringDecoder } from "node:string_decoder";
 import type { Logger } from "pino";
 import { z } from "zod";
 
@@ -167,13 +167,14 @@ function readProviderTurnId(params: unknown): string | undefined {
 }
 
 export class CodexAppServerClient {
-  private readonly rl: readline.Interface;
+  private readonly stdoutDecoder = new StringDecoder("utf8");
   private readonly pending = new Map<number, PendingRequest>();
   private readonly requestHandlers = new Map<string, RequestHandler>();
   private notificationHandler: NotificationHandler | null = null;
   private unexpectedTerminationHandler: UnexpectedTerminationHandler | null = null;
   private nextId = 1;
   private disposed = false;
+  private stdoutBuffer = "";
   private stderrBuffer = "";
 
   constructor(
@@ -181,12 +182,8 @@ export class CodexAppServerClient {
     private readonly logger: Logger,
     private readonly getTraceContext: () => CodexAppServerTraceContext = () => ({}),
   ) {
-    this.rl = readline.createInterface({ input: child.stdout });
-    this.rl.on("line", (line) => {
-      void this.handleLine(line).catch((error) => {
-        this.logger.warn({ error, line }, "Failed to handle Codex app-server stdout line");
-      });
-    });
+    child.stdout.on("data", this.handleStdoutData);
+    child.stdout.on("end", this.handleStdoutEnd);
 
     child.stderr.on("data", (chunk) => {
       this.stderrBuffer += chunk.toString();
@@ -259,7 +256,7 @@ export class CodexAppServerClient {
     if (this.disposed) return;
     this.disposed = true;
     this.unexpectedTerminationHandler = null;
-    this.rl.close();
+    this.closeStdoutReader();
     try {
       this.child.stdin.end();
     } catch {
@@ -288,7 +285,7 @@ export class CodexAppServerClient {
       return;
     }
     this.disposed = true;
-    this.rl.close();
+    this.closeStdoutReader();
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(error);
@@ -315,6 +312,47 @@ export class CodexAppServerClient {
     } catch (error) {
       this.logger.debug({ error }, "Failed to write Codex app-server JSON-RPC response");
     }
+  }
+
+  private readonly handleStdoutData = (chunk: Buffer): void => {
+    this.stdoutBuffer += this.stdoutDecoder.write(chunk);
+    this.dispatchCompleteStdoutLines();
+  };
+
+  private readonly handleStdoutEnd = (): void => {
+    this.stdoutBuffer += this.stdoutDecoder.end();
+    this.dispatchCompleteStdoutLines();
+    if (this.stdoutBuffer.length === 0) {
+      return;
+    }
+    const finalLine = this.stdoutBuffer.endsWith("\r")
+      ? this.stdoutBuffer.slice(0, -1)
+      : this.stdoutBuffer;
+    this.stdoutBuffer = "";
+    this.dispatchStdoutLine(finalLine);
+  };
+
+  private dispatchCompleteStdoutLines(): void {
+    let lineEnd = this.stdoutBuffer.indexOf("\n");
+    while (lineEnd !== -1) {
+      const rawLine = this.stdoutBuffer.slice(0, lineEnd);
+      this.stdoutBuffer = this.stdoutBuffer.slice(lineEnd + 1);
+      const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+      this.dispatchStdoutLine(line);
+      lineEnd = this.stdoutBuffer.indexOf("\n");
+    }
+  }
+
+  private dispatchStdoutLine(line: string): void {
+    void this.handleLine(line).catch((error) => {
+      this.logger.warn({ error, line }, "Failed to handle Codex app-server stdout line");
+    });
+  }
+
+  private closeStdoutReader(): void {
+    this.child.stdout.off("data", this.handleStdoutData);
+    this.child.stdout.off("end", this.handleStdoutEnd);
+    this.stdoutBuffer = "";
   }
 
   private async handleLine(line: string): Promise<void> {

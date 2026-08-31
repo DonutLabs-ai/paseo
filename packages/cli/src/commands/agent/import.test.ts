@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveImportCwd, runImportCommand } from "./import.js";
+import { parseImportTimeoutMs, resolveImportCwd, runImportCommand } from "./import.js";
 
 const importAgent = vi.fn();
 const close = vi.fn();
@@ -55,5 +55,44 @@ describe("resolveImportCwd", () => {
       cwd: "/tmp/project",
     });
     expect(result.data.provider).toBe("pi");
+  });
+
+  it("forwards an explicit import timeout", async () => {
+    importAgent.mockResolvedValueOnce({
+      id: "agent-2",
+      status: "idle",
+      provider: "codex",
+      cwd: "/tmp/project",
+      title: "Imported Codex session",
+    });
+
+    await runImportCommand(
+      "codex-session-1",
+      {
+        provider: "codex",
+        cwd: "/tmp/project",
+        timeout: "900",
+      },
+      {} as never,
+    );
+
+    expect(importAgent).toHaveBeenLastCalledWith({
+      provider: "codex",
+      sessionId: "codex-session-1",
+      cwd: "/tmp/project",
+      timeout: 900_000,
+    });
+  });
+});
+
+describe("parseImportTimeoutMs", () => {
+  it("converts seconds to milliseconds", () => {
+    expect(parseImportTimeoutMs("900")).toBe(900_000);
+  });
+
+  it("rejects non-positive values", () => {
+    expect(() => parseImportTimeoutMs("0")).toThrow(
+      expect.objectContaining({ code: "INVALID_TIMEOUT" }),
+    );
   });
 });

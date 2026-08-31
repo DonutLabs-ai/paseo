@@ -188,6 +188,7 @@ interface ImportAgentInputBase {
   cwd?: string;
   workspaceId?: string;
   labels?: Record<string, string>;
+  timeout?: number;
 }
 
 export type ImportAgentInput =
@@ -2803,6 +2804,7 @@ export class DaemonClient {
     const status = await this.sendRequest({
       requestId,
       message,
+      timeout: input.timeout,
       options: { skipQueue: true },
       select: (msg) => {
         if (msg.type !== "status") {

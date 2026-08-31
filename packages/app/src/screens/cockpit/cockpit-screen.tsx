@@ -78,7 +78,10 @@ import { selectAgentTurnPresentation, useSessionStore } from "@/stores/session-s
 import { CockpitToggleButton } from "./cockpit-toggle-button";
 import { CockpitAttentionMenu } from "./cockpit-attention-menu";
 import { CockpitTelemetryBar } from "./cockpit-telemetry-bar";
-import { shouldShowCockpitQuickReply } from "./cockpit-card-presentation";
+import {
+  shouldShowCockpitQuickReply,
+  shouldStackCockpitCardHeader,
+} from "./cockpit-card-presentation";
 import { resolveCockpitQuickReplyAction } from "./cockpit-quick-reply";
 import { useCockpitAgentUsage, type CockpitAgentUsage } from "./use-cockpit-agent-usage";
 import {
@@ -725,6 +728,7 @@ function CockpitWorkspaceCard({
     ...cardSize,
     hasAgent: workspace.agentId !== null,
   });
+  const stackHeader = shouldStackCockpitCardHeader(cardSize.width);
 
   return (
     <View
@@ -741,56 +745,64 @@ function CockpitWorkspaceCard({
         onPress={handlePress}
         style={cockpitCardContentStyle}
       >
-        <View style={styles.cardHeader}>
-          <CockpitStatusIndicator bucket={workspace.statusBucket} snoozed={isSnoozed} />
-          <View style={styles.cardTitleGroup}>
-            <View style={styles.cardTitleRow}>
-              <Text style={styles.cardTitle} numberOfLines={1}>
-                {title}
+        <View style={[styles.cardHeader, stackHeader ? styles.cardHeaderStacked : null]}>
+          <View
+            style={[
+              styles.cardIdentityRow,
+              stackHeader ? styles.cardIdentityRowStacked : styles.cardIdentityRowInline,
+            ]}
+          >
+            <CockpitStatusIndicator bucket={workspace.statusBucket} snoozed={isSnoozed} />
+            <View style={styles.cardTitleGroup}>
+              <View style={styles.cardTitleRow}>
+                <Text style={styles.cardTitle} numberOfLines={1}>
+                  {title}
+                </Text>
+                <CockpitWorkspaceNoteButton
+                  accessibilityHint={noteFallbackTitle}
+                  label={t("sidebar.workspace.actions.rename")}
+                  onPress={handleOpenNote}
+                  testID={`cockpit-workspace-note-${workspace.workspaceKey}`}
+                />
+              </View>
+              <Text style={styles.statusText} numberOfLines={1}>
+                {statusLabel}
               </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t("sidebar.workspace.actions.rename")}
-                accessibilityHint={noteFallbackTitle}
-                hitSlop={6}
-                onPress={handleOpenNote}
-                style={cockpitNoteButtonStyle}
-                testID={`cockpit-workspace-note-${workspace.workspaceKey}`}
-              >
-                <ThemedPencil size={12} />
-              </Pressable>
             </View>
-            <Text style={styles.statusText} numberOfLines={1}>
-              {statusLabel}
-            </Text>
           </View>
-          {workspace.diffStat ? (
-            <DiffStat
-              additions={workspace.diffStat.additions}
-              deletions={workspace.diffStat.deletions}
+          <View
+            style={[styles.cardHeaderDetails, stackHeader ? styles.cardHeaderDetailsStacked : null]}
+          >
+            <View style={styles.cardMetrics}>
+              {workspace.diffStat ? (
+                <DiffStat
+                  additions={workspace.diffStat.additions}
+                  deletions={workspace.diffStat.deletions}
+                />
+              ) : null}
+              {agentUsage ? (
+                <ContextWindowMeter
+                  maxTokens={agentUsage.contextWindowMaxTokens}
+                  usedTokens={agentUsage.contextWindowUsedTokens}
+                  totalCostUsd={agentUsage.totalCostUsd}
+                  showPercentage
+                  serverId={workspace.serverId}
+                  provider={agentUsage.provider}
+                />
+              ) : null}
+            </View>
+            <CockpitPaneActions
+              paneId={pane.id}
+              closeLabel={t("sidebar.workspace.actions.archiveWorkspace")}
+              closeDisabled={isArchiving}
+              snoozeAction={snoozeAction}
+              moveTargets={moveTargets}
+              onFocus={onFocus}
+              onMove={onMove}
+              onSplit={onSplit}
+              onClose={handleArchive}
             />
-          ) : null}
-          {agentUsage ? (
-            <ContextWindowMeter
-              maxTokens={agentUsage.contextWindowMaxTokens}
-              usedTokens={agentUsage.contextWindowUsedTokens}
-              totalCostUsd={agentUsage.totalCostUsd}
-              showPercentage
-              serverId={workspace.serverId}
-              provider={agentUsage.provider}
-            />
-          ) : null}
-          <CockpitPaneActions
-            paneId={pane.id}
-            closeLabel={t("sidebar.workspace.actions.archiveWorkspace")}
-            closeDisabled={isArchiving}
-            snoozeAction={snoozeAction}
-            moveTargets={moveTargets}
-            onFocus={onFocus}
-            onMove={onMove}
-            onSplit={onSplit}
-            onClose={handleArchive}
-          />
+          </View>
         </View>
 
         <View style={styles.metaRow}>
@@ -835,6 +847,32 @@ function CockpitWorkspaceCard({
         testID={`cockpit-workspace-note-modal-${workspace.workspaceKey}`}
       />
     </View>
+  );
+}
+
+function CockpitWorkspaceNoteButton({
+  accessibilityHint,
+  label,
+  onPress,
+  testID,
+}: {
+  accessibilityHint: string;
+  label: string;
+  onPress: (event: GestureResponderEvent) => void;
+  testID: string;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={accessibilityHint}
+      hitSlop={6}
+      onPress={onPress}
+      style={cockpitNoteButtonStyle}
+      testID={testID}
+    >
+      <ThemedPencil size={12} />
+    </Pressable>
   );
 }
 
@@ -1213,9 +1251,11 @@ function CockpitPaneActions({
 
   return (
     <View style={styles.paneActionsStack}>
-      <ToolbarControls testID={`cockpit-pane-move-actions-${paneId}`}>
+      <ToolbarControls
+        style={styles.paneMoveActions}
+        testID={`cockpit-pane-move-actions-${paneId}`}
+      >
         <ToolbarButton
-          compact
           label={t("cockpit.actions.moveLeft")}
           shortcut={moveLeftKeys}
           disabled={!moveTargets?.left}
@@ -1225,7 +1265,6 @@ function CockpitPaneActions({
           <ThemedArrowLeft size={13} />
         </ToolbarButton>
         <ToolbarButton
-          compact
           label={t("cockpit.actions.moveRight")}
           shortcut={moveRightKeys}
           disabled={!moveTargets?.right}
@@ -1235,7 +1274,6 @@ function CockpitPaneActions({
           <ThemedArrowRight size={13} />
         </ToolbarButton>
         <ToolbarButton
-          compact
           label={t("cockpit.actions.moveUp")}
           shortcut={moveUpKeys}
           disabled={!moveTargets?.up}
@@ -1245,7 +1283,6 @@ function CockpitPaneActions({
           <ThemedArrowUpMuted size={13} />
         </ToolbarButton>
         <ToolbarButton
-          compact
           label={t("cockpit.actions.moveDown")}
           shortcut={moveDownKeys}
           disabled={!moveTargets?.down}
@@ -1528,6 +1565,43 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "flex-start",
     gap: theme.spacing[2],
   },
+  cardHeaderStacked: {
+    flexDirection: "column",
+  },
+  cardIdentityRow: {
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: theme.spacing[2],
+  },
+  cardIdentityRowInline: {
+    flex: 1,
+  },
+  cardIdentityRowStacked: {
+    width: "100%",
+  },
+  cardHeaderDetails: {
+    minWidth: 0,
+    flexShrink: 0,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: theme.spacing[2],
+  },
+  cardHeaderDetailsStacked: {
+    width: "100%",
+    flexDirection: "column",
+    alignItems: "flex-end",
+    gap: 1,
+  },
+  cardMetrics: {
+    maxWidth: "100%",
+    flexShrink: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: theme.spacing[2],
+  },
   cardTitleGroup: {
     flex: 1,
     minWidth: 0,
@@ -1592,15 +1666,24 @@ const styles = StyleSheet.create((theme) => ({
     flexShrink: 0,
   },
   paneActions: {
+    maxWidth: "100%",
     flexShrink: 0,
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
+    justifyContent: "flex-end",
     gap: theme.spacing[2],
   },
   paneActionsStack: {
+    maxWidth: "100%",
     flexShrink: 0,
     alignItems: "flex-end",
     gap: 1,
+  },
+  paneMoveActions: {
+    maxWidth: "100%",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
   },
   metaRow: {
     minHeight: 18,

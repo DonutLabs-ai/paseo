@@ -2008,11 +2008,139 @@ async function loadCodexThreadHistoryTimeline(params: {
   return { timeline, subAgentRoutes };
 }
 
-function readCodexThread(client: CodexAppServerClientLike, threadId: string): Promise<unknown> {
-  return client.request("thread/read", {
-    threadId,
-    includeTurns: true,
-  });
+const CODEX_HISTORY_PAGE_SIZE = 100;
+
+class CodexHistoryPaginationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CodexHistoryPaginationError";
+  }
+}
+
+async function readCodexThread(
+  client: CodexAppServerClientLike,
+  threadId: string,
+): Promise<unknown> {
+  const metadataResponse = await client.request("thread/read", { threadId });
+  const response = toObjectRecord(metadataResponse);
+  const thread = toObjectRecord(response?.thread);
+  if (!response || !thread) {
+    throw new CodexHistoryPaginationError(`Codex thread/read returned no thread: ${threadId}`);
+  }
+
+  const existingTurns = Array.isArray(thread.turns) ? thread.turns : [];
+  if (thread.historyMode !== "paginated") {
+    if (existingTurns.length > 0) {
+      return metadataResponse;
+    }
+    return client.request("thread/read", { threadId, includeTurns: true });
+  }
+
+  const turns = await readPaginatedCodexTurns(client, threadId);
+  return {
+    ...response,
+    thread: {
+      ...thread,
+      turns,
+    },
+  };
+}
+
+async function readPaginatedCodexTurns(
+  client: CodexAppServerClientLike,
+  threadId: string,
+): Promise<unknown[]> {
+  const turns: unknown[] = [];
+  const visitedCursors = new Set<string>();
+  let cursor: string | undefined;
+
+  while (true) {
+    const pageResponse = await client.request("thread/turns/list", {
+      threadId,
+      ...(cursor === undefined ? {} : { cursor }),
+      limit: CODEX_HISTORY_PAGE_SIZE,
+      sortDirection: "asc",
+      itemsView: "notLoaded",
+    });
+    const page = toObjectRecord(pageResponse);
+    if (!page || !Array.isArray(page.data)) {
+      throw new CodexHistoryPaginationError(
+        `Codex thread/turns/list returned an invalid page: ${threadId}`,
+      );
+    }
+
+    for (const rawTurn of page.data) {
+      const turn = toObjectRecord(rawTurn);
+      const turnId = turn?.id;
+      if (!turn || typeof turnId !== "string") {
+        throw new CodexHistoryPaginationError(
+          `Codex thread/turns/list returned a turn without an id: ${threadId}`,
+        );
+      }
+      const items = await readPaginatedCodexItems(client, threadId, turnId);
+      turns.push({ ...turn, items, itemsView: "full" });
+    }
+
+    const nextCursor = page.nextCursor;
+    if (nextCursor === null) {
+      return turns;
+    }
+    if (typeof nextCursor !== "string" || visitedCursors.has(nextCursor)) {
+      throw new CodexHistoryPaginationError(
+        `Codex thread/turns/list returned an invalid cursor: ${threadId}`,
+      );
+    }
+    visitedCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+}
+
+async function readPaginatedCodexItems(
+  client: CodexAppServerClientLike,
+  threadId: string,
+  turnId: string,
+): Promise<unknown[]> {
+  const items: unknown[] = [];
+  const visitedCursors = new Set<string>();
+  let cursor: string | undefined;
+
+  while (true) {
+    const pageResponse = await client.request("thread/items/list", {
+      threadId,
+      turnId,
+      ...(cursor === undefined ? {} : { cursor }),
+      limit: CODEX_HISTORY_PAGE_SIZE,
+      sortDirection: "asc",
+    });
+    const page = toObjectRecord(pageResponse);
+    if (!page || !Array.isArray(page.data)) {
+      throw new CodexHistoryPaginationError(
+        `Codex thread/items/list returned an invalid page: ${threadId}/${turnId}`,
+      );
+    }
+
+    for (const rawEntry of page.data) {
+      const entry = toObjectRecord(rawEntry);
+      if (!entry || entry.turnId !== turnId || !("item" in entry)) {
+        throw new CodexHistoryPaginationError(
+          `Codex thread/items/list returned an invalid item: ${threadId}/${turnId}`,
+        );
+      }
+      items.push(entry.item);
+    }
+
+    const nextCursor = page.nextCursor;
+    if (nextCursor === null) {
+      return items;
+    }
+    if (typeof nextCursor !== "string" || visitedCursors.has(nextCursor)) {
+      throw new CodexHistoryPaginationError(
+        `Codex thread/items/list returned an invalid cursor: ${threadId}/${turnId}`,
+      );
+    }
+    visitedCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
 }
 
 export async function forkCodexThread(
@@ -3810,7 +3938,10 @@ export class CodexAppServerAgentSession implements AgentSession {
     options: { allowArchivedHistory?: boolean } = {},
   ): Promise<void> {
     if (!this.client || !this.currentThreadId) return;
-    const params: Record<string, unknown> = { threadId: this.currentThreadId };
+    const params: Record<string, unknown> = {
+      threadId: this.currentThreadId,
+      excludeTurns: true,
+    };
     const developerInstructions = composeSystemPromptParts(
       this.config.systemPrompt,
       this.config.daemonAppendSystemPrompt,

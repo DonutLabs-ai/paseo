@@ -4613,6 +4613,47 @@ test("imports an agent by provider handle id", async () => {
   });
 });
 
+test("honors an explicit agent import timeout", async () => {
+  useHeartbeatClock();
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_import_timeout",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  const importPromise = client.importAgent({
+    provider: "codex",
+    sessionId: "thread-1",
+    cwd: "/tmp/repo",
+    timeout: 120_000,
+  });
+  let settled = false;
+  void importPromise.then(
+    () => {
+      settled = true;
+      return undefined;
+    },
+    () => {
+      settled = true;
+      return undefined;
+    },
+  );
+
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(settled).toBe(false);
+
+  const rejection = expect(importPromise).rejects.toThrow("Timeout waiting for message (120000ms)");
+  await vi.advanceTimersByTimeAsync(60_000);
+  await rejection;
+});
+
 test("uses server-provided dictation finish timeout budget", async () => {
   useHeartbeatClock();
   const logger = createMockLogger();
