@@ -221,6 +221,56 @@ it("creates an unowned terminal through the worker", async () => {
   await expect(manager.getTerminals(cwd)).resolves.toEqual([session]);
 });
 
+it("preserves an exit that arrives before the create promise continuation", async () => {
+  const worker = new FakeTerminalWorker();
+  manager = createWorkerTerminalManager({
+    requestTimeoutMs: 50,
+    forkWorker: () => worker,
+  });
+  const creation = manager.createTerminal({
+    id: "terminal-fast-exit",
+    cwd: "/workspace",
+    name: "Fast exit",
+  });
+  const request = worker.sentMessages.find((message) => message.type === "createTerminal");
+  if (!request) {
+    throw new Error("createTerminal request not sent");
+  }
+  const terminal = {
+    id: "terminal-fast-exit",
+    name: "Fast exit",
+    cwd: "/workspace",
+    activity: null,
+  };
+  const state = createTerminalState();
+  const exitInfo = {
+    exitCode: 7,
+    signal: null,
+    lastOutputLines: ["startup failed"],
+  };
+
+  worker.emitWorkerMessage({ type: "terminalCreated", terminal, state });
+  worker.emitWorkerMessage({
+    type: "response",
+    requestId: request.requestId,
+    ok: true,
+    result: { terminal, state },
+  });
+  worker.emitWorkerMessage({
+    type: "terminalExit",
+    terminalId: terminal.id,
+    info: exitInfo,
+  });
+
+  const session = await creation;
+  const observedExit = new Promise((resolve) => session.onExit(resolve));
+
+  await expect(observedExit).resolves.toEqual(exitInfo);
+  expect(session.getExitInfo()).toEqual(exitInfo);
+  expect(manager.getTerminal(terminal.id)).toBeUndefined();
+  expect(await manager.getTerminals(terminal.cwd)).toEqual([]);
+});
+
 it("delivers rapid small writes complete and in order through worker coalescing", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-coalesce-"));
   temporaryDirs.push(cwd);

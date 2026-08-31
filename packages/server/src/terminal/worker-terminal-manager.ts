@@ -140,6 +140,8 @@ export function createWorkerTerminalManager(
   const requestTimeoutMs = managerOptions.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
   const pendingRequests = new Map<string, PendingRequest>();
   const recordsById = new Map<string, WorkerTerminalRecord>();
+  const creatingTerminalIds = new Set<string>();
+  const earlyExitedCreateSessionsById = new Map<string, TerminalSession>();
   const terminalIdsByCwd = new Map<string, Set<string>>();
   const terminalActivityTokenById = new Map<string, string>();
   const terminalsChangedListeners = new Set<TerminalsChangedListener>();
@@ -432,6 +434,14 @@ export function createWorkerTerminalManager(
       listener(message.info);
     }
     record.exitListeners.clear();
+    // A short-lived command can exit after the worker sends its create response
+    // but before the awaiting createTerminal continuation runs in this process.
+    // Preserve that already-exited session until the creator receives it; otherwise
+    // createTerminal would recreate a live-looking mirror record from stale response
+    // data and permanently lose the exit event.
+    if (creatingTerminalIds.has(message.terminalId)) {
+      earlyExitedCreateSessionsById.set(message.terminalId, record.session);
+    }
     const previousBucket = deriveTerminalActivityStatusBucket(record.activity);
     const removedRecord = removeRecord(message.terminalId);
     if (previousBucket !== null && removedRecord?.info.workspaceId !== undefined) {
@@ -672,6 +682,7 @@ export function createWorkerTerminalManager(
       const activityToken = createActivityToken();
       const terminalActivityUrl = managerOptions.getTerminalActivityUrl?.() ?? null;
       terminalActivityTokenById.set(terminalId, activityToken);
+      creatingTerminalIds.add(terminalId);
       let result: {
         terminal: WorkerTerminalInfo;
         state: TerminalState;
@@ -691,9 +702,26 @@ export function createWorkerTerminalManager(
         };
       } catch (error) {
         terminalActivityTokenById.delete(terminalId);
+        earlyExitedCreateSessionsById.delete(terminalId);
         throw error;
+      } finally {
+        creatingTerminalIds.delete(terminalId);
       }
-      const session = registerRecord({ info: result.terminal, state: result.state });
+      if (result.terminal.id !== terminalId) {
+        terminalActivityTokenById.delete(terminalId);
+        earlyExitedCreateSessionsById.delete(terminalId);
+        throw new Error(
+          `Terminal worker returned mismatched create id: expected ${terminalId}, received ${result.terminal.id}`,
+        );
+      }
+      const session =
+        recordsById.get(terminalId)?.session ?? earlyExitedCreateSessionsById.get(terminalId);
+      earlyExitedCreateSessionsById.delete(terminalId);
+      if (!session) {
+        throw new Error(
+          `Terminal worker omitted lifecycle state for created terminal ${terminalId}`,
+        );
+      }
       return session;
     },
 
