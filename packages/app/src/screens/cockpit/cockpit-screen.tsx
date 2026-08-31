@@ -1669,7 +1669,7 @@ const styles = StyleSheet.create((theme) => ({
   statusRingFrame: {
     width: COCKPIT_STATUS_RING_FRAME_SIZE,
     height: COCKPIT_STATUS_RING_FRAME_SIZE,
-    marginTop: 1,
+    marginTop: -1,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
