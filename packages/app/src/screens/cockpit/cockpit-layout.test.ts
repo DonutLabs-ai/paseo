@@ -78,6 +78,51 @@ describe("cockpit pane layout", () => {
     expect(layout.focusedPaneId).toBe(requireItem(collectCockpitPanes(layout.root)[1]).id);
   });
 
+  it("splits right into the existing outer row when the target is nested in a column", () => {
+    const ids = createIds();
+    const initial = requireLayout(createDefaultCockpitLayout({ workspaceKeys: ["a", "b"], ids }));
+    const targetPaneId = requireItem(collectCockpitPanes(initial.root)[0]).id;
+    const nested = requireLayout(
+      splitCockpitPane({
+        layout: initial,
+        targetPaneId,
+        position: "down",
+        ids,
+      }),
+    );
+    const layout = requireLayout(
+      splitCockpitPane({
+        layout: nested,
+        targetPaneId,
+        position: "right",
+        ids,
+      }),
+    );
+
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected horizontal root");
+    expect(layout.root.group.direction).toBe("horizontal");
+    expect(layout.root.group.children).toHaveLength(3);
+    expect(layout.root.group.sizes).toEqual([1 / 3, 1 / 3, 1 / 3]);
+
+    const firstColumn = requireItem(layout.root.group.children[0]);
+    expect(firstColumn.kind).toBe("group");
+    if (firstColumn.kind !== "group") throw new Error("Expected nested vertical column");
+    expect(firstColumn.group.direction).toBe("vertical");
+    expect(collectCockpitPanes(firstColumn).map(getCockpitPaneWorkspaceKey)).toEqual(["a", null]);
+
+    const newPane = requireItem(layout.root.group.children[1]);
+    expect(newPane.kind).toBe("pane");
+    if (newPane.kind !== "pane") throw new Error("Expected new pane in the outer row");
+    expect(newPane.pane.id).toBe(layout.focusedPaneId);
+    expect(getCockpitPaneWorkspaceKey(newPane.pane)).toBeNull();
+
+    const lastPane = requireItem(layout.root.group.children[2]);
+    expect(lastPane.kind).toBe("pane");
+    if (lastPane.kind !== "pane") throw new Error("Expected existing pane at the end of the row");
+    expect(getCockpitPaneWorkspaceKey(lastPane.pane)).toBe("b");
+  });
+
   it("splits down by nesting a vertical group beneath the target column", () => {
     const ids = createIds();
     const initial = requireLayout(createDefaultCockpitLayout({ workspaceKeys: ["a", "b"], ids }));
@@ -132,6 +177,54 @@ describe("cockpit pane layout", () => {
       null,
       null,
     ]);
+  });
+
+  it("splits down into the existing outer column when the target is nested in a row", () => {
+    const ids = createIds();
+    const initial = requireLayout(
+      createDefaultCockpitLayout({ workspaceKeys: ["a", "b"], maxColumns: 1, ids }),
+    );
+    const targetPaneId = requireItem(collectCockpitPanes(initial.root)[0]).id;
+    const nested = requireLayout(
+      splitCockpitPane({
+        layout: initial,
+        targetPaneId,
+        position: "right",
+        ids,
+      }),
+    );
+    const layout = requireLayout(
+      splitCockpitPane({
+        layout: nested,
+        targetPaneId,
+        position: "down",
+        ids,
+      }),
+    );
+
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected vertical root");
+    expect(layout.root.group.direction).toBe("vertical");
+    expect(layout.root.group.children).toHaveLength(3);
+    expect(layout.root.group.sizes).toEqual([1 / 3, 1 / 3, 1 / 3]);
+
+    const firstRow = requireItem(layout.root.group.children[0]);
+    expect(firstRow.kind).toBe("group");
+    if (firstRow.kind !== "group") throw new Error("Expected nested horizontal row");
+    expect(firstRow.group.direction).toBe("horizontal");
+    expect(collectCockpitPanes(firstRow).map(getCockpitPaneWorkspaceKey)).toEqual(["a", null]);
+
+    const newPane = requireItem(layout.root.group.children[1]);
+    expect(newPane.kind).toBe("pane");
+    if (newPane.kind !== "pane") throw new Error("Expected new pane in the outer column");
+    expect(newPane.pane.id).toBe(layout.focusedPaneId);
+    expect(getCockpitPaneWorkspaceKey(newPane.pane)).toBeNull();
+
+    const lastPane = requireItem(layout.root.group.children[2]);
+    expect(lastPane.kind).toBe("pane");
+    if (lastPane.kind !== "pane")
+      throw new Error("Expected existing pane at the end of the column");
+    expect(getCockpitPaneWorkspaceKey(lastPane.pane)).toBe("b");
   });
 
   it("fills a reserved empty pane with the next new workspace", () => {
@@ -243,7 +336,71 @@ describe("cockpit pane layout", () => {
     expect(layout.focusedPaneId).toBe(movedPane.id);
   });
 
-  it("moves a card within a row by insertion and shifts the intervening cards", () => {
+  it("joins a single-card target row instead of exchanging the two rows", () => {
+    const ids = createIds();
+    const initial = requireLayout(
+      createDefaultCockpitLayout({
+        workspaceKeys: ["a", "b"],
+        maxColumns: 1,
+        ids,
+      }),
+    );
+    const panes = collectCockpitPanes(initial.root);
+    const sourcePane = requireItem(panes.find((pane) => getCockpitPaneWorkspaceKey(pane) === "a"));
+    const targetPane = requireItem(panes.find((pane) => getCockpitPaneWorkspaceKey(pane) === "b"));
+    const layout = requireLayout(
+      moveCockpitPane({
+        layout: initial,
+        paneId: sourcePane.id,
+        targetPaneId: targetPane.id,
+        direction: "down",
+        ids,
+      }),
+    );
+
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected target row group");
+    expect(layout.root.group.direction).toBe("horizontal");
+    expect(collectCockpitPanes(layout.root).map(getCockpitPaneWorkspaceKey)).toEqual(["b", "a"]);
+  });
+
+  it("moves a middle single-card row into the existing row below", () => {
+    const ids = createIds();
+    const initial = requireLayout(
+      createDefaultCockpitLayout({
+        workspaceKeys: ["a", "b", "c"],
+        maxColumns: 1,
+        ids,
+      }),
+    );
+    const panes = collectCockpitPanes(initial.root);
+    const sourcePane = requireItem(panes.find((pane) => getCockpitPaneWorkspaceKey(pane) === "b"));
+    const targetPane = requireItem(panes.find((pane) => getCockpitPaneWorkspaceKey(pane) === "c"));
+    const layout = requireLayout(
+      moveCockpitPane({
+        layout: initial,
+        paneId: sourcePane.id,
+        targetPaneId: targetPane.id,
+        direction: "down",
+        ids,
+      }),
+    );
+
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected vertical root group");
+    expect(layout.root.group.direction).toBe("vertical");
+    expect(
+      layout.root.group.children.map((row) =>
+        collectCockpitPanes(row).map(getCockpitPaneWorkspaceKey),
+      ),
+    ).toEqual([["a"], ["c", "b"]]);
+    const targetRow = requireItem(layout.root.group.children[1]);
+    expect(targetRow.kind).toBe("group");
+    if (targetRow.kind !== "group") throw new Error("Expected horizontal target row");
+    expect(targetRow.group.direction).toBe("horizontal");
+  });
+
+  it("moves a card into the adjacent column without swapping workspace assignments", () => {
     const ids = createIds();
     const initial = requireLayout(
       createDefaultCockpitLayout({ workspaceKeys: ["a", "b", "c"], ids }),
@@ -261,11 +418,19 @@ describe("cockpit pane layout", () => {
       }),
     );
 
-    expect(collectCockpitPanes(layout.root).map(getCockpitPaneWorkspaceKey)).toEqual([
-      "b",
-      "a",
-      "c",
-    ]);
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected horizontal root group");
+    expect(layout.root.group.direction).toBe("horizontal");
+    const targetColumn = requireItem(layout.root.group.children[0]);
+    expect(targetColumn.kind).toBe("group");
+    if (targetColumn.kind !== "group") throw new Error("Expected vertical target column");
+    expect(targetColumn.group.direction).toBe("vertical");
+    expect(collectCockpitPanes(targetColumn).map(getCockpitPaneWorkspaceKey)).toEqual(["b", "a"]);
+    expect(
+      collectCockpitPanes(requireItem(layout.root.group.children[1])).map(
+        getCockpitPaneWorkspaceKey,
+      ),
+    ).toEqual(["c"]);
   });
 
   it("moves a bottom-edge card into a new row without redistributing the other rows", () => {

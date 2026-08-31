@@ -166,11 +166,7 @@ function splitNode(input: {
 
   const targetChild = input.node.group.children[targetIndex];
   if (!targetChild) throw new Error("Cockpit split target index has no child");
-  if (
-    input.node.group.direction === input.direction &&
-    targetChild.kind === "pane" &&
-    targetChild.pane.id === input.targetPaneId
-  ) {
+  if (input.node.group.direction === input.direction) {
     const newPane = createPaneNode(input.workspaceKey, input.ids);
     if (newPane.kind !== "pane") throw new Error("New cockpit pane must be a pane node");
     const children = input.node.group.children.slice();
@@ -318,45 +314,36 @@ function removePaneNode(
   };
 }
 
-function insertPaneNearTarget(input: {
+function insertPaneIntoTargetGroup(input: {
   node: SplitNode;
   targetPaneId: string;
   pane: SplitPane;
-  direction: CockpitPaneMoveDirection;
+  targetGroupDirection: "horizontal" | "vertical";
   ids: CockpitLayoutIdSource;
 }): SplitNode | null {
-  const axis =
-    input.direction === "left" || input.direction === "right" ? "horizontal" : "vertical";
-  const insertBefore = input.direction === "left" || input.direction === "up";
   const paneNode: SplitNode = { kind: "pane", pane: input.pane };
 
   if (input.node.kind === "pane") {
     if (input.node.pane.id !== input.targetPaneId) return null;
-    return createGroupNode(
-      axis,
-      insertBefore ? [paneNode, input.node] : [input.node, paneNode],
-      input.ids,
-    );
+    return createGroupNode(input.targetGroupDirection, [input.node, paneNode], input.ids);
   }
 
-  const directTargetIndex = input.node.group.children.findIndex(
-    (child) => child.kind === "pane" && child.pane.id === input.targetPaneId,
-  );
-  if (directTargetIndex >= 0) {
-    const children = input.node.group.children.slice();
-    const insertionIndex =
-      input.node.group.direction === axis && insertBefore
-        ? directTargetIndex
-        : directTargetIndex + 1;
-    children.splice(insertionIndex, 0, paneNode);
-    return {
-      kind: "group",
-      group: {
-        ...input.node.group,
-        children,
-        sizes: equalSizes(children.length),
-      },
-    };
+  if (input.node.group.direction === input.targetGroupDirection) {
+    const directTargetIndex = input.node.group.children.findIndex(
+      (child) => child.kind === "pane" && child.pane.id === input.targetPaneId,
+    );
+    if (directTargetIndex >= 0) {
+      const children = input.node.group.children.slice();
+      children.splice(directTargetIndex + 1, 0, paneNode);
+      return {
+        kind: "group",
+        group: {
+          ...input.node.group,
+          children,
+          sizes: equalSizes(children.length),
+        },
+      };
+    }
   }
 
   const targetChildIndex = input.node.group.children.findIndex(
@@ -365,7 +352,7 @@ function insertPaneNearTarget(input: {
   if (targetChildIndex < 0) return null;
   const targetChild = input.node.group.children[targetChildIndex];
   if (!targetChild) throw new Error("Cockpit move target index has no child");
-  const movedChild = insertPaneNearTarget({ ...input, node: targetChild });
+  const movedChild = insertPaneIntoTargetGroup({ ...input, node: targetChild });
   if (!movedChild) return null;
   const children = input.node.group.children.slice();
   children[targetChildIndex] = movedChild;
@@ -412,10 +399,11 @@ function insertPaneAtLayoutEdge(input: {
 }
 
 /**
- * Removes a pane from its current group and inserts it beside the target pane.
- * A null target means the pane has reached the outer edge, so the move creates
- * a new outer row or column. This changes the split tree instead of swapping
- * workspace assignments between fixed pane slots.
+ * Removes a pane from its current group and joins the target pane's row for a
+ * vertical move or its column for a horizontal move. A null target means the
+ * pane has reached the outer edge, so the move creates a new outer row or
+ * column. This changes the split tree instead of swapping workspace assignments
+ * between fixed pane slots.
  */
 export function moveCockpitPane(input: {
   layout: CockpitLayout;
@@ -439,11 +427,12 @@ export function moveCockpitPane(input: {
           direction: input.direction,
           ids: input.ids,
         })
-      : insertPaneNearTarget({
+      : insertPaneIntoTargetGroup({
           node: removed.node,
           targetPaneId: input.targetPaneId,
           pane: removed.removed,
-          direction: input.direction,
+          targetGroupDirection:
+            input.direction === "up" || input.direction === "down" ? "horizontal" : "vertical",
           ids: input.ids,
         });
   if (!root) return null;
