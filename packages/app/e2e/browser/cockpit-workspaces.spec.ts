@@ -93,7 +93,9 @@ test("opens a workspace script in the global utility tray across workspace and c
     await expect(scriptRow).toBeVisible({ timeout: 15_000 });
     await scriptRow.click();
     await page.getByTestId("utility-tray-start").click();
-    await expect(page.locator(".xterm-screen")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".xterm-screen")).toBeVisible({
+      timeout: 15_000,
+    });
     await page.getByTestId("utility-tray-close").click();
     await expect(page.getByTestId("utility-tray-overlay")).toHaveCount(0);
 
@@ -103,7 +105,9 @@ test("opens a workspace script in the global utility tray across workspace and c
     await expect(trigger).toBeVisible();
     await trigger.click();
     await expect(page.getByTestId("utility-tray-overlay")).toBeVisible();
-    await expect(page.locator(".xterm-screen")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".xterm-screen")).toBeVisible({
+      timeout: 15_000,
+    });
   } finally {
     await workspace.cleanup();
   }
@@ -438,6 +442,27 @@ test("shows a spinner while a cockpit workspace is running", async ({ page }) =>
     const bounds = await spinner.boundingBox();
     expect(bounds?.width).toBe(COCKPIT_STATUS_RING_FRAME_SIZE);
     expect(bounds?.height).toBe(COCKPIT_STATUS_RING_FRAME_SIZE);
+    const visual = spinner.getByTestId("cockpit-running-spinner-visual");
+    const track = spinner.getByTestId("cockpit-running-spinner-visual-track");
+    const centerDot = spinner.getByTestId("cockpit-running-spinner-visual-center-dot");
+    await expect(visual).toHaveCSS("transform", "none");
+    const [trackBounds, centerDotBounds] = await Promise.all([
+      track.boundingBox(),
+      centerDot.boundingBox(),
+    ]);
+    if (!trackBounds || !centerDotBounds) {
+      throw new Error("Cockpit running indicator geometry was not measurable");
+    }
+    expect(trackBounds.width).toBe(20);
+    expect(trackBounds.height).toBe(20);
+    expect(centerDotBounds.width).toBe(10);
+    expect(centerDotBounds.height).toBe(10);
+    expect(trackBounds.x + trackBounds.width / 2).toBe(
+      centerDotBounds.x + centerDotBounds.width / 2,
+    );
+    expect(trackBounds.y + trackBounds.height / 2).toBe(
+      centerDotBounds.y + centerDotBounds.height / 2,
+    );
     await expect(spinner.getByRole("progressbar")).toHaveCount(0);
   } finally {
     await workspace.cleanup();
@@ -465,7 +490,9 @@ test("archives a workspace when its cockpit pane closes", async ({ page }) => {
       })
       .toBe(true);
 
-    const archiveButton = card.getByRole("button", { name: "Archive workspace" });
+    const archiveButton = card.getByRole("button", {
+      name: "Archive workspace",
+    });
     let dismissedConfirmation = false;
     page.once("dialog", (dialog) => {
       dismissedConfirmation = true;

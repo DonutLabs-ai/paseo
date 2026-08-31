@@ -13,13 +13,21 @@ import { useStatusRingAnimationRef } from "@/components/status-ring/clock.web";
  * drives the rotation from one absolute document-timeline epoch rather than from mount time — see
  * `clock.web.ts`.
  */
-export const StatusRing = memo(function StatusRing({ backdrop }: StatusRingProps) {
+export const StatusRing = memo(function StatusRing({
+  backdrop,
+  size = "default",
+  testID,
+}: StatusRingProps) {
   const rotatorRef = useStatusRingAnimationRef();
+  const large = size === "large";
 
   return (
-    <StatusRingFrame backdrop={backdrop}>
-      <View ref={rotatorRef} style={rotatorStyles.rotator}>
-        <View style={styles.arc} />
+    <StatusRingFrame backdrop={backdrop} size={size} testID={testID}>
+      <View
+        ref={rotatorRef}
+        style={[rotatorStyles.rotator, large ? rotatorStyles.rotatorLarge : null]}
+      >
+        <View style={[styles.arc, large ? styles.arcLarge : null]} />
       </View>
     </StatusRingFrame>
   );

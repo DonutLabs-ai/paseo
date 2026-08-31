@@ -6,6 +6,10 @@ import { getStatusDotColor } from "@/utils/status-dot-color";
 import {
   STATUS_RING_FRAME_SIZE,
   STATUS_RING_HEAD_OPACITY,
+  STATUS_RING_LARGE_CENTER_DOT_SIZE,
+  STATUS_RING_LARGE_FRAME_SIZE,
+  STATUS_RING_LARGE_SIZE,
+  STATUS_RING_LARGE_STROKE,
   STATUS_RING_SIZE,
   STATUS_RING_STROKE,
   STATUS_RING_TRACK_OPACITY,
@@ -19,6 +23,8 @@ export interface StatusRingProps {
   // tab dot, the project tile under a sidebar badge. Leave it out where the ring sits on flat
   // background and has nothing to knock out.
   backdrop?: SurfaceBackdrop | null;
+  size?: "default" | "large";
+  testID?: string;
 }
 
 /**
@@ -30,12 +36,27 @@ export interface StatusRingProps {
  * site, outside anything Unistyles tracks, and leave the mark in the old theme until something
  * incidental re-rendered the row.
  */
-export function StatusRingFrame({ backdrop, children }: StatusRingProps & { children: ReactNode }) {
+export function StatusRingFrame({
+  backdrop,
+  children,
+  size = "default",
+  testID,
+}: StatusRingProps & { children: ReactNode }) {
+  const large = size === "large";
   return (
-    <View style={[styles.frame, getBackdropStyle(backdrop)]}>
-      <View style={styles.track} />
+    <View
+      style={[styles.frame, large ? styles.frameLarge : null, getBackdropStyle(backdrop)]}
+      testID={testID}
+    >
+      <View
+        style={[styles.track, large ? styles.trackLarge : null]}
+        testID={testID ? `${testID}-track` : undefined}
+      />
       {children}
-      <View style={styles.centerDot} />
+      <View
+        style={[styles.centerDot, large ? styles.centerDotLarge : null]}
+        testID={testID ? `${testID}-center-dot` : undefined}
+      />
     </View>
   );
 }
@@ -70,6 +91,10 @@ export const rotatorStyles = RNStyleSheet.create({
     width: STATUS_RING_SIZE,
     height: STATUS_RING_SIZE,
   },
+  rotatorLarge: {
+    width: STATUS_RING_LARGE_SIZE,
+    height: STATUS_RING_LARGE_SIZE,
+  },
 });
 
 export const styles = StyleSheet.create((theme) => {
@@ -89,11 +114,19 @@ export const styles = StyleSheet.create((theme) => {
       alignItems: "center",
       justifyContent: "center",
     },
+    frameLarge: {
+      width: STATUS_RING_LARGE_FRAME_SIZE,
+      height: STATUS_RING_LARGE_FRAME_SIZE,
+    },
     backdropSurface0: { backgroundColor: theme.colors.surface0 },
     backdropSurface1: { backgroundColor: theme.colors.surface1 },
     backdropSurfaceSidebar: { backgroundColor: theme.colors.surfaceSidebar },
-    backdropSurfaceSidebarHover: { backgroundColor: theme.colors.surfaceSidebarHover },
-    backdropSurfaceSidebarSelected: { backgroundColor: theme.colors.surfaceSidebarSelected },
+    backdropSurfaceSidebarHover: {
+      backgroundColor: theme.colors.surfaceSidebarHover,
+    },
+    backdropSurfaceSidebarSelected: {
+      backgroundColor: theme.colors.surfaceSidebarSelected,
+    },
     backdropSurface2: { backgroundColor: theme.colors.surface2 },
 
     // The closed ring the quarter runs on. Same colour rather than a grey so the indicator is one
@@ -104,6 +137,11 @@ export const styles = StyleSheet.create((theme) => {
       borderColor: runningColor,
       opacity: STATUS_RING_TRACK_OPACITY,
     },
+    trackLarge: {
+      width: STATUS_RING_LARGE_SIZE,
+      height: STATUS_RING_LARGE_SIZE,
+      borderWidth: STATUS_RING_LARGE_STROKE,
+    },
 
     // The moving quarter. Three sides transparent leaves the top border alone, which on a fully
     // rounded box is a 90° arc — the edge that makes the rotation legible against the track.
@@ -113,12 +151,21 @@ export const styles = StyleSheet.create((theme) => {
       borderTopColor: runningColor,
       opacity: STATUS_RING_HEAD_OPACITY,
     },
+    arcLarge: {
+      width: STATUS_RING_LARGE_SIZE,
+      height: STATUS_RING_LARGE_SIZE,
+      borderWidth: STATUS_RING_LARGE_STROKE,
+    },
 
     centerDot: {
       width: STATUS_INDICATOR_FILLED_DOT_SIZE,
       height: STATUS_INDICATOR_FILLED_DOT_SIZE,
       borderRadius: theme.borderRadius.full,
       backgroundColor: runningColor,
+    },
+    centerDotLarge: {
+      width: STATUS_RING_LARGE_CENTER_DOT_SIZE,
+      height: STATUS_RING_LARGE_CENTER_DOT_SIZE,
     },
   };
 });

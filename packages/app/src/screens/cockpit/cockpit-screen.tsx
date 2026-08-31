@@ -35,7 +35,6 @@ import { DiffStat } from "@/components/diff-stat";
 import { ContextWindowMeter } from "@/components/context-window-meter";
 import { AdaptiveTextInput } from "@/components/adaptive-text-input";
 import { StatusRing } from "@/components/status-ring";
-import { STATUS_RING_FRAME_SIZE } from "@/components/status-ring/geometry";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { Button } from "@/components/ui/button";
 import { ToolbarButton, ToolbarControls } from "@/components/ui/pane-content-toolbar";
@@ -1385,9 +1384,7 @@ function CockpitStatusIndicator({
   if (bucket === "running") {
     return (
       <View style={styles.statusRingFrame} testID="cockpit-running-spinner">
-        <View style={styles.statusRingVisual}>
-          <StatusRing />
-        </View>
+        <StatusRing size="large" testID="cockpit-running-spinner-visual" />
       </View>
     );
   }
@@ -1673,11 +1670,6 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
-  },
-  statusRingVisual: {
-    width: STATUS_RING_FRAME_SIZE,
-    height: STATUS_RING_FRAME_SIZE,
-    transform: [{ scale: COCKPIT_STATUS_RING_FRAME_SIZE / STATUS_RING_FRAME_SIZE }],
   },
   paneActions: {
     maxWidth: "100%",

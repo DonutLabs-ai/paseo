@@ -19,6 +19,19 @@ export const STATUS_RING_SIZE =
 export const STATUS_RING_HALO_INSET = 1;
 export const STATUS_RING_FRAME_SIZE = STATUS_RING_SIZE + STATUS_RING_HALO_INSET * 2;
 
+// The cockpit mark is intentionally larger than the dense-list indicator. Keep every diameter
+// even and every inset integral: track, rotating arc, and centre dot are separate browser layers,
+// so scaling the standard ring by a fractional transform makes their rasterised edges appear to
+// have different centres even when their layout centres agree.
+export const STATUS_RING_LARGE_CENTER_DOT_SIZE = 10;
+export const STATUS_RING_LARGE_GAP = 3;
+export const STATUS_RING_LARGE_STROKE = 2;
+export const STATUS_RING_LARGE_SIZE =
+  STATUS_RING_LARGE_CENTER_DOT_SIZE + (STATUS_RING_LARGE_GAP + STATUS_RING_LARGE_STROKE) * 2;
+export const STATUS_RING_LARGE_HALO_INSET = 1;
+export const STATUS_RING_LARGE_FRAME_SIZE =
+  STATUS_RING_LARGE_SIZE + STATUS_RING_LARGE_HALO_INSET * 2;
+
 // The track and the quarter riding it are the same color and differ only here. The track is low
 // enough that the quarter is unmistakably the thing moving, high enough that the ring still reads
 // as a ring when the quarter is on the far side of it. The quarter is held off full so the centre
