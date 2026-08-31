@@ -3306,7 +3306,8 @@ function WorkspaceScreenContent({
     ],
   );
 
-  const workspaceKeyboardActionsEnabled = Boolean(
+  // Shared by every handler below: these actions only exist on a focused workspace route.
+  const workspaceActionsEnabled = Boolean(
     isRouteFocused && normalizedServerId && normalizedWorkspaceId,
   );
 
@@ -3325,7 +3326,7 @@ function WorkspaceScreenContent({
       "workspace.browser.new",
       "workspace.tab.menu.open",
     ] as const,
-    enabled: workspaceKeyboardActionsEnabled,
+    enabled: workspaceActionsEnabled,
     priority: 100,
     isActive: () => true,
     handle: handleWorkspaceTabAction,
@@ -3343,7 +3344,7 @@ function WorkspaceScreenContent({
       "workspace.tab.target.changes",
       "workspace.tab.target.files",
     ] as const,
-    enabled: workspaceKeyboardActionsEnabled,
+    enabled: workspaceActionsEnabled,
     priority: 100,
     isActive: () => true,
     handle: handleWorkspaceDirectTargetAction,
@@ -3356,7 +3357,7 @@ function WorkspaceScreenContent({
       workspaceId: normalizedWorkspaceId,
     }),
     actions: ["workspace.tab.open"] as const,
-    enabled: workspaceKeyboardActionsEnabled,
+    enabled: workspaceActionsEnabled,
     priority: 100,
     isActive: () => true,
     handle: handleWorkspacePanelOpenAction,
@@ -3375,7 +3376,7 @@ function WorkspaceScreenContent({
       "workspace.tab.copy-id",
       "workspace.tab.copy-file-path",
     ] as const,
-    enabled: workspaceKeyboardActionsEnabled,
+    enabled: workspaceActionsEnabled,
     priority: 100,
     isActive: () => true,
     handle: handleWorkspaceCurrentTabMetadataAction,
@@ -3392,7 +3393,7 @@ function WorkspaceScreenContent({
       "workspace.tab.close-right",
       "workspace.tab.close-others",
     ] as const,
-    enabled: workspaceKeyboardActionsEnabled,
+    enabled: workspaceActionsEnabled,
     priority: 100,
     isActive: () => true,
     handle: handleWorkspaceCurrentTabCloseAction,
@@ -3418,7 +3419,7 @@ function WorkspaceScreenContent({
       "workspace.pane.close",
       "workspace.focus.toggle",
     ] as const,
-    enabled: workspaceKeyboardActionsEnabled,
+    enabled: workspaceActionsEnabled,
     priority: 100,
     isActive: () => true,
     handle: handleWorkspacePaneAction,
@@ -3431,10 +3432,26 @@ function WorkspaceScreenContent({
       workspaceId: normalizedWorkspaceId,
     }),
     actions: ["sidebar.toggle.right", "sidebar.toggle.both"] as const,
-    enabled: workspaceKeyboardActionsEnabled,
+    enabled: workspaceActionsEnabled,
     priority: 100,
     isActive: () => true,
     handle: handleWorkspaceSidebarAction,
+  });
+
+  // Gated on the same predicate as the header menu item, so the command center never lists a
+  // Show setup entry the menu would hide.
+  // Gated by isActive so the handler is only dispatched when the workspace has visible setup;
+  // the command center contribution is separately gated by canShowSetup in workspace-registration.
+  useKeyboardActionHandler({
+    handlerId: `workspace-setup-show:${normalizedServerId}:${normalizedWorkspaceId}`,
+    actions: ["workspace.setup.show"] as const,
+    enabled: workspaceActionsEnabled,
+    priority: 100,
+    isActive: () => showWorkspaceSetup,
+    handle: () => {
+      handleOpenSetupTab();
+      return true;
+    },
   });
 
   const activeTabDescriptor = useMemo(() => activeTab?.descriptor ?? null, [activeTab]);
