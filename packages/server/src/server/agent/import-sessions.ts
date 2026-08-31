@@ -33,6 +33,7 @@ export type ImportSessionAgentManager = AgentLoaderManager &
     | "getTimeline"
     | "importProviderSession"
     | "notifyAgentState"
+    | "setAgentMode"
     | "unarchiveSnapshot"
   >;
 
@@ -46,6 +47,7 @@ export interface NormalizedImportAgentRequest {
   providerHandleId: string;
   cwd?: string;
   workspaceId?: string;
+  modeId?: string;
   labels?: Record<string, string>;
   requestId: string;
 }
@@ -77,6 +79,7 @@ export interface ImportProviderSessionInput {
   workspaceProvisioning: Pick<WorkspaceProvisioningService, "runInImportWorkspace">;
   agentManager: ImportSessionAgentManager;
   agentStorage: AgentStorage;
+  providerSnapshotManager: Pick<ProviderSnapshotManager, "validateAgentConfiguration">;
   logger: Logger;
 }
 
@@ -109,6 +112,7 @@ export function normalizeImportAgentRequest(
     providerHandleId,
     cwd: msg.cwd,
     workspaceId: msg.workspaceId,
+    modeId: msg.modeId,
     labels: msg.labels,
     requestId: msg.requestId,
   };
@@ -174,6 +178,7 @@ export async function importProviderSession(
   if (!cwd) {
     throw new Error("Import requires cwd from the selected provider session");
   }
+  await validateImportMode(input);
   const key = await resolveProviderSessionImportMutationKey(input);
   return serializeProviderSessionImport(input.agentManager, key, async () => {
     const placement = await input.workspaceProvisioning.runInImportWorkspace(
@@ -189,7 +194,7 @@ async function importProviderSessionNow(
   cwd: string,
   workspaceId: string,
 ): Promise<ImportedProviderSession> {
-  const { provider, providerHandleId, labels } = input.request;
+  const { provider, providerHandleId, labels, modeId } = input.request;
 
   const matchingRecords = await input.agentStorage.listByProviderSession(
     provider,
@@ -222,6 +227,9 @@ async function importProviderSessionNow(
         agentStorage: input.agentStorage,
         logger: input.logger,
       });
+      if (modeId && snapshot.currentModeId !== modeId) {
+        await input.agentManager.setAgentMode(snapshot.id, modeId);
+      }
       return {
         snapshot,
         timelineSize: input.agentManager.getTimeline(snapshot.id).length,
@@ -237,6 +245,7 @@ async function importProviderSessionNow(
     providerHandleId,
     cwd,
     workspaceId,
+    ...(modeId ? { modeId } : {}),
     labels,
   });
   await unarchiveAgentState(input.agentStorage, input.agentManager, snapshot.id);
@@ -245,6 +254,23 @@ async function importProviderSessionNow(
     snapshot,
     timelineSize: input.agentManager.getTimeline(snapshot.id).length,
   };
+}
+
+async function validateImportMode(input: ImportProviderSessionInput): Promise<void> {
+  const modeId = input.request.modeId;
+  if (!modeId) {
+    return;
+  }
+  const issues = await input.providerSnapshotManager.validateAgentConfiguration({
+    provider: input.request.provider,
+    modeId,
+  });
+  if (issues.length > 0) {
+    throw new ImportSessionsRequestError(
+      "invalid_mode",
+      issues.map((issue) => issue.message).join("; "),
+    );
+  }
 }
 
 async function serializeProviderSessionImport<T>(

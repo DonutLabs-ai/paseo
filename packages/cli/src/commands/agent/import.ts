@@ -11,6 +11,7 @@ export function addImportOptions(cmd: Command): Command {
     .argument("<id>", "Provider session/thread ID to import")
     .requiredOption("--provider <provider>", "Agent provider id")
     .option("--cwd <path>", "Working directory for providers that require it")
+    .option("--mode <mode>", "Execution mode for the imported session")
     .option("--timeout <seconds>", "Maximum time to wait for the import (default: 60)")
     .option(
       "--label <key=value>",
@@ -23,6 +24,7 @@ export function addImportOptions(cmd: Command): Command {
 export interface AgentImportOptions extends CommandOptions {
   provider?: string;
   cwd?: string;
+  mode?: string;
   label?: string[];
   host?: string;
   timeout?: string;
@@ -51,6 +53,21 @@ function parseImportProvider(provider: string | undefined): string {
   }
 
   return normalizedProvider;
+}
+
+function parseImportMode(mode: string | undefined): string | undefined {
+  if (mode === undefined) {
+    return undefined;
+  }
+  const normalizedMode = mode.trim();
+  if (!normalizedMode) {
+    throw {
+      code: "INVALID_MODE",
+      message: "--mode cannot be empty",
+      details: "Provide a provider mode ID or omit --mode",
+    } satisfies CommandError;
+  }
+  return normalizedMode;
 }
 
 function parseImportLabels(labelFlags: string[] | undefined): Record<string, string> {
@@ -145,6 +162,7 @@ export async function runImportCommand(
   }
 
   const provider = parseImportProvider(options.provider);
+  const mode = parseImportMode(options.mode);
   const cwd = resolveImportCwd(options.cwd, process.cwd());
   const timeout = parseImportTimeoutMs(options.timeout);
 
@@ -152,10 +170,21 @@ export async function runImportCommand(
   const client = await connectToDaemonOrThrow(options.host, host);
 
   try {
+    if (
+      mode !== undefined &&
+      client.getLastServerInfoMessage()?.features?.importSessionMode !== true
+    ) {
+      throw {
+        code: "UNSUPPORTED_BY_HOST",
+        message: "This daemon does not support selecting a mode while importing sessions.",
+        details: "Update the host to a newer Paseo version.",
+      } satisfies CommandError;
+    }
     const agent = await client.importAgent({
       provider,
       sessionId,
       cwd,
+      ...(mode === undefined ? {} : { modeId: mode }),
       ...(timeout === undefined ? {} : { timeout }),
       ...(Object.keys(labels).length > 0 ? { labels } : {}),
     });

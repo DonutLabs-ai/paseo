@@ -3493,6 +3493,7 @@ test("importProviderSession imports the selected session without listing and pub
   class ImportClient extends TestAgentClient {
     listCalls = 0;
     importInput: unknown = null;
+    importStoredConfig: AgentSessionConfig | undefined;
     importLaunchContext: AgentLaunchContext | undefined;
 
     async listImportableSessions() {
@@ -3502,6 +3503,7 @@ test("importProviderSession imports the selected session without listing and pub
 
     async importSession(input: ImportProviderSessionInput, context: ImportProviderSessionContext) {
       this.importInput = input;
+      this.importStoredConfig = context.storedConfig;
       this.importLaunchContext = context.launchContext;
       return {
         session,
@@ -3578,10 +3580,13 @@ test("importProviderSession imports the selected session without listing and pub
     providerHandleId: "thread-selected",
     cwd: workdir,
     workspaceId: "ws-imported",
+    modeId: "full-access",
   });
 
   expect(client.listCalls).toBe(0);
   expect(client.importInput).toEqual({ providerHandleId: "thread-selected", cwd: workdir });
+  expect(client.importStoredConfig).toMatchObject({ modeId: "full-access" });
+  expect(imported.config.modeId).toBe("full-access");
   expect(client.importLaunchContext).toEqual({
     agentId: imported.id,
     env: {

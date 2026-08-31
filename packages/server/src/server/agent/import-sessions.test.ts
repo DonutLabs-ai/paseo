@@ -596,6 +596,11 @@ class ProviderImportHarness {
         return true;
       },
       notifyAgentState: () => {},
+      setAgentMode: async (_agentId: string, modeId: string) => {
+        this.snapshot.currentModeId = modeId;
+        this.snapshot.config.modeId = modeId;
+        return null;
+      },
       getAgent: () => this.activeAgent,
       getRegisteredProviderIds: () => ["codex"],
       createAgent: async () => {
@@ -672,18 +677,25 @@ class ProviderImportHarness {
     };
   }
 
-  import(input: { providerHandleId: string; cwd?: string; labels?: Record<string, string> }) {
+  import(input: {
+    providerHandleId: string;
+    cwd?: string;
+    modeId?: string;
+    labels?: Record<string, string>;
+  }) {
     return importProviderSession({
       request: {
         requestId: "import-thread",
         provider: "codex",
         providerHandleId: input.providerHandleId,
         cwd: input.cwd,
+        modeId: input.modeId,
         labels: input.labels,
       },
       workspaceProvisioning: createImportWorkspace("ws-restored"),
       agentManager: this.manager,
       agentStorage: this.storage,
+      providerSnapshotManager: { validateAgentConfiguration: async () => [] },
       logger: createTestLogger(),
     });
   }
@@ -716,6 +728,79 @@ test("importProviderSession uses the provider import path with the requested lab
     timelineSize: 2,
     createdWorkspace: null,
   });
+});
+
+test("importProviderSession validates and forwards an explicit mode", async () => {
+  const harness = await ProviderImportHarness.create();
+
+  await harness.import({
+    providerHandleId: "thread-imported",
+    cwd: "/tmp/imported-agent",
+    modeId: "full-access",
+  });
+
+  expect(harness.freshImports).toEqual([
+    {
+      provider: "codex",
+      providerHandleId: "thread-imported",
+      cwd: "/tmp/imported-agent",
+      workspaceId: "ws-restored",
+      modeId: "full-access",
+      labels: undefined,
+    },
+  ]);
+});
+
+test("importProviderSession rejects an unavailable mode before mutating state", async () => {
+  const harness = await ProviderImportHarness.create();
+
+  await expect(
+    importProviderSession({
+      request: {
+        requestId: "import-thread",
+        provider: "codex",
+        providerHandleId: "thread-imported",
+        cwd: "/tmp/imported-agent",
+        modeId: "missing",
+      },
+      workspaceProvisioning: createImportWorkspace("ws-restored"),
+      agentManager: harness.manager,
+      agentStorage: harness.storage,
+      providerSnapshotManager: {
+        validateAgentConfiguration: async () => [
+          {
+            path: ["modeId"],
+            message: "Mode 'missing' is not available for provider 'codex'",
+          },
+        ],
+      },
+      logger: createTestLogger(),
+    }),
+  ).rejects.toMatchObject({
+    code: "invalid_mode",
+    message: "Mode 'missing' is not available for provider 'codex'",
+  });
+  expect(harness.freshImports).toEqual([]);
+});
+
+test("importProviderSession applies an explicit mode when restoring an archived agent", async () => {
+  const harness = await ProviderImportHarness.create({ sessionId: "thread-archived-mode" });
+  await harness.seed(
+    makeStoredProviderSession({
+      id: harness.snapshot.id,
+      cwd: harness.snapshot.cwd,
+      sessionId: "thread-archived-mode",
+    }),
+  );
+
+  const result = await harness.import({
+    providerHandleId: "thread-archived-mode",
+    cwd: harness.snapshot.cwd,
+    modeId: "full-access",
+  });
+
+  expect(result.snapshot.currentModeId).toBe("full-access");
+  expect(result.snapshot.config.modeId).toBe("full-access");
 });
 
 test("importProviderSession rejects a provider session with an active stored owner", async () => {

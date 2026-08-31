@@ -89,23 +89,28 @@ vi.mock("@/components/ui/combobox", () => ({
     value,
     onSelect,
     open,
+    title,
   }: {
     options: ReadonlyArray<{ id: string; label: string }>;
     value: string;
     onSelect: (id: string) => void;
     open?: boolean;
+    title?: string;
   }) => {
     if (!open) return null;
+    const isMode = title === "Mode";
     return React.createElement(
       "div",
-      { "data-testid": "import-session-combobox" },
+      { "data-testid": isMode ? "import-session-mode-combobox" : "import-session-combobox" },
       options.map((option) =>
         React.createElement(
           "button",
           {
             key: option.id,
             type: "button",
-            "data-testid": `import-session-filter-${option.id === "__all__" ? "all" : option.id}`,
+            "data-testid": isMode
+              ? `import-session-mode-${option.id}`
+              : `import-session-filter-${option.id === "__all__" ? "all" : option.id}`,
             "data-selected": value === option.id,
             onClick: () => onSelect(option.id),
           },
@@ -150,6 +155,16 @@ const mockSnapshot = vi.hoisted(() => ({
   },
 }));
 
+const mockHostFeatures = vi.hoisted(() => ({
+  importSessionWorkspaceTarget: false,
+  importSessionMode: false,
+}));
+
+vi.mock("@/runtime/host-features", () => ({
+  useHostFeature: (_serverId: string, feature: keyof typeof mockHostFeatures) =>
+    mockHostFeatures[feature],
+}));
+
 vi.mock("@/hooks/use-providers-snapshot", () => ({
   useProvidersSnapshot: () => ({
     entries: mockSnapshot.current.entries,
@@ -173,6 +188,7 @@ interface RenderOptions {
     entries?: ProviderSnapshotEntry[];
     supportsSnapshot?: boolean;
   };
+  supportsImportMode?: boolean;
 }
 
 function renderSheet(
@@ -183,6 +199,8 @@ function renderSheet(
     entries: options?.snapshot?.entries,
     supportsSnapshot: options?.snapshot?.supportsSnapshot ?? false,
   };
+  mockHostFeatures.importSessionMode = options?.supportsImportMode ?? false;
+  mockHostFeatures.importSessionWorkspaceTarget = false;
 
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -515,6 +533,61 @@ describe("ImportSessionSheet", () => {
     });
     expect(onImportedAgent).toHaveBeenCalledWith("agent-imported");
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires an explicit provider mode selection when the daemon supports import modes", async () => {
+    const fetchRecentProviderSessions = vi.fn(async () => ({
+      requestId: "recent-provider-sessions",
+      entries: [
+        createProviderSessionEntry({
+          providerId: "codex",
+          providerLabel: "Codex",
+          cwd: "/repo/paseo-realpath",
+        }),
+      ],
+    }));
+    const importAgent = vi.fn(async () => createImportedAgentSnapshot("agent-imported"));
+
+    renderSheet(
+      { fetchRecentProviderSessions, importAgent } as Pick<
+        DaemonClient,
+        "fetchRecentProviderSessions" | "importAgent"
+      >,
+      {
+        supportsImportMode: true,
+        snapshot: {
+          supportsSnapshot: true,
+          entries: [
+            createSnapshotEntry("codex", {
+              defaultModeId: "auto",
+              modes: [
+                { id: "auto", label: "Auto", description: "Workspace access" },
+                { id: "full-access", label: "Full access", description: "Full machine access" },
+              ],
+            }),
+          ],
+        },
+      },
+    );
+
+    fireEvent.click(await screen.findByTestId("import-session-session-codex-provider-thread-1"));
+    expect(importAgent).not.toHaveBeenCalled();
+    screen.getByTestId("import-session-mode-step");
+    screen.getByText("Workspace access");
+
+    fireEvent.click(screen.getByTestId("import-session-mode-trigger"));
+    fireEvent.click(screen.getByTestId("import-session-mode-full-access"));
+    screen.getByText("Full machine access");
+    fireEvent.click(screen.getByTestId("import-session-mode-confirm"));
+
+    await waitFor(() => {
+      expect(importAgent).toHaveBeenCalledWith({
+        providerId: "codex",
+        providerHandleId: "provider-thread-1",
+        cwd: "/repo/paseo-realpath",
+        modeId: "full-access",
+      });
+    });
   });
 
   it("shows an import error state without closing when selected session import fails", async () => {

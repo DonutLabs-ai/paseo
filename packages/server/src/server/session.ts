@@ -3790,6 +3790,7 @@ export class Session {
         workspaceProvisioning: this.workspaceProvisioning,
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
+        providerSnapshotManager: this.providerSnapshotManager,
         logger: this.sessionLogger,
       });
       if (createdWorkspace) {

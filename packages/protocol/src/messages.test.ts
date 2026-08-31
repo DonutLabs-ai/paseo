@@ -402,6 +402,27 @@ describe("agent detach RPC", () => {
     }
     expect(parsed.features?.importSessionWorkspaceTarget).toBe(true);
   });
+
+  test("parses the import mode request and feature gate", () => {
+    const request = SessionInboundMessageSchema.parse({
+      type: "import_agent_request",
+      requestId: "req-import-mode",
+      providerId: "codex",
+      providerHandleId: "thread-1",
+      modeId: "full-access",
+    });
+    expect(request).toMatchObject({ modeId: "full-access" });
+
+    const serverInfo = parseServerInfoStatusPayload({
+      status: "server_info",
+      serverId: "srv-test",
+      features: { importSessionMode: true },
+    });
+    if (!serverInfo) {
+      throw new Error("Expected server info payload to parse");
+    }
+    expect(serverInfo.features?.importSessionMode).toBe(true);
+  });
 });
 
 describe("agent setting action responses", () => {

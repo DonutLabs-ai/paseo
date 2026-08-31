@@ -1720,6 +1720,8 @@ export const ImportAgentRequestMessageSchema = z.object({
   providerHandleId: z.string().optional(),
   cwd: z.string().optional(),
   workspaceId: z.string().optional(),
+  // COMPAT(importSessionMode): added in v0.7.0, remove the gate after 2027-03-01.
+  modeId: z.string().min(1).optional(),
   labels: z.record(z.string(), z.string()).optional(),
   requestId: z.string(),
 });
@@ -3533,6 +3535,8 @@ export const ServerInfoStatusPayloadSchema = z
         providerRemoval: z.boolean().optional(),
         // COMPAT(importSessionWorkspaceTarget): added in v0.1.110, remove gate after 2027-01-16.
         importSessionWorkspaceTarget: z.boolean().optional(),
+        // COMPAT(importSessionMode): added in v0.7.0, remove gate after 2027-03-01.
+        importSessionMode: z.boolean().optional(),
         // COMPAT(forgeProviders): added in v0.2.0-beta.1. Drop the gate after
         // 2027-01-17 once the supported daemon floor is >= v0.2.0.
         // Daemon advertises pluggable non-GitHub forge support (the forge registry);
