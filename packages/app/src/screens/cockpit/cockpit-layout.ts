@@ -1,4 +1,5 @@
 import type { SplitNode, SplitPane, WorkspaceLayout } from "@/stores/workspace-layout-store";
+import { findAdjacentPane } from "@/utils/split-navigation";
 
 export const COCKPIT_CARD_GAP = 1;
 export const COCKPIT_CARD_MIN_HEIGHT = 210;
@@ -7,6 +8,7 @@ export const COCKPIT_HORIZONTAL_PADDING = 8;
 
 export type CockpitLayout = WorkspaceLayout;
 export type CockpitPaneMoveDirection = "left" | "right" | "up" | "down";
+export type CockpitPaneMoveTarget = { kind: "pane"; paneId: string } | { kind: "edge" };
 
 export interface CockpitLayoutIdSource {
   createNodeId: (prefix: "pane" | "group") => string;
@@ -110,6 +112,17 @@ export function findCockpitPane(node: SplitNode, paneId: string): SplitPane | nu
     if (pane) return pane;
   }
   return null;
+}
+
+export function getCockpitPaneMoveTarget(
+  node: SplitNode,
+  paneId: string,
+  direction: CockpitPaneMoveDirection,
+): CockpitPaneMoveTarget | null {
+  const panes = collectCockpitPanes(node);
+  if (panes.length <= 1 || !panes.some((pane) => pane.id === paneId)) return null;
+  const adjacentPaneId = findAdjacentPane(node, paneId, direction);
+  return adjacentPaneId ? { kind: "pane", paneId: adjacentPaneId } : { kind: "edge" };
 }
 
 function updatePane(
@@ -366,30 +379,73 @@ function insertPaneNearTarget(input: {
   };
 }
 
+function insertPaneAtLayoutEdge(input: {
+  node: SplitNode;
+  pane: SplitPane;
+  direction: CockpitPaneMoveDirection;
+  ids: CockpitLayoutIdSource;
+}): SplitNode {
+  const axis =
+    input.direction === "left" || input.direction === "right" ? "horizontal" : "vertical";
+  const insertBefore = input.direction === "left" || input.direction === "up";
+  const paneNode: SplitNode = { kind: "pane", pane: input.pane };
+
+  if (input.node.kind === "group" && input.node.group.direction === axis) {
+    const children = insertBefore
+      ? [paneNode, ...input.node.group.children]
+      : [...input.node.group.children, paneNode];
+    return {
+      kind: "group",
+      group: {
+        ...input.node.group,
+        children,
+        sizes: equalSizes(children.length),
+      },
+    };
+  }
+
+  return createGroupNode(
+    axis,
+    insertBefore ? [paneNode, input.node] : [input.node, paneNode],
+    input.ids,
+  );
+}
+
 /**
- * Removes a pane from its current group and inserts it into the group reached in
- * the requested direction. This intentionally changes the split tree instead
- * of swapping workspace assignments between two fixed pane slots.
+ * Removes a pane from its current group and inserts it beside the target pane.
+ * A null target means the pane has reached the outer edge, so the move creates
+ * a new outer row or column. This changes the split tree instead of swapping
+ * workspace assignments between fixed pane slots.
  */
 export function moveCockpitPane(input: {
   layout: CockpitLayout;
   paneId: string;
-  targetPaneId: string;
+  targetPaneId: string | null;
   direction: CockpitPaneMoveDirection;
   ids: CockpitLayoutIdSource;
 }): CockpitLayout | null {
-  if (input.paneId === input.targetPaneId) return null;
-  if (!findCockpitPane(input.layout.root, input.targetPaneId)) return null;
+  if (input.targetPaneId !== null) {
+    if (input.paneId === input.targetPaneId) return null;
+    if (!findCockpitPane(input.layout.root, input.targetPaneId)) return null;
+  }
 
   const removed = removePaneNode(input.layout.root, input.paneId);
   if (!removed.removed || !removed.node) return null;
-  const root = insertPaneNearTarget({
-    node: removed.node,
-    targetPaneId: input.targetPaneId,
-    pane: removed.removed,
-    direction: input.direction,
-    ids: input.ids,
-  });
+  const root =
+    input.targetPaneId === null
+      ? insertPaneAtLayoutEdge({
+          node: removed.node,
+          pane: removed.removed,
+          direction: input.direction,
+          ids: input.ids,
+        })
+      : insertPaneNearTarget({
+          node: removed.node,
+          targetPaneId: input.targetPaneId,
+          pane: removed.removed,
+          direction: input.direction,
+          ids: input.ids,
+        });
   if (!root) return null;
   return { root, focusedPaneId: input.paneId };
 }

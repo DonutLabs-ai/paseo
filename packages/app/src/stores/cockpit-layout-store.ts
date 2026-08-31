@@ -77,7 +77,7 @@ export interface CockpitLayoutState {
   splitPane: (paneId: string, position: "right" | "down") => void;
   movePane: (input: {
     paneId: string;
-    targetPaneId: string;
+    targetPaneId: string | null;
     direction: CockpitPaneMoveDirection;
   }) => void;
   addEmptyPane: () => void;

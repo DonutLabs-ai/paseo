@@ -168,4 +168,40 @@ describe("cockpit-layout-store", () => {
       ["host:d", "host:f"],
     ]);
   });
+
+  it("persists a bottom-edge move as a new row", async () => {
+    const store = createCockpitLayoutStore(createIds());
+    await store.persist.rehydrate();
+    const workspaceKeys = ["host:a", "host:b", "host:c", "host:d", "host:e", "host:f"];
+    store.getState().reconcileWorkspaces({ workspaceKeys });
+    const initial = requireItem(store.getState().layout);
+    const movedPane = requireItem(
+      collectCockpitPanes(initial.root).find(
+        (pane) => getCockpitPaneWorkspaceKey(pane) === "host:e",
+      ),
+    );
+
+    store.getState().movePane({
+      paneId: movedPane.id,
+      targetPaneId: null,
+      direction: "down",
+    });
+    await vi.waitFor(async () => {
+      expect(await AsyncStorage.getItem("cockpit-layout-state")).not.toBeNull();
+    });
+
+    const restoredStore = createCockpitLayoutStore(createIds());
+    await restoredStore.persist.rehydrate();
+    restoredStore.getState().reconcileWorkspaces({ workspaceKeys });
+
+    const moved = requireItem(restoredStore.getState().layout);
+    expect(moved.root.kind).toBe("group");
+    if (moved.root.kind !== "group") throw new Error("Expected vertical root group");
+    expect(moved.root.group.direction).toBe("vertical");
+    expect(
+      moved.root.group.children.map((row) =>
+        collectCockpitPanes(row).map(getCockpitPaneWorkspaceKey),
+      ),
+    ).toEqual([["host:a", "host:b", "host:c"], ["host:d", "host:f"], ["host:e"]]);
+  });
 });

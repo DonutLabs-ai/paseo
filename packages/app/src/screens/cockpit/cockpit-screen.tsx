@@ -91,9 +91,11 @@ import {
   filterCockpitLayout,
   findCockpitPane,
   getCockpitLayoutMinimumHeight,
+  getCockpitPaneMoveTarget,
   getCockpitPaneWorkspaceKey,
   type CockpitLayout,
   type CockpitPaneMoveDirection,
+  type CockpitPaneMoveTarget,
 } from "./cockpit-layout";
 
 const STATUS_LABEL_KEYS = {
@@ -115,7 +117,7 @@ interface CockpitCardSize {
   height: number;
 }
 
-type CockpitPaneMoveTargets = Record<CockpitPaneMoveDirection, string | null>;
+type CockpitPaneMoveTargets = Record<CockpitPaneMoveDirection, CockpitPaneMoveTarget | null>;
 
 function buildCockpitPaneMoveTargets(
   layout: CockpitLayout | null,
@@ -124,10 +126,10 @@ function buildCockpitPaneMoveTargets(
   if (!layout) return targets;
   for (const pane of collectCockpitPanes(layout.root)) {
     targets.set(pane.id, {
-      left: findAdjacentPane(layout.root, pane.id, "left"),
-      right: findAdjacentPane(layout.root, pane.id, "right"),
-      up: findAdjacentPane(layout.root, pane.id, "up"),
-      down: findAdjacentPane(layout.root, pane.id, "down"),
+      left: getCockpitPaneMoveTarget(layout.root, pane.id, "left"),
+      right: getCockpitPaneMoveTarget(layout.root, pane.id, "right"),
+      up: getCockpitPaneMoveTarget(layout.root, pane.id, "up"),
+      down: getCockpitPaneMoveTarget(layout.root, pane.id, "down"),
     });
   }
   return targets;
@@ -341,9 +343,13 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   );
   const handleMovePane = useCallback(
     (paneId: string, direction: CockpitPaneMoveDirection) => {
-      const targetPaneId = moveTargetsByPane.get(paneId)?.[direction] ?? null;
-      if (!targetPaneId) return;
-      movePane({ paneId, targetPaneId, direction });
+      const target = moveTargetsByPane.get(paneId)?.[direction] ?? null;
+      if (!target) return;
+      movePane({
+        paneId,
+        targetPaneId: target.kind === "pane" ? target.paneId : null,
+        direction,
+      });
     },
     [movePane, moveTargetsByPane],
   );

@@ -5,6 +5,7 @@ import {
   collectCockpitPanes,
   createDefaultCockpitLayout,
   filterCockpitLayout,
+  getCockpitPaneMoveTarget,
   getCockpitPaneWorkspaceKey,
   moveCockpitPane,
   splitCockpitPane,
@@ -265,6 +266,122 @@ describe("cockpit pane layout", () => {
       "a",
       "c",
     ]);
+  });
+
+  it("moves a bottom-edge card into a new row without redistributing the other rows", () => {
+    const ids = createIds();
+    const initial = requireLayout(
+      createDefaultCockpitLayout({
+        workspaceKeys: ["a", "b", "c", "d", "e", "f"],
+        ids,
+      }),
+    );
+    const movedPane = requireItem(
+      collectCockpitPanes(initial.root).find((pane) => getCockpitPaneWorkspaceKey(pane) === "e"),
+    );
+    const layout = requireLayout(
+      moveCockpitPane({
+        layout: initial,
+        paneId: movedPane.id,
+        targetPaneId: null,
+        direction: "down",
+        ids,
+      }),
+    );
+
+    expect(layout.root.kind).toBe("group");
+    if (layout.root.kind !== "group") throw new Error("Expected vertical root group");
+    expect(layout.root.group.direction).toBe("vertical");
+    expect(
+      layout.root.group.children.map((row) =>
+        collectCockpitPanes(row).map(getCockpitPaneWorkspaceKey),
+      ),
+    ).toEqual([["a", "b", "c"], ["d", "f"], ["e"]]);
+    expect(layout.focusedPaneId).toBe(movedPane.id);
+  });
+
+  it.each([
+    {
+      direction: "up" as const,
+      workspaceKey: "b",
+      rootDirection: "vertical",
+      sections: [["b"], ["a", "c"], ["d", "e", "f"]],
+    },
+    {
+      direction: "left" as const,
+      workspaceKey: "d",
+      rootDirection: "horizontal",
+      sections: [["d"], ["a", "b", "c", "e", "f"]],
+    },
+    {
+      direction: "right" as const,
+      workspaceKey: "c",
+      rootDirection: "horizontal",
+      sections: [["a", "b", "d", "e", "f"], ["c"]],
+    },
+  ])(
+    "moves a $direction-edge card into a new outer row or column",
+    ({ direction, workspaceKey, rootDirection, sections }) => {
+      const ids = createIds();
+      const initial = requireLayout(
+        createDefaultCockpitLayout({
+          workspaceKeys: ["a", "b", "c", "d", "e", "f"],
+          ids,
+        }),
+      );
+      const movedPane = requireItem(
+        collectCockpitPanes(initial.root).find(
+          (pane) => getCockpitPaneWorkspaceKey(pane) === workspaceKey,
+        ),
+      );
+      const layout = requireLayout(
+        moveCockpitPane({
+          layout: initial,
+          paneId: movedPane.id,
+          targetPaneId: null,
+          direction,
+          ids,
+        }),
+      );
+
+      expect(layout.root.kind).toBe("group");
+      if (layout.root.kind !== "group") throw new Error("Expected root group");
+      expect(layout.root.group.direction).toBe(rootDirection);
+      expect(
+        layout.root.group.children.map((section) =>
+          collectCockpitPanes(section).map(getCockpitPaneWorkspaceKey),
+        ),
+      ).toEqual(sections);
+    },
+  );
+
+  it("exposes an edge move target when no adjacent pane exists", () => {
+    const layout = requireLayout(
+      createDefaultCockpitLayout({
+        workspaceKeys: ["a", "b", "c", "d", "e", "f"],
+        ids: createIds(),
+      }),
+    );
+    const panes = collectCockpitPanes(layout.root);
+    const bottomPane = requireItem(panes.find((pane) => getCockpitPaneWorkspaceKey(pane) === "e"));
+    const leftPane = requireItem(panes.find((pane) => getCockpitPaneWorkspaceKey(pane) === "d"));
+
+    expect(getCockpitPaneMoveTarget(layout.root, bottomPane.id, "down")).toEqual({
+      kind: "edge",
+    });
+    expect(getCockpitPaneMoveTarget(layout.root, bottomPane.id, "left")).toEqual({
+      kind: "pane",
+      paneId: leftPane.id,
+    });
+  });
+
+  it("disables edge moves when the cockpit contains only one card", () => {
+    const layout = requireLayout(
+      createDefaultCockpitLayout({ workspaceKeys: ["a"], ids: createIds() }),
+    );
+    const pane = requireItem(collectCockpitPanes(layout.root)[0]);
+
+    expect(getCockpitPaneMoveTarget(layout.root, pane.id, "down")).toBeNull();
   });
 
   it("filters cards without mutating the persisted layout topology", () => {
