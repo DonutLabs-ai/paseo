@@ -13,8 +13,10 @@ import {
   waitForSidebarHydration,
   waitForWorkspaceInSidebar,
 } from "../support/helpers/workspace-ui";
-import { COCKPIT_INLINE_HEADER_MIN_WIDTH } from "../../src/screens/cockpit/cockpit-card-presentation";
-import { STATUS_RING_FRAME_SIZE } from "../../src/components/status-ring/geometry";
+import {
+  COCKPIT_INLINE_HEADER_MIN_WIDTH,
+  COCKPIT_STATUS_RING_FRAME_SIZE,
+} from "../../src/screens/cockpit/cockpit-card-presentation";
 
 const PROMPT = "Build the cockpit workspace overview";
 const REPLY = "Cockpit summary Implemented workspace cards and live progress summaries.";
@@ -434,8 +436,8 @@ test("shows a spinner while a cockpit workspace is running", async ({ page }) =>
     const spinner = card.getByTestId("cockpit-running-spinner");
     await expect(spinner).toBeVisible({ timeout: 30_000 });
     const bounds = await spinner.boundingBox();
-    expect(bounds?.width).toBe(STATUS_RING_FRAME_SIZE);
-    expect(bounds?.height).toBe(STATUS_RING_FRAME_SIZE);
+    expect(bounds?.width).toBe(COCKPIT_STATUS_RING_FRAME_SIZE);
+    expect(bounds?.height).toBe(COCKPIT_STATUS_RING_FRAME_SIZE);
     await expect(spinner.getByRole("progressbar")).toHaveCount(0);
   } finally {
     await workspace.cleanup();

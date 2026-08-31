@@ -79,6 +79,7 @@ import { CockpitToggleButton } from "./cockpit-toggle-button";
 import { CockpitAttentionMenu } from "./cockpit-attention-menu";
 import { CockpitTelemetryBar } from "./cockpit-telemetry-bar";
 import {
+  COCKPIT_STATUS_RING_FRAME_SIZE,
   shouldShowCockpitQuickReply,
   shouldStackCockpitCardHeader,
 } from "./cockpit-card-presentation";
@@ -1384,7 +1385,9 @@ function CockpitStatusIndicator({
   if (bucket === "running") {
     return (
       <View style={styles.statusRingFrame} testID="cockpit-running-spinner">
-        <StatusRing />
+        <View style={styles.statusRingVisual}>
+          <StatusRing />
+        </View>
       </View>
     );
   }
@@ -1664,12 +1667,17 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.border,
   },
   statusRingFrame: {
-    width: STATUS_RING_FRAME_SIZE,
-    height: STATUS_RING_FRAME_SIZE,
-    marginTop: 3,
+    width: COCKPIT_STATUS_RING_FRAME_SIZE,
+    height: COCKPIT_STATUS_RING_FRAME_SIZE,
+    marginTop: 1,
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
+  },
+  statusRingVisual: {
+    width: STATUS_RING_FRAME_SIZE,
+    height: STATUS_RING_FRAME_SIZE,
+    transform: [{ scale: COCKPIT_STATUS_RING_FRAME_SIZE / STATUS_RING_FRAME_SIZE }],
   },
   paneActions: {
     maxWidth: "100%",
