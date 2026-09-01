@@ -144,21 +144,29 @@ test("focuses the cockpit card when its quick reply input receives focus", async
     const workspaceKey = `${getServerId()}:${workspace.workspaceId}`;
     const card = page.getByTestId(`cockpit-workspace-card-${workspaceKey}`);
     const input = page.getByTestId(`cockpit-quick-reply-input-${workspace.agentId}`);
+    const focusRing = card.getByTestId(`cockpit-focus-ring-${workspaceKey}`);
     await expect(input).toBeVisible({ timeout: 30_000 });
-    const focusedFrame = await card.evaluate((element) => getComputedStyle(element).boxShadow);
+    await expect(focusRing).toBeVisible();
 
     await page.keyboard.press("Control+\\");
     const emptyPane = page.getByTestId(/^cockpit-empty-pane-/);
     await expect(emptyPane).toBeVisible();
-    await expect
-      .poll(async () => card.evaluate((element) => getComputedStyle(element).boxShadow))
-      .not.toBe(focusedFrame);
+    await expect(focusRing).toHaveCount(0);
 
     await input.click();
     await expect(input).toBeFocused();
-    await expect
-      .poll(async () => card.evaluate((element) => getComputedStyle(element).boxShadow))
-      .toBe(focusedFrame);
+    await expect(focusRing).toBeVisible();
+
+    const [cardBounds, inputBounds, ringBounds] = await Promise.all([
+      card.boundingBox(),
+      input.boundingBox(),
+      focusRing.boundingBox(),
+    ]);
+    if (!cardBounds || !inputBounds || !ringBounds) {
+      throw new Error("Focused cockpit card geometry was not measurable");
+    }
+    expect(ringBounds).toEqual(cardBounds);
+    expect(inputBounds.y + inputBounds.height).toBeLessThan(ringBounds.y + ringBounds.height);
   } finally {
     await workspace.cleanup();
   }

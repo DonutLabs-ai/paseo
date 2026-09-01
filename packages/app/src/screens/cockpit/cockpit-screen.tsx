@@ -862,6 +862,13 @@ function CockpitWorkspaceCard({
           onFocus={handleFocus}
         />
       ) : null}
+      {isFocused ? (
+        <View
+          pointerEvents="none"
+          style={styles.cardFocusRing}
+          testID={`cockpit-focus-ring-${workspace.workspaceKey}`}
+        />
+      ) : null}
       <WorkspaceNoteModal
         visible={isNoteOpen}
         note={workspace.title}
@@ -1183,6 +1190,7 @@ function CockpitEmptyPane({
           {t("sidebar.workspace.actions.newWorkspace")}
         </Button>
       </View>
+      {isFocused ? <View pointerEvents="none" style={styles.cardFocusRing} /> : null}
     </View>
   );
 }
@@ -1572,7 +1580,16 @@ const styles = StyleSheet.create((theme) => ({
   },
   cardFocused: {
     zIndex: 1,
-    boxShadow: `inset 0 0 0 2px ${theme.colors.accentBright}`,
+  },
+  cardFocusRing: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 2,
+    borderWidth: 2,
+    borderColor: theme.colors.accentBright,
   },
   cardSnoozed: {
     opacity: 0.52,
