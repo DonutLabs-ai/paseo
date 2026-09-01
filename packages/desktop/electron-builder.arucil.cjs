@@ -51,6 +51,6 @@ module.exports = {
   },
   pacman: {
     ...officialPacman,
-    packageName: "paseo-arucil",
+    packageName: "donut-paseo",
   },
 };
