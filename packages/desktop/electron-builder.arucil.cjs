@@ -40,7 +40,7 @@ module.exports = {
   },
   publish: {
     provider: "github",
-    owner: "arucil",
+    owner: "DonutLabs-ai",
     repo: "paseo",
   },
   linux: {
