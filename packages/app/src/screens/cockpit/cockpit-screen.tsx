@@ -40,10 +40,7 @@ import { Button } from "@/components/ui/button";
 import { ToolbarButton, ToolbarControls } from "@/components/ui/pane-content-toolbar";
 import { SidebarModelProvider, useSidebarModel } from "@/components/sidebar/sidebar-model";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
-import type {
-  SidebarProjectEntry,
-  SidebarWorkspaceEntry,
-} from "@/hooks/use-sidebar-workspaces-list";
+import type { SidebarWorkspaceEntry } from "@/hooks/use-sidebar-workspaces-list";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
@@ -83,6 +80,7 @@ import {
   shouldStackCockpitCardHeader,
 } from "./cockpit-card-presentation";
 import { resolveCockpitQuickReplyAction } from "./cockpit-quick-reply";
+import { buildCockpitProjectScopes, resolveActiveCockpitProject } from "./cockpit-project-scope";
 import { useCockpitAgentUsage, type CockpitAgentUsage } from "./use-cockpit-agent-usage";
 import {
   COCKPIT_CARD_GAP,
@@ -139,33 +137,6 @@ function encodeNoQuickReplyImages(): Promise<Array<{ data: string; mimeType: str
   return Promise.resolve([]);
 }
 
-function collectWorkspaceKeys(projects: readonly SidebarProjectEntry[]): string[] {
-  const keys: string[] = [];
-  const seen = new Set<string>();
-  for (const project of projects) {
-    for (const placement of project.workspaces) {
-      if (seen.has(placement.workspaceKey)) continue;
-      seen.add(placement.workspaceKey);
-      keys.push(placement.workspaceKey);
-    }
-  }
-  return keys;
-}
-
-function buildProjectNamesByWorkspace(
-  projects: readonly SidebarProjectEntry[],
-): ReadonlyMap<string, string> {
-  const result = new Map<string, string>();
-  for (const project of projects) {
-    for (const placement of project.workspaces) {
-      if (!result.has(placement.workspaceKey)) {
-        result.set(placement.workspaceKey, project.projectName);
-      }
-    }
-  }
-  return result;
-}
-
 function navigateToCockpitWorkspace(workspace: SidebarWorkspaceEntry): void {
   if (workspace.agentId) {
     navigateToWorkspace({
@@ -216,8 +187,24 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   const {
     settings: { workspaceTitleSource },
   } = useAppSettings();
-  const layout = useCockpitLayoutStore((state) => state.layout);
-  const reconcileWorkspaces = useCockpitLayoutStore((state) => state.reconcileWorkspaces);
+  const lastWorkspaceSelection = useLastWorkspaceSelection();
+  const preferredWorkspaceKey = lastWorkspaceSelection
+    ? `${lastWorkspaceSelection.serverId}:${lastWorkspaceSelection.workspaceId}`
+    : null;
+  const projectScopes = useMemo(() => buildCockpitProjectScopes(allProjects), [allProjects]);
+  const activeProject = useMemo(
+    () =>
+      resolveActiveCockpitProject({
+        projects: projectScopes,
+        preferredWorkspaceKey,
+      }),
+    [preferredWorkspaceKey, projectScopes],
+  );
+  const activeProjectViewKey = activeProject?.projectViewKey ?? null;
+  const layout = useCockpitLayoutStore((state) =>
+    activeProjectViewKey ? (state.layoutsByProject[activeProjectViewKey]?.layout ?? null) : null,
+  );
+  const reconcileProjects = useCockpitLayoutStore((state) => state.reconcileProjects);
   const splitPane = useCockpitLayoutStore((state) => state.splitPane);
   const movePane = useCockpitLayoutStore((state) => state.movePane);
   const addEmptyPane = useCockpitLayoutStore((state) => state.addEmptyPane);
@@ -227,46 +214,65 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   const snoozedAtByWorkspace = useCockpitSnoozeStore((state) => state.snoozedAtByWorkspace);
   const setSnoozed = useCockpitSnoozeStore((state) => state.setSnoozed);
   const layoutHydrated = useCockpitLayoutStoreHydrated();
-  const lastWorkspaceSelection = useLastWorkspaceSelection();
-  const allWorkspaceKeys = useMemo(() => collectWorkspaceKeys(allProjects), [allProjects]);
-  const preferredWorkspaceKey = lastWorkspaceSelection
-    ? `${lastWorkspaceSelection.serverId}:${lastWorkspaceSelection.workspaceId}`
-    : null;
+  const activeWorkspaceKeys = useMemo(
+    () => new Set(activeProject?.workspaceKeys ?? []),
+    [activeProject],
+  );
+  const activeWorkspaceEntriesByKey = useMemo(() => {
+    const entries = new Map<string, SidebarWorkspaceEntry>();
+    for (const workspaceKey of activeWorkspaceKeys) {
+      const entry = workspaceEntriesByKey.get(workspaceKey);
+      if (entry) entries.set(workspaceKey, entry);
+    }
+    return entries;
+  }, [activeWorkspaceKeys, workspaceEntriesByKey]);
   const visibleWorkspaceKeys = useMemo(
-    () => new Set(workspaceEntriesByKey.keys()),
-    [workspaceEntriesByKey],
+    () => new Set(activeWorkspaceEntriesByKey.keys()),
+    [activeWorkspaceEntriesByKey],
   );
-  const projectNamesByWorkspace = useMemo(
-    () => buildProjectNamesByWorkspace(allProjects),
-    [allProjects],
-  );
+  const projectNamesByWorkspace = useMemo(() => {
+    const names = new Map<string, string>();
+    if (!activeProject) return names;
+    for (const workspaceKey of activeProject.workspaceKeys) {
+      names.set(workspaceKey, activeProject.projectName);
+    }
+    return names;
+  }, [activeProject]);
   const allWorkspaceEntries = useMemo(
     () => [...allWorkspaceEntriesByKey.values()],
     [allWorkspaceEntriesByKey],
   );
+  const activeAllWorkspaceEntries = useMemo(() => {
+    const entries: SidebarWorkspaceEntry[] = [];
+    for (const workspaceKey of activeWorkspaceKeys) {
+      const entry = allWorkspaceEntriesByKey.get(workspaceKey);
+      if (entry) entries.push(entry);
+    }
+    return entries;
+  }, [activeWorkspaceKeys, allWorkspaceEntriesByKey]);
   const visibleWorkspaceEntries = useMemo(
-    () => [...workspaceEntriesByKey.values()],
-    [workspaceEntriesByKey],
+    () => [...activeWorkspaceEntriesByKey.values()],
+    [activeWorkspaceEntriesByKey],
   );
   const agentUsageByWorkspace = useCockpitAgentUsage(visibleWorkspaceEntries);
   const telemetryServerIds = useMemo(
-    () => [...new Set(allWorkspaceEntries.map((workspace) => workspace.serverId))],
-    [allWorkspaceEntries],
+    () => [...new Set(activeAllWorkspaceEntries.map((workspace) => workspace.serverId))],
+    [activeAllWorkspaceEntries],
   );
 
   useEffect(() => {
     if (!isRouteFocused || !layoutHydrated || isInitialLoad) return;
-    reconcileWorkspaces({
-      workspaceKeys: allWorkspaceKeys,
+    reconcileProjects({
+      projects: projectScopes,
       preferredWorkspaceKey,
     });
   }, [
-    allWorkspaceKeys,
     isInitialLoad,
     isRouteFocused,
     layoutHydrated,
     preferredWorkspaceKey,
-    reconcileWorkspaces,
+    projectScopes,
+    reconcileProjects,
   ]);
 
   const visibleLayout = useMemo(
@@ -282,35 +288,37 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
       resolveCockpitPaneWorkspace(
         visibleLayout,
         visibleLayout?.focusedPaneId ?? null,
-        workspaceEntriesByKey,
+        activeWorkspaceEntriesByKey,
       ),
-    [visibleLayout, workspaceEntriesByKey],
+    [activeWorkspaceEntriesByKey, visibleLayout],
   );
   const handleFocusPane = useCallback(
     (paneId: string) => {
-      focusPane(paneId);
+      if (!activeProjectViewKey) return;
+      focusPane(activeProjectViewKey, paneId);
       rememberCockpitWorkspace(
-        resolveCockpitPaneWorkspace(visibleLayout, paneId, workspaceEntriesByKey),
+        resolveCockpitPaneWorkspace(visibleLayout, paneId, activeWorkspaceEntriesByKey),
       );
     },
-    [focusPane, visibleLayout, workspaceEntriesByKey],
+    [activeProjectViewKey, activeWorkspaceEntriesByKey, focusPane, visibleLayout],
   );
   const handleClosePane = useCallback(
     (paneId: string) => {
-      closePane(paneId);
+      if (!activeProjectViewKey) return;
+      closePane(activeProjectViewKey, paneId);
       const nextLayout = filterCockpitLayout(
-        useCockpitLayoutStore.getState().layout,
+        useCockpitLayoutStore.getState().layoutsByProject[activeProjectViewKey]?.layout ?? null,
         visibleWorkspaceKeys,
       );
       rememberCockpitWorkspace(
         resolveCockpitPaneWorkspace(
           nextLayout,
           nextLayout?.focusedPaneId ?? null,
-          workspaceEntriesByKey,
+          activeWorkspaceEntriesByKey,
         ),
       );
     },
-    [closePane, visibleWorkspaceKeys, workspaceEntriesByKey],
+    [activeProjectViewKey, activeWorkspaceEntriesByKey, closePane, visibleWorkspaceKeys],
   );
   const handleReturnToWorkspace = useCallback(() => {
     if (focusedWorkspace) {
@@ -321,7 +329,9 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
       router.replace(buildOpenProjectRoute());
     }
   }, [focusedWorkspace]);
-  const handleAddPane = useCallback(() => addEmptyPane(), [addEmptyPane]);
+  const handleAddPane = useCallback(() => {
+    if (activeProjectViewKey) addEmptyPane(activeProjectViewKey);
+  }, [activeProjectViewKey, addEmptyPane]);
   const handleSetSnoozed = useCallback(
     (workspaceKey: string, snoozed: boolean) => setSnoozed(workspaceKey, snoozed),
     [setSnoozed],
@@ -332,26 +342,31 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
         navigateToCockpitWorkspace(workspace);
         return;
       }
-      focusWorkspace(workspace.workspaceKey);
+      if (!activeProjectViewKey) return;
+      focusWorkspace(activeProjectViewKey, workspace.workspaceKey);
       rememberCockpitWorkspace(workspace);
     },
-    [focusWorkspace, visibleWorkspaceKeys],
+    [activeProjectViewKey, focusWorkspace, visibleWorkspaceKeys],
   );
   const handleSplitPane = useCallback(
-    (paneId: string, position: "right" | "down") => splitPane(paneId, position),
-    [splitPane],
+    (paneId: string, position: "right" | "down") => {
+      if (activeProjectViewKey) splitPane(activeProjectViewKey, paneId, position);
+    },
+    [activeProjectViewKey, splitPane],
   );
   const handleMovePane = useCallback(
     (paneId: string, direction: CockpitPaneMoveDirection) => {
+      if (!activeProjectViewKey) return;
       const target = moveTargetsByPane.get(paneId)?.[direction] ?? null;
       if (!target) return;
       movePane({
+        projectViewKey: activeProjectViewKey,
         paneId,
         targetPaneId: target.kind === "pane" ? target.paneId : null,
         direction,
       });
     },
-    [movePane, moveTargetsByPane],
+    [activeProjectViewKey, movePane, moveTargetsByPane],
   );
   const splitRightKeys = useShortcutKeys("workspace-pane-split-right");
   const headerLeft = useMemo(
@@ -399,17 +414,17 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
     (action: KeyboardActionDefinition): boolean => {
       if (action.id === "workspace.pane.split.right") {
         if (visibleLayout?.focusedPaneId) {
-          splitPane(visibleLayout.focusedPaneId, "right");
+          handleSplitPane(visibleLayout.focusedPaneId, "right");
         } else {
-          addEmptyPane();
+          handleAddPane();
         }
         return true;
       }
       if (action.id === "workspace.pane.split.down") {
         if (visibleLayout?.focusedPaneId) {
-          splitPane(visibleLayout.focusedPaneId, "down");
+          handleSplitPane(visibleLayout.focusedPaneId, "down");
         } else {
-          addEmptyPane();
+          handleAddPane();
         }
         return true;
       }
@@ -436,7 +451,7 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
       if (adjacentPaneId) handleFocusPane(adjacentPaneId);
       return true;
     },
-    [addEmptyPane, handleFocusPane, handleMovePane, splitPane, visibleLayout],
+    [handleAddPane, handleFocusPane, handleMovePane, handleSplitPane, visibleLayout],
   );
 
   useKeyboardActionHandler({
@@ -484,7 +499,7 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
           <CockpitSplitNodeView
             node={visibleLayout.root}
             focusedPaneId={visibleLayout.focusedPaneId}
-            workspaceEntriesByKey={workspaceEntriesByKey}
+            workspaceEntriesByKey={activeWorkspaceEntriesByKey}
             projectNamesByWorkspace={projectNamesByWorkspace}
             workspaceTitleSource={workspaceTitleSource}
             agentUsageByWorkspace={agentUsageByWorkspace}

@@ -10,6 +10,7 @@ import {
   closeCockpitPane,
   collectCockpitPanes,
   createDefaultCockpitLayout,
+  filterCockpitLayout,
   findCockpitPane,
   focusCockpitPane,
   focusCockpitWorkspace,
@@ -20,6 +21,8 @@ import {
   type CockpitLayoutIdSource,
   type CockpitPaneMoveDirection,
 } from "@/screens/cockpit/cockpit-layout";
+
+const COCKPIT_LAYOUT_PERSIST_VERSION = 2;
 
 const CockpitSplitNodeStorageSchema: z.ZodType<CockpitLayout["root"]> = z.lazy(() =>
   z.discriminatedUnion("kind", [
@@ -62,28 +65,51 @@ const CockpitLayoutStorageSchema: z.ZodType<CockpitLayout> = z
       layout.focusedPaneId === null || findCockpitPane(layout.root, layout.focusedPaneId) !== null,
   );
 
-const CockpitLayoutPersistedStateSchema = z.strictObject({
+const CockpitProjectLayoutPersistedStateSchema = z.strictObject({
   layout: CockpitLayoutStorageSchema.nullable(),
   initialized: z.boolean(),
 });
 
-export interface CockpitLayoutState {
+const LegacyCockpitLayoutPersistedStateSchema = CockpitProjectLayoutPersistedStateSchema;
+
+const ProjectScopedCockpitLayoutPersistedStateSchema = z.strictObject({
+  layoutsByProject: z.record(z.string().min(1), CockpitProjectLayoutPersistedStateSchema),
+  legacyGlobalLayout: CockpitProjectLayoutPersistedStateSchema.nullable(),
+});
+
+const CockpitLayoutPersistedStateSchema = z.union([
+  ProjectScopedCockpitLayoutPersistedStateSchema,
+  LegacyCockpitLayoutPersistedStateSchema,
+]);
+
+export interface CockpitProjectLayoutState {
   layout: CockpitLayout | null;
   initialized: boolean;
-  reconcileWorkspaces: (input: {
-    workspaceKeys: readonly string[];
+}
+
+export interface CockpitProjectRegistration {
+  projectViewKey: string;
+  workspaceKeys: readonly string[];
+}
+
+export interface CockpitLayoutState {
+  layoutsByProject: Record<string, CockpitProjectLayoutState>;
+  legacyGlobalLayout: CockpitProjectLayoutState | null;
+  reconcileProjects: (input: {
+    projects: readonly CockpitProjectRegistration[];
     preferredWorkspaceKey?: string | null;
   }) => void;
-  splitPane: (paneId: string, position: "right" | "down") => void;
+  splitPane: (projectViewKey: string, paneId: string, position: "right" | "down") => void;
   movePane: (input: {
+    projectViewKey: string;
     paneId: string;
     targetPaneId: string | null;
     direction: CockpitPaneMoveDirection;
   }) => void;
-  addEmptyPane: () => void;
-  closePane: (paneId: string) => void;
-  focusPane: (paneId: string) => void;
-  focusWorkspace: (workspaceKey: string) => void;
+  addEmptyPane: (projectViewKey: string) => void;
+  closePane: (projectViewKey: string, paneId: string) => void;
+  focusPane: (projectViewKey: string, paneId: string) => void;
+  focusWorkspace: (projectViewKey: string, workspaceKey: string) => void;
 }
 
 function createEmptyRootPane(ids: CockpitLayoutIdSource): CockpitLayout {
@@ -98,119 +124,278 @@ function createEmptyRootPane(ids: CockpitLayoutIdSource): CockpitLayout {
   return { root, focusedPaneId: root.pane.id };
 }
 
+function normalizeProjectRegistrations(
+  projects: readonly CockpitProjectRegistration[],
+): CockpitProjectRegistration[] {
+  const workspaceKeysByProject = new Map<string, string[]>();
+  const seenWorkspaceKeysByProject = new Map<string, Set<string>>();
+  for (const project of projects) {
+    const projectViewKey = project.projectViewKey.trim();
+    if (!projectViewKey) continue;
+    let workspaceKeys = workspaceKeysByProject.get(projectViewKey);
+    let seenWorkspaceKeys = seenWorkspaceKeysByProject.get(projectViewKey);
+    if (!workspaceKeys || !seenWorkspaceKeys) {
+      workspaceKeys = [];
+      seenWorkspaceKeys = new Set<string>();
+      workspaceKeysByProject.set(projectViewKey, workspaceKeys);
+      seenWorkspaceKeysByProject.set(projectViewKey, seenWorkspaceKeys);
+    }
+    for (const workspaceKey of project.workspaceKeys) {
+      if (!workspaceKey || seenWorkspaceKeys.has(workspaceKey)) continue;
+      seenWorkspaceKeys.add(workspaceKey);
+      workspaceKeys.push(workspaceKey);
+    }
+  }
+  return [...workspaceKeysByProject].map(([projectViewKey, workspaceKeys]) => ({
+    projectViewKey,
+    workspaceKeys,
+  }));
+}
+
+function migrateLegacyProjectLayout(input: {
+  legacyGlobalLayout: CockpitProjectLayoutState | null;
+  workspaceKeys: readonly string[];
+}): CockpitProjectLayoutState {
+  if (!input.legacyGlobalLayout?.initialized || !input.legacyGlobalLayout.layout) {
+    return { layout: null, initialized: false };
+  }
+  const layout = filterCockpitLayout(
+    input.legacyGlobalLayout.layout,
+    new Set(input.workspaceKeys),
+    { retainEmptyPanes: false },
+  );
+  return layout ? { layout, initialized: true } : { layout: null, initialized: false };
+}
+
+function reconcileProjectLayout(input: {
+  current: CockpitProjectLayoutState;
+  workspaceKeys: readonly string[];
+  preferredWorkspaceKey: string | null;
+  ids: CockpitLayoutIdSource;
+}): CockpitProjectLayoutState {
+  if (!input.current.initialized) {
+    return {
+      initialized: true,
+      layout: createDefaultCockpitLayout({
+        workspaceKeys: input.workspaceKeys,
+        preferredWorkspaceKey: input.preferredWorkspaceKey,
+        ids: input.ids,
+      }),
+    };
+  }
+
+  const assignedKeys = new Set(
+    input.current.layout
+      ? collectCockpitPanes(input.current.layout.root).flatMap((pane) => {
+          const workspaceKey = getCockpitPaneWorkspaceKey(pane);
+          return workspaceKey ? [workspaceKey] : [];
+        })
+      : [],
+  );
+  let layout = input.current.layout;
+  for (const workspaceKey of input.workspaceKeys) {
+    if (assignedKeys.has(workspaceKey)) continue;
+    layout = addWorkspaceToCockpitLayout({
+      layout,
+      workspaceKey,
+      ids: input.ids,
+    });
+    assignedKeys.add(workspaceKey);
+  }
+  if (layout && input.preferredWorkspaceKey) {
+    layout = focusCockpitWorkspace(layout, input.preferredWorkspaceKey);
+  }
+  return layout === input.current.layout ? input.current : { ...input.current, layout };
+}
+
+function updateProjectLayout(input: {
+  state: CockpitLayoutState;
+  projectViewKey: string;
+  update: (current: CockpitProjectLayoutState) => CockpitProjectLayoutState;
+}): CockpitLayoutState | Partial<CockpitLayoutState> {
+  const current = input.state.layoutsByProject[input.projectViewKey];
+  if (!current) return input.state;
+  const next = input.update(current);
+  if (next === current) return input.state;
+  return {
+    layoutsByProject: {
+      ...input.state.layoutsByProject,
+      [input.projectViewKey]: next,
+    },
+  };
+}
+
+function normalizePersistedState(persistedState: unknown): {
+  layoutsByProject: Record<string, CockpitProjectLayoutState>;
+  legacyGlobalLayout: CockpitProjectLayoutState | null;
+} {
+  const parsed = CockpitLayoutPersistedStateSchema.safeParse(persistedState);
+  if (!parsed.success) {
+    return { layoutsByProject: {}, legacyGlobalLayout: null };
+  }
+  if ("layoutsByProject" in parsed.data) {
+    return parsed.data;
+  }
+  return {
+    layoutsByProject: {},
+    legacyGlobalLayout: parsed.data,
+  };
+}
+
 export function createCockpitLayoutStore(ids: CockpitLayoutIdSource = defaultWorkspaceLayoutIds) {
   return create<CockpitLayoutState>()(
     persist(
       (set) => ({
-        layout: null,
-        initialized: false,
-        reconcileWorkspaces: ({ workspaceKeys, preferredWorkspaceKey }) =>
+        layoutsByProject: {},
+        legacyGlobalLayout: null,
+        reconcileProjects: ({ projects, preferredWorkspaceKey }) =>
           set((state) => {
-            const uniqueKeys = [...new Set(workspaceKeys.filter(Boolean))];
-            if (!state.initialized) {
-              return {
-                initialized: true,
-                layout: createDefaultCockpitLayout({
-                  workspaceKeys: uniqueKeys,
-                  preferredWorkspaceKey,
-                  ids,
-                }),
-              };
-            }
-
-            const assignedKeys = new Set(
-              state.layout
-                ? collectCockpitPanes(state.layout.root).flatMap((pane) => {
-                    const workspaceKey = getCockpitPaneWorkspaceKey(pane);
-                    return workspaceKey ? [workspaceKey] : [];
-                  })
-                : [],
-            );
-            let layout = state.layout;
-            for (const workspaceKey of uniqueKeys) {
-              if (assignedKeys.has(workspaceKey)) continue;
-              layout = addWorkspaceToCockpitLayout({
-                layout,
-                workspaceKey,
+            const normalizedProjects = normalizeProjectRegistrations(projects);
+            if (normalizedProjects.length === 0) return state;
+            let changed = state.legacyGlobalLayout !== null;
+            const layoutsByProject = { ...state.layoutsByProject };
+            for (const project of normalizedProjects) {
+              const current =
+                layoutsByProject[project.projectViewKey] ??
+                migrateLegacyProjectLayout({
+                  legacyGlobalLayout: state.legacyGlobalLayout,
+                  workspaceKeys: project.workspaceKeys,
+                });
+              const projectPreferredWorkspaceKey =
+                preferredWorkspaceKey && project.workspaceKeys.includes(preferredWorkspaceKey)
+                  ? preferredWorkspaceKey
+                  : null;
+              const next = reconcileProjectLayout({
+                current,
+                workspaceKeys: project.workspaceKeys,
+                preferredWorkspaceKey: projectPreferredWorkspaceKey,
                 ids,
               });
-              assignedKeys.add(workspaceKey);
+              if (layoutsByProject[project.projectViewKey] !== next) {
+                layoutsByProject[project.projectViewKey] = next;
+                changed = true;
+              }
             }
-            if (layout && preferredWorkspaceKey) {
-              layout = focusCockpitWorkspace(layout, preferredWorkspaceKey);
+            if (!changed) return state;
+            return { layoutsByProject, legacyGlobalLayout: null };
+          }),
+        splitPane: (projectViewKey, paneId, position) =>
+          set((state) =>
+            updateProjectLayout({
+              state,
+              projectViewKey,
+              update: (current) => {
+                if (!current.layout) return current;
+                const layout = splitCockpitPane({
+                  layout: current.layout,
+                  targetPaneId: paneId,
+                  position,
+                  ids,
+                });
+                return layout ? { ...current, layout } : current;
+              },
+            }),
+          ),
+        movePane: ({ projectViewKey, paneId, targetPaneId, direction }) =>
+          set((state) =>
+            updateProjectLayout({
+              state,
+              projectViewKey,
+              update: (current) => {
+                if (!current.layout) return current;
+                const layout = moveCockpitPane({
+                  layout: current.layout,
+                  paneId,
+                  targetPaneId,
+                  direction,
+                  ids,
+                });
+                return layout ? { ...current, layout } : current;
+              },
+            }),
+          ),
+        addEmptyPane: (projectViewKey) =>
+          set((state) => {
+            const current = state.layoutsByProject[projectViewKey];
+            if (!current) {
+              return {
+                layoutsByProject: {
+                  ...state.layoutsByProject,
+                  [projectViewKey]: { layout: createEmptyRootPane(ids), initialized: true },
+                },
+              };
             }
-            return layout === state.layout ? state : { layout };
-          }),
-        splitPane: (paneId, position) =>
-          set((state) => {
-            if (!state.layout) return state;
-            const layout = splitCockpitPane({
-              layout: state.layout,
-              targetPaneId: paneId,
-              position,
-              ids,
+            return updateProjectLayout({
+              state,
+              projectViewKey,
+              update: (projectState) => {
+                if (!projectState.layout) {
+                  return { layout: createEmptyRootPane(ids), initialized: true };
+                }
+                const panes = collectCockpitPanes(projectState.layout.root);
+                const targetPaneId =
+                  projectState.layout.focusedPaneId ?? panes[panes.length - 1]?.id ?? null;
+                if (!targetPaneId) return projectState;
+                const layout = splitCockpitPane({
+                  layout: projectState.layout,
+                  targetPaneId,
+                  position: "right",
+                  ids,
+                });
+                return layout ? { ...projectState, layout } : projectState;
+              },
             });
-            return layout ? { layout } : state;
           }),
-        movePane: ({ paneId, targetPaneId, direction }) =>
-          set((state) => {
-            if (!state.layout) return state;
-            const layout = moveCockpitPane({
-              layout: state.layout,
-              paneId,
-              targetPaneId,
-              direction,
-              ids,
-            });
-            return layout ? { layout } : state;
-          }),
-        addEmptyPane: () =>
-          set((state) => {
-            if (!state.layout) {
-              return { layout: createEmptyRootPane(ids), initialized: true };
-            }
-            const panes = collectCockpitPanes(state.layout.root);
-            const targetPaneId = state.layout.focusedPaneId ?? panes[panes.length - 1]?.id ?? null;
-            if (!targetPaneId) return state;
-            const layout = splitCockpitPane({
-              layout: state.layout,
-              targetPaneId,
-              position: "right",
-              ids,
-            });
-            return layout ? { layout } : state;
-          }),
-        closePane: (paneId) =>
-          set((state) => {
-            if (!state.layout) return state;
-            const result = closeCockpitPane(state.layout, paneId);
-            return result ? { layout: result.layout } : state;
-          }),
-        focusPane: (paneId) =>
-          set((state) => {
-            if (!state.layout) return state;
-            const layout = focusCockpitPane(state.layout, paneId);
-            return layout === state.layout ? state : { layout };
-          }),
-        focusWorkspace: (workspaceKey) =>
-          set((state) => {
-            if (!state.layout) return state;
-            const layout = focusCockpitWorkspace(state.layout, workspaceKey);
-            return layout === state.layout ? state : { layout };
-          }),
+        closePane: (projectViewKey, paneId) =>
+          set((state) =>
+            updateProjectLayout({
+              state,
+              projectViewKey,
+              update: (current) => {
+                if (!current.layout) return current;
+                const result = closeCockpitPane(current.layout, paneId);
+                return result ? { ...current, layout: result.layout } : current;
+              },
+            }),
+          ),
+        focusPane: (projectViewKey, paneId) =>
+          set((state) =>
+            updateProjectLayout({
+              state,
+              projectViewKey,
+              update: (current) => {
+                if (!current.layout) return current;
+                const layout = focusCockpitPane(current.layout, paneId);
+                return layout === current.layout ? current : { ...current, layout };
+              },
+            }),
+          ),
+        focusWorkspace: (projectViewKey, workspaceKey) =>
+          set((state) =>
+            updateProjectLayout({
+              state,
+              projectViewKey,
+              update: (current) => {
+                if (!current.layout) return current;
+                const layout = focusCockpitWorkspace(current.layout, workspaceKey);
+                return layout === current.layout ? current : { ...current, layout };
+              },
+            }),
+          ),
       }),
       {
         name: "cockpit-layout-state",
-        version: 1,
+        version: COCKPIT_LAYOUT_PERSIST_VERSION,
         storage: createValidatedPersistStorage(AsyncStorage, CockpitLayoutPersistedStateSchema),
         partialize: (state) => ({
-          layout: state.layout,
-          initialized: state.initialized,
+          layoutsByProject: state.layoutsByProject,
+          legacyGlobalLayout: state.legacyGlobalLayout,
         }),
-        merge: (persistedState, currentState) => {
-          const parsed = CockpitLayoutPersistedStateSchema.safeParse(persistedState);
-          return parsed.success ? { ...currentState, ...parsed.data } : currentState;
-        },
+        migrate: (persistedState) => normalizePersistedState(persistedState),
+        merge: (persistedState, currentState) => ({
+          ...currentState,
+          ...normalizePersistedState(persistedState),
+        }),
       },
     ),
   );

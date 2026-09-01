@@ -481,13 +481,17 @@ export function focusCockpitWorkspace(layout: CockpitLayout, workspaceKey: strin
 function filterNodeForWorkspaces(
   node: SplitNode,
   visibleWorkspaceKeys: ReadonlySet<string>,
+  retainEmptyPanes: boolean,
 ): SplitNode | null {
   if (node.kind === "pane") {
     const workspaceKey = getCockpitPaneWorkspaceKey(node.pane);
-    return workspaceKey === null || visibleWorkspaceKeys.has(workspaceKey) ? node : null;
+    return (workspaceKey === null && retainEmptyPanes) ||
+      (workspaceKey !== null && visibleWorkspaceKeys.has(workspaceKey))
+      ? node
+      : null;
   }
   const children = node.group.children.flatMap((child) => {
-    const filtered = filterNodeForWorkspaces(child, visibleWorkspaceKeys);
+    const filtered = filterNodeForWorkspaces(child, visibleWorkspaceKeys, retainEmptyPanes);
     return filtered ? [filtered] : [];
   });
   if (children.length === 0) return null;
@@ -505,9 +509,10 @@ function filterNodeForWorkspaces(
 export function filterCockpitLayout(
   layout: CockpitLayout | null,
   visibleWorkspaceKeys: ReadonlySet<string>,
+  options: { retainEmptyPanes: boolean } = { retainEmptyPanes: true },
 ): CockpitLayout | null {
   if (!layout) return null;
-  const root = filterNodeForWorkspaces(layout.root, visibleWorkspaceKeys);
+  const root = filterNodeForWorkspaces(layout.root, visibleWorkspaceKeys, options.retainEmptyPanes);
   if (!root) return null;
   const focusedPaneId = findCockpitPane(root, layout.focusedPaneId ?? "")
     ? layout.focusedPaneId
