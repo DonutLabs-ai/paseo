@@ -75,6 +75,9 @@ import { CockpitToggleButton } from "./cockpit-toggle-button";
 import { CockpitAttentionMenu } from "./cockpit-attention-menu";
 import { CockpitTelemetryBar } from "./cockpit-telemetry-bar";
 import {
+  COCKPIT_CARD_TITLE_LINE_HEIGHT,
+  COCKPIT_STATUS_DOT_MARGIN_TOP,
+  COCKPIT_STATUS_DOT_SIZE,
   COCKPIT_STATUS_RING_FRAME_SIZE,
   shouldShowCockpitQuickReply,
   shouldStackCockpitCardHeader,
@@ -1638,7 +1641,7 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.medium,
-    lineHeight: 20,
+    lineHeight: COCKPIT_CARD_TITLE_LINE_HEIGHT,
   },
   noteButton: {
     width: 20,
@@ -1660,9 +1663,9 @@ const styles = StyleSheet.create((theme) => ({
     lineHeight: 17,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    marginTop: 6,
+    width: COCKPIT_STATUS_DOT_SIZE,
+    height: COCKPIT_STATUS_DOT_SIZE,
+    marginTop: COCKPIT_STATUS_DOT_MARGIN_TOP,
     borderRadius: theme.borderRadius.full,
     flexShrink: 0,
   },
