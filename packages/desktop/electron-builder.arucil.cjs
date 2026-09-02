@@ -52,5 +52,11 @@ module.exports = {
   pacman: {
     ...officialPacman,
     packageName: "donut-paseo",
+    fpm: [
+      ...(Array.isArray(officialPacman.fpm) ? officialPacman.fpm : []),
+      "--replaces=paseo-arucil",
+      "--conflicts=paseo-arucil",
+      "--provides=paseo-arucil",
+    ],
   },
 };
