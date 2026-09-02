@@ -145,6 +145,26 @@ export function formatMessageTimestamp(date: Date, now: Date = new Date()): stri
   return `${dateLabel}, ${time}`;
 }
 
+function padLocalDateTimePart(value: number): string {
+  return value.toString().padStart(2, "0");
+}
+
+/** Format an instant in the machine's local timezone as `yyyy-MM-dd HH:mm:ss`. */
+export function formatLocalDateTime(date: Date): string {
+  return (
+    [
+      date.getFullYear().toString().padStart(4, "0"),
+      padLocalDateTimePart(date.getMonth() + 1),
+      padLocalDateTimePart(date.getDate()),
+    ].join("-") +
+    ` ${[
+      padLocalDateTimePart(date.getHours()),
+      padLocalDateTimePart(date.getMinutes()),
+      padLocalDateTimePart(date.getSeconds()),
+    ].join(":")}`
+  );
+}
+
 /**
  * Format a duration as a compact human-readable string.
  * - 0-60s: whole seconds ("47s")

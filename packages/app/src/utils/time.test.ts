@@ -3,6 +3,7 @@ import {
   describeCompactTimeAgo,
   formatCompactTimeAgo,
   formatDuration,
+  formatLocalDateTime,
   formatMessageTimestamp,
   formatTimeAgo,
 } from "./time";
@@ -114,5 +115,12 @@ describe("formatMessageTimestamp", () => {
     const formatted = formatMessageTimestamp(date, now);
     expect(formatted).toMatch(/Apr|April/);
     expect(formatted).toMatch(/2026/);
+  });
+});
+
+describe("formatLocalDateTime", () => {
+  it("formats the machine-local date and time with seconds", () => {
+    const date = new Date(2026, 8, 2, 5, 4, 3);
+    expect(formatLocalDateTime(date)).toBe("2026-09-02 05:04:03");
   });
 });

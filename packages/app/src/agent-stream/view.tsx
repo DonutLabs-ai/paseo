@@ -83,6 +83,7 @@ import {
 } from "./turn-footer";
 import { resolveBottomOverlayTailInset } from "./bottom-overlay-inset";
 import { layoutStream, type StreamLayoutItem } from "./layout";
+import { isSameAssistantBlockGroup } from "./spacing";
 import {
   type BottomAnchorLocalRequest,
   type BottomAnchorRouteRequest,
@@ -704,6 +705,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               occurrenceKey={createAssistantImageOccurrenceKey({ agentId, itemId: item.id })}
               message={item.text}
               timestamp={item.timestamp.getTime()}
+              showTimestampAtBottom={
+                !isSameAssistantBlockGroup({ item, other: layoutItem.belowItem })
+              }
               workspaceRoot={workspaceRoot}
               serverId={resolvedServerId}
               client={client}
