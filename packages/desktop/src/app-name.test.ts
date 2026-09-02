@@ -6,10 +6,10 @@ describe("resolveDesktopAppName", () => {
     expect(
       resolveDesktopAppName({
         isPackaged: true,
-        packagedName: "Paseo Arucil",
+        packagedName: "Donut Paseo",
         override: undefined,
       }),
-    ).toBe("Paseo Arucil");
+    ).toBe("Donut Paseo");
   });
 
   it("keeps the canonical name for development", () => {

@@ -22,8 +22,8 @@ afterEach(() => {
 });
 
 describe.runIf(process.platform === "linux")("bundled Paseo CLI shim", () => {
-  test("launches the isolated Paseo Arucil executable", () => {
-    const appDirectory = mkdtempSync(path.join(tmpdir(), "paseo-arucil-cli-shim-"));
+  test("launches the Donut Paseo executable", () => {
+    const appDirectory = mkdtempSync(path.join(tmpdir(), "donut-paseo-cli-shim-"));
     temporaryDirectories.push(appDirectory);
     const binDirectory = path.join(appDirectory, "resources", "bin");
     mkdirSync(binDirectory, { recursive: true });
@@ -32,7 +32,7 @@ describe.runIf(process.platform === "linux")("bundled Paseo CLI shim", () => {
     copyFileSync(path.join(import.meta.dirname, "paseo"), shimPath);
     chmodSync(shimPath, 0o755);
 
-    const executablePath = path.join(appDirectory, "paseo-arucil");
+    const executablePath = path.join(appDirectory, "donut-paseo");
     writeFileSync(executablePath, '#!/bin/sh\nprintf "%s\\n" "$0"\n', { mode: 0o755 });
 
     const output = execFileSync(shimPath, ["status", "--json"], { encoding: "utf8" });

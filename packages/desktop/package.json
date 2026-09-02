@@ -16,7 +16,7 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "npm --prefix ../.. run build:server:clean && npm run build:main && electron-builder --config electron-builder.yml",
-    "build:arucil": "npm --prefix ../.. run build:server:clean && npm run build:main && electron-builder --config electron-builder.arucil.cjs --linux pacman",
+    "build:donut-paseo": "npm --prefix ../.. run build:server:clean && npm run build:main && electron-builder --config electron-builder.donut-paseo.cjs --linux pacman",
     "build:main": "tsc -p tsconfig.json",
     "capture-harness": "./capture-harness/run.sh",
     "dev": "./scripts/dev.sh",

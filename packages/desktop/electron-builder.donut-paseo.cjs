@@ -23,20 +23,20 @@ const officialPacman = isRecord(parsedOfficialConfig.pacman) ? parsedOfficialCon
 
 module.exports = {
   ...parsedOfficialConfig,
-  appId: "io.github.arucil.paseo",
-  productName: "Paseo Arucil",
-  executableName: "paseo-arucil",
+  appId: "ai.donutlabs.paseo",
+  productName: "Donut Paseo",
+  executableName: "donut-paseo",
   extraMetadata: {
     ...officialExtraMetadata,
-    name: "paseo-arucil",
-    productName: "Paseo Arucil",
+    name: "donut-paseo",
+    productName: "Donut Paseo",
   },
   // Do not claim the official paseo:// handler. The paseo://app renderer
   // protocol is registered inside each Electron process and is unaffected.
   protocols: [],
   directories: {
     ...officialDirectories,
-    output: "release-arucil",
+    output: "release-donut-paseo",
   },
   publish: {
     provider: "github",
@@ -45,18 +45,12 @@ module.exports = {
   },
   linux: {
     ...officialLinux,
-    artifactName: "Paseo-Arucil-${version}-${arch}.${ext}",
-    maintainer: "arucil <arucil@users.noreply.github.com>",
-    vendor: "arucil",
+    artifactName: "Donut-Paseo-${version}-${arch}.${ext}",
+    maintainer: "Donut Labs",
+    vendor: "Donut Labs",
   },
   pacman: {
     ...officialPacman,
     packageName: "donut-paseo",
-    fpm: [
-      ...(Array.isArray(officialPacman.fpm) ? officialPacman.fpm : []),
-      "--replaces=paseo-arucil",
-      "--conflicts=paseo-arucil",
-      "--provides=paseo-arucil",
-    ],
   },
 };
