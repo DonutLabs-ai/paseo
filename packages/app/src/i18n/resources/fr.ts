@@ -112,6 +112,7 @@ export const fr: TranslationResources = {
       stopAgent: "Agent d'arrêt",
       interrupt: "Interrompre",
     },
+    continue: { continueAgent: "Continuer l'agent", continue: "Continuer" },
     voice: {
       enableVoiceMode: "Activer le mode vocal",
       voiceMode: "Mode vocal",
@@ -2288,6 +2289,7 @@ export const fr: TranslationResources = {
         toggleVoiceMode: "Changer le mode vocal",
         startStopDictation: "Démarrer la dictée/stop",
         interruptAgent: "Agent d'interruption",
+        continueAgent: "Continuer l'agent",
         sendMessage: "Envoyer un message",
         queueMessage: "Message de file d'attente",
         muteUnmuteVoiceMode: "Mode vocal/unmutemuet",

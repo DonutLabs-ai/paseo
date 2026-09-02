@@ -24,8 +24,10 @@ import {
   Pencil,
   Plus,
   Rows2,
+  StepForward,
   X,
 } from "lucide-react-native";
+import { AGENT_CONTINUE_PROMPT } from "@getpaseo/protocol/agent-continuation";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { router } from "expo-router";
 import { SidebarMenuToggle } from "@/components/headers/menu-header";
@@ -71,6 +73,7 @@ import {
 import { createMessageSubmissionWriter } from "@/composer/submission/writer";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { selectAgentTurnPresentation, useSessionStore } from "@/stores/session-store";
+import { useToast } from "@/contexts/toast-context";
 import { CockpitToggleButton } from "./cockpit-toggle-button";
 import { CockpitAttentionMenu } from "./cockpit-attention-menu";
 import { CockpitTelemetryBar } from "./cockpit-telemetry-bar";
@@ -626,6 +629,92 @@ function CockpitSplitNodeView({
   );
 }
 
+interface CockpitContinueAction {
+  label: string;
+  disabled: boolean;
+  onContinue: () => void;
+}
+
+function useCockpitContinueAction({
+  workspace,
+  paneId,
+  isFocused,
+  handleFocus,
+}: {
+  workspace: SidebarWorkspaceEntry;
+  paneId: string;
+  isFocused: boolean;
+  handleFocus: () => void;
+}): CockpitContinueAction | null {
+  const { t } = useTranslation();
+  const [isContinuing, setIsContinuing] = useState(false);
+  const client = useHostRuntimeClient(workspace.serverId);
+  const isConnected = useHostRuntimeIsConnected(workspace.serverId);
+  const toast = useToast();
+  const isAgentRunning = useSessionStore((state) =>
+    workspace.agentId
+      ? selectAgentTurnPresentation(state.sessions[workspace.serverId], workspace.agentId).isActive
+      : false,
+  );
+  const hasPendingPermission = useSessionStore((state) => {
+    if (!workspace.agentId) return false;
+    const permissions = state.sessions[workspace.serverId]?.pendingPermissions;
+    if (!permissions) return false;
+    for (const permission of permissions.values()) {
+      if (permission.agentId === workspace.agentId) return true;
+    }
+    return false;
+  });
+  const canContinue =
+    workspace.agentId !== null &&
+    isConnected &&
+    !isAgentRunning &&
+    !hasPendingPermission &&
+    !isContinuing;
+  const handleContinue = useCallback(() => {
+    if (!canContinue || !client || !workspace.agentId) return;
+    handleFocus();
+    setIsContinuing(true);
+    void dispatchComposerAgentMessage({
+      client,
+      agentId: workspace.agentId,
+      text: AGENT_CONTINUE_PROMPT,
+      attachments: [],
+      encodeImages: encodeNoQuickReplyImages,
+      submission: createMessageSubmissionWriter(workspace.serverId),
+    })
+      .catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : t("composer.errors.failedToSend"));
+      })
+      .finally(() => {
+        setIsContinuing(false);
+      });
+  }, [canContinue, client, handleFocus, t, toast, workspace.agentId, workspace.serverId]);
+
+  useKeyboardActionHandler({
+    handlerId: `cockpit-agent-continue-${paneId}`,
+    actions: ["agent.continue"] as const,
+    enabled: isFocused && canContinue,
+    priority: 220,
+    handle: () => {
+      handleContinue();
+      return true;
+    },
+  });
+
+  return useMemo(
+    () =>
+      workspace.agentId
+        ? {
+            label: t("composer.continue.continueAgent"),
+            disabled: !canContinue,
+            onContinue: handleContinue,
+          }
+        : null,
+    [canContinue, handleContinue, t, workspace.agentId],
+  );
+}
+
 function CockpitWorkspaceCard({
   pane,
   workspace,
@@ -676,6 +765,12 @@ function CockpitWorkspaceCard({
     onSetHiding: setIsArchiving,
   });
   const handleFocus = useCallback(() => onFocus(pane.id), [onFocus, pane.id]);
+  const continueAction = useCockpitContinueAction({
+    workspace,
+    paneId: pane.id,
+    isFocused,
+    handleFocus,
+  });
   const handlePress = useCallback(() => {
     handleFocus();
     navigateToCockpitWorkspace(workspace);
@@ -819,6 +914,7 @@ function CockpitWorkspaceCard({
               paneId={pane.id}
               closeLabel={t("sidebar.workspace.actions.archiveWorkspace")}
               closeDisabled={isArchiving}
+              continueAction={continueAction}
               snoozeAction={snoozeAction}
               moveTargets={moveTargets}
               onFocus={onFocus}
@@ -1174,6 +1270,7 @@ function CockpitEmptyPane({
         <CockpitPaneActions
           paneId={pane.id}
           closeLabel={t("workspace.tabs.actions.closePane")}
+          continueAction={null}
           snoozeAction={null}
           moveTargets={moveTargets}
           onFocus={onFocus}
@@ -1199,6 +1296,7 @@ function CockpitPaneActions({
   paneId,
   closeLabel,
   closeDisabled = false,
+  continueAction,
   snoozeAction,
   moveTargets,
   onFocus,
@@ -1209,6 +1307,7 @@ function CockpitPaneActions({
   paneId: string;
   closeLabel: string;
   closeDisabled?: boolean;
+  continueAction: CockpitContinueAction | null;
   snoozeAction: { label: string; active: boolean; onToggle: () => void } | null;
   moveTargets: CockpitPaneMoveTargets | null;
   onFocus: (paneId: string) => void;
@@ -1224,6 +1323,7 @@ function CockpitPaneActions({
   const moveUpKeys = useShortcutKeys("workspace-pane-move-tab-up");
   const moveDownKeys = useShortcutKeys("workspace-pane-move-tab-down");
   const closeKeys = useShortcutKeys("workspace-pane-close");
+  const continueKeys = useShortcutKeys("agent.continue");
   const preparePaneAction = useCallback(
     (event: GestureResponderEvent) => {
       event.stopPropagation();
@@ -1280,6 +1380,13 @@ function CockpitPaneActions({
     },
     [onMove, paneId, preparePaneAction],
   );
+  const handleContinue = useCallback(
+    (event: GestureResponderEvent) => {
+      preparePaneAction(event);
+      continueAction?.onContinue();
+    },
+    [continueAction, preparePaneAction],
+  );
 
   return (
     <View style={styles.paneActionsStack}>
@@ -1325,6 +1432,19 @@ function CockpitPaneActions({
         </ToolbarButton>
       </ToolbarControls>
       <View style={styles.paneActions}>
+        {continueAction ? (
+          <ToolbarControls>
+            <ToolbarButton
+              label={continueAction.label}
+              shortcut={continueKeys}
+              disabled={continueAction.disabled}
+              testID={`cockpit-pane-continue-${paneId}`}
+              onPress={handleContinue}
+            >
+              <ThemedStepForward size={14} />
+            </ToolbarButton>
+          </ToolbarControls>
+        ) : null}
         {snoozeAction ? (
           <CockpitSnoozeActionButton
             paneId={paneId}
@@ -1496,6 +1616,9 @@ const ThemedArrowUp = withUnistyles(ArrowUp, (theme) => ({
   color: theme.colors.foreground,
 }));
 const ThemedArrowLeft = withUnistyles(ArrowLeft, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const ThemedStepForward = withUnistyles(StepForward, (theme) => ({
   color: theme.colors.foregroundMuted,
 }));
 const ThemedArrowRight = withUnistyles(ArrowRight, (theme) => ({

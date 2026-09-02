@@ -399,6 +399,8 @@ export type AgentTimelineItem =
   | { type: "error"; message: string }
   | CompactionTimelineItem;
 
+export type AgentTurnFailureReason = "model_at_capacity";
+
 export type AgentStreamEvent =
   | { type: "thread_started"; sessionId: string; provider: AgentProvider }
   | { type: "turn_started"; provider: AgentProvider; turnId?: string }
@@ -422,6 +424,7 @@ export type AgentStreamEvent =
       error: string;
       code?: string;
       diagnostic?: string;
+      failureReason?: AgentTurnFailureReason;
       turnId?: string;
     }
   | { type: "turn_canceled"; provider: AgentProvider; reason: string; turnId?: string }

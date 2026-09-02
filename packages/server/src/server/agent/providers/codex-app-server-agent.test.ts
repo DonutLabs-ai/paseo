@@ -497,6 +497,31 @@ function markdownImageSource(markdown: string): string {
   return source.startsWith("file://") ? fileURLToPath(source) : source;
 }
 
+test("classifies a Codex model-capacity failure for daemon recovery", () => {
+  const session = createSession();
+  const events: AgentStreamEvent[] = [];
+  session.subscribe((event) => events.push(event));
+
+  asInternals(session).handleNotification("turn/completed", {
+    threadId: "test-thread",
+    turn: {
+      id: "test-turn",
+      status: "failed",
+      error: { message: "Selected model is at capacity. Please try a different model." },
+    },
+  });
+
+  expect(events).toEqual([
+    {
+      type: "turn_failed",
+      provider: "codex",
+      error: "Selected model is at capacity. Please try a different model.",
+      failureReason: "model_at_capacity",
+      turnId: "test-turn",
+    },
+  ]);
+});
+
 function emitCodexUserMessage(
   appServer: FakeCodexAppServer,
   input: { id: string; text: string; threadId?: string },

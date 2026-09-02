@@ -26,6 +26,7 @@ import {
   type SteerResult,
   type AgentSlashCommand,
   type AgentStreamEvent,
+  type AgentTurnFailureReason,
   type AgentTimelineItem,
   type ToolCallTimelineItem,
   type AgentUsage,
@@ -138,6 +139,12 @@ function isCodexAlreadyUnarchivedError(error: unknown, threadId: string): boolea
 const TURN_START_TIMEOUT_MS = 90 * 1000;
 const INTERRUPT_TIMEOUT_MS = 2_000;
 const CODEX_PROVIDER = "codex" as const;
+const CODEX_MODEL_AT_CAPACITY_MESSAGE =
+  "Selected model is at capacity. Please try a different model.";
+
+function classifyCodexTurnFailure(message: string | null): AgentTurnFailureReason | undefined {
+  return message?.trim() === CODEX_MODEL_AT_CAPACITY_MESSAGE ? "model_at_capacity" : undefined;
+}
 // Codex treats most app-server client names as the model-request originator.
 // This reserved Codex name is non-originating, so requests keep Codex's default
 // CLI identity instead of showing up as Paseo in provider usage logs.
@@ -5953,10 +5960,13 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
     this.completePendingRootCompactions();
     if (parsed.status === "failed") {
+      const error = parsed.errorMessage ?? "Codex turn failed";
+      const failureReason = classifyCodexTurnFailure(error);
       this.emitEvent({
         type: "turn_failed",
         provider: CODEX_PROVIDER,
-        error: parsed.errorMessage ?? "Codex turn failed",
+        error,
+        ...(failureReason ? { failureReason } : {}),
       });
     } else if (parsed.status === "interrupted") {
       this.emitEvent({ type: "turn_canceled", provider: CODEX_PROVIDER, reason: "interrupted" });

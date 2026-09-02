@@ -201,6 +201,7 @@ export const SHORTCUT_HELP_ROW_ORDER: Record<ShortcutSectionId, readonly string[
   ],
   "agent-input": [
     "focus-message-input",
+    "continue-agent",
     "cycle-agent-mode",
     "voice-toggle",
     "dictation-toggle",
@@ -253,6 +254,7 @@ const SHORTCUT_HELP_LABEL_KEYS: Record<string, string> = {
   "voice-toggle": "settings.shortcuts.help.toggleVoiceMode",
   "dictation-toggle": "settings.shortcuts.help.startStopDictation",
   "agent-interrupt": "settings.shortcuts.help.interruptAgent",
+  "continue-agent": "settings.shortcuts.help.continueAgent",
   "voice-mute-toggle": "settings.shortcuts.help.muteUnmuteVoiceMode",
 };
 
@@ -951,6 +953,23 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
       id: "toggle-cockpit",
       section: "layout",
       label: "Toggle cockpit",
+    },
+  },
+
+  // --- Continue agent ---
+  {
+    id: "agent-continue-f8",
+    action: "agent.continue",
+    combo: "F8",
+    when: {
+      commandCenter: false,
+      terminal: false,
+      focusScope: ["message-input", "other"],
+    },
+    help: {
+      id: "continue-agent",
+      section: "agent-input",
+      label: "Continue agent",
     },
   },
 

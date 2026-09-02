@@ -110,6 +110,7 @@ export const ru: TranslationResources = {
       stopAgent: "Остановить агента",
       interrupt: "Прервать",
     },
+    continue: { continueAgent: "Продолжить работу агента", continue: "Продолжить" },
     voice: {
       enableVoiceMode: "Включить голосовой режим",
       voiceMode: "Голосовой режим",
@@ -2270,6 +2271,7 @@ export const ru: TranslationResources = {
         toggleVoiceMode: "Переключить голосовой режим",
         startStopDictation: "Начать/остановить диктовку",
         interruptAgent: "Прервать агента",
+        continueAgent: "Продолжить работу агента",
         sendMessage: "Отправить сообщение",
         queueMessage: "Поставить сообщение в очередь",
         muteUnmuteVoiceMode: "Выключить/включить звук в голосовом режиме",

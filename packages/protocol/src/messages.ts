@@ -759,6 +759,8 @@ export const AgentStreamEventPayloadSchema = z.discriminatedUnion("type", [
     error: z.string(),
     code: z.string().optional(),
     diagnostic: z.string().optional(),
+    // Keep this open-ended on the wire so an older app can parse reasons added by a newer daemon.
+    failureReason: z.string().optional(),
   }),
   z.object({
     type: z.literal("turn_canceled"),

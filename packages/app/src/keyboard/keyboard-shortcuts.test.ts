@@ -271,6 +271,12 @@ describe("keyboard-shortcuts", () => {
       action: "cockpit.toggle",
     },
     {
+      name: "matches F8 to continue the focused idle agent",
+      event: { key: "F8", code: "F8" },
+      context: { focusScope: "other" },
+      action: "agent.continue",
+    },
+    {
       name: "matches Cmd+Backslash to split pane right on macOS",
       event: { key: "\\", code: "Backslash", metaKey: true },
       context: { isMac: true },
@@ -660,6 +666,7 @@ describe("keyboard-shortcut help sections", () => {
       context: { isMac: true, isDesktop: false },
       expectedKeys: {
         "new-agent": ["mod", "O"],
+        "continue-agent": ["F8"],
         "workspace-tab-new": ["mod", "T"],
         "workspace-jump-index": ["alt", "1-9"],
         "workspace-tab-jump-index": ["alt", "shift", "1-9"],
@@ -675,6 +682,7 @@ describe("keyboard-shortcut help sections", () => {
       context: { isMac: true, isDesktop: true },
       expectedKeys: {
         "new-agent": ["mod", "O"],
+        "continue-agent": ["F8"],
         "new-workspace": ["mod", "N"],
         "workspace-tab-new": ["mod", "T"],
         "workspace-jump-index": ["mod", "1-9"],
@@ -693,6 +701,7 @@ describe("keyboard-shortcut help sections", () => {
       name: "uses non-mac desktop defaults for tab jump and close tab",
       context: { isMac: false, isDesktop: true },
       expectedKeys: {
+        "continue-agent": ["F8"],
         "workspace-pane-split-right": ["ctrl", "\\"],
         "workspace-tab-jump-index": ["alt", "1-9"],
         "workspace-tab-close-current": ["ctrl", "W"],

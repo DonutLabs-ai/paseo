@@ -110,6 +110,7 @@ export const zhCN: TranslationResources = {
       stopAgent: "停止 Agent",
       interrupt: "中断",
     },
+    continue: { continueAgent: "继续 Agent", continue: "继续" },
     voice: {
       enableVoiceMode: "启用语音模式",
       voiceMode: "语音模式",
@@ -2207,6 +2208,7 @@ export const zhCN: TranslationResources = {
         toggleVoiceMode: "切换语音模式",
         startStopDictation: "开始/停止听写",
         interruptAgent: "中断 Agent",
+        continueAgent: "继续 Agent",
         sendMessage: "发送消息",
         queueMessage: "消息排队",
         muteUnmuteVoiceMode: "静音/取消静音语音模式",

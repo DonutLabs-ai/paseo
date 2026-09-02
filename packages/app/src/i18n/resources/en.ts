@@ -107,6 +107,7 @@ export const en = {
       stopAgent: "Stop agent",
       interrupt: "Interrupt",
     },
+    continue: { continueAgent: "Continue agent", continue: "Continue" },
     voice: {
       enableVoiceMode: "Enable Voice mode",
       voiceMode: "Voice mode",
@@ -2331,6 +2332,7 @@ export const en = {
         toggleVoiceMode: "Toggle voice mode",
         startStopDictation: "Start/stop dictation",
         interruptAgent: "Interrupt agent",
+        continueAgent: "Continue agent",
         sendMessage: "Send message",
         queueMessage: "Queue message",
         muteUnmuteVoiceMode: "Mute/unmute voice mode",

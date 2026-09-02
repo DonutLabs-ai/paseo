@@ -110,6 +110,7 @@ export const ptBR: TranslationResources = {
       stopAgent: "Parar agente",
       interrupt: "Interromper",
     },
+    continue: { continueAgent: "Continuar agente", continue: "Continuar" },
     voice: {
       enableVoiceMode: "Ativar modo de voz",
       voiceMode: "Modo de voz",
@@ -2267,6 +2268,7 @@ export const ptBR: TranslationResources = {
         toggleVoiceMode: "Alternar modo de voz",
         startStopDictation: "Iniciar/parar ditado",
         interruptAgent: "Interromper agente",
+        continueAgent: "Continuar agente",
         sendMessage: "Enviar mensagem",
         queueMessage: "Enfileirar mensagem",
         muteUnmuteVoiceMode: "Silenciar/ativar modo de voz",

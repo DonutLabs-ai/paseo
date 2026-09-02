@@ -110,6 +110,7 @@ export const ar: TranslationResources = {
       stopAgent: "توقف الوكيل",
       interrupt: "مقاطعة",
     },
+    continue: { continueAgent: "متابعة الوكيل", continue: "متابعة" },
     voice: {
       enableVoiceMode: "تمكين الوضع الصوتي",
       voiceMode: "وضع الصوت",
@@ -2233,6 +2234,7 @@ export const ar: TranslationResources = {
         toggleVoiceMode: "تبديل الوضع الصوتي",
         startStopDictation: "بدء إملاء /stop",
         interruptAgent: "عامل المقاطعة",
+        continueAgent: "متابعة الوكيل",
         sendMessage: "أرسل رسالة",
         queueMessage: "رسالة قائمة الانتظار",
         muteUnmuteVoiceMode: "كتم وضع الصوت /unmute",

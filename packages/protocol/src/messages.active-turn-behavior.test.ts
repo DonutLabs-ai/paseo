@@ -57,6 +57,30 @@ describe("canonical timeline turn ID compatibility", () => {
   });
 });
 
+describe("agent turn failure reason compatibility", () => {
+  const LegacyTurnFailedSchema = z.object({
+    type: z.literal("turn_failed"),
+    provider: z.literal("codex"),
+    error: z.string(),
+  });
+
+  it("accepts open-ended reasons while legacy clients ignore the optional field", () => {
+    const event = AgentStreamEventPayloadSchema.parse({
+      type: "turn_failed",
+      provider: "codex",
+      error: "capacity unavailable",
+      failureReason: "future_capacity_reason",
+    });
+
+    expect(event.failureReason).toBe("future_capacity_reason");
+    expect(LegacyTurnFailedSchema.parse(event)).toEqual({
+      type: "turn_failed",
+      provider: "codex",
+      error: "capacity unavailable",
+    });
+  });
+});
+
 describe("legacy daemon send request schema compatibility", () => {
   const LegacySendAgentMessageRequestSchema = z.object({
     type: z.literal("send_agent_message_request"),

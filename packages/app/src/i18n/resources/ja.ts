@@ -110,6 +110,7 @@ export const ja: TranslationResources = {
       stopAgent: "エージェントを停止",
       interrupt: "中断",
     },
+    continue: { continueAgent: "エージェントを続行", continue: "続ける" },
     voice: {
       enableVoiceMode: "音声モードを有効にする",
       voiceMode: "音声モード",
@@ -2251,6 +2252,7 @@ export const ja: TranslationResources = {
         toggleVoiceMode: "音声モードを切り替え",
         startStopDictation: "音声入力を開始/停止",
         interruptAgent: "エージェントを中断",
+        continueAgent: "エージェントを続行",
         sendMessage: "メッセージを送信",
         queueMessage: "メッセージをキューに追加",
         muteUnmuteVoiceMode: "音声モードのミュートを切り替え",

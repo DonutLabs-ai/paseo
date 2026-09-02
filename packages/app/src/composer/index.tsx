@@ -32,7 +32,9 @@ import {
   Image as ImageIcon,
   ClipboardPaste,
   Paperclip,
+  StepForward,
 } from "lucide-react-native";
+import { AGENT_CONTINUE_PROMPT } from "@getpaseo/protocol/agent-continuation";
 import * as Clipboard from "expo-clipboard";
 import Animated from "react-native-reanimated";
 import { FOOTER_HEIGHT, MAX_CONTENT_WIDTH } from "@/constants/layout";
@@ -531,6 +533,8 @@ interface DispatchComposerKeyboardActionArgs {
   isCancellingAgent: boolean;
   isConnected: boolean;
   handleCancelAgent: () => void;
+  canContinueAgent: boolean;
+  handleContinueAgent: () => void;
   focusMessageInputForKeyboardAction: () => void;
 }
 
@@ -543,6 +547,8 @@ function dispatchComposerKeyboardAction(args: DispatchComposerKeyboardActionArgs
     isCancellingAgent,
     isConnected,
     handleCancelAgent,
+    canContinueAgent,
+    handleContinueAgent,
     focusMessageInputForKeyboardAction,
   } = args;
   if (!isPaneFocused) return false;
@@ -551,6 +557,12 @@ function dispatchComposerKeyboardAction(args: DispatchComposerKeyboardActionArgs
     if (messageInputRef.current?.runKeyboardAction("dictation-cancel")) return true;
     if (!isAgentRunning || isCancellingAgent || !isConnected) return false;
     handleCancelAgent();
+    return true;
+  }
+
+  if (action.id === "agent.continue") {
+    if (!canContinueAgent) return false;
+    handleContinueAgent();
     return true;
   }
 
@@ -574,6 +586,8 @@ function ComposerKeyboardRegistration({
   isCancellingAgent,
   isConnected,
   handleCancelAgent,
+  canContinueAgent,
+  handleContinueAgent,
   focusMessageInputForKeyboardAction,
   isMessageInputFocused,
   handlerId,
@@ -592,11 +606,15 @@ function ComposerKeyboardRegistration({
         isCancellingAgent,
         isConnected,
         handleCancelAgent,
+        canContinueAgent,
+        handleContinueAgent,
         focusMessageInputForKeyboardAction,
       }),
     [
       focusMessageInputForKeyboardAction,
       handleCancelAgent,
+      canContinueAgent,
+      handleContinueAgent,
       isActiveComposer,
       isAgentRunning,
       isCancellingAgent,
@@ -609,6 +627,7 @@ function ComposerKeyboardRegistration({
     handlerId,
     actions: [
       "agent.interrupt",
+      "agent.continue",
       "message-input.focus",
       "message-input.send",
       "message-input.dictation-toggle",
@@ -1058,6 +1077,9 @@ interface ComposerRightControlsSlotProps extends ComposerVoiceModeButtonProps {
   hasSendableContent: boolean;
   isCompact: boolean;
   showVoice: boolean;
+  canContinueAgent: boolean;
+  handleContinueAgent: () => void;
+  continueAgentKeys: ReturnType<typeof useShortcutKeys>;
 }
 
 function ComposerRightControlsSlot({
@@ -1067,16 +1089,73 @@ function ComposerRightControlsSlot({
   hasSendableContent,
   isCompact,
   showVoice,
+  canContinueAgent,
+  handleContinueAgent,
+  continueAgentKeys,
   ...voiceProps
 }: ComposerRightControlsSlotProps) {
   const hideVoiceForCompactInput = isCompact && hasSendableContent;
   const showVoiceModeButton =
     showVoice && !isVoiceModeForAgent && hasAgent && !isAgentRunning && !hideVoiceForCompactInput;
-  if (!showVoiceModeButton) return null;
+  if (!showVoiceModeButton && !canContinueAgent) return null;
   return (
     <View style={styles.rightControls}>
-      <ComposerVoiceModeButton {...voiceProps} />
+      {showVoiceModeButton ? <ComposerVoiceModeButton {...voiceProps} /> : null}
+      {canContinueAgent ? (
+        <ComposerContinueButton
+          buttonIconSize={voiceProps.buttonIconSize}
+          continueAgentKeys={continueAgentKeys}
+          handleContinueAgent={handleContinueAgent}
+          t={voiceProps.t}
+        />
+      ) : null}
     </View>
+  );
+}
+
+function ComposerContinueButton({
+  buttonIconSize,
+  continueAgentKeys,
+  handleContinueAgent,
+  t,
+}: {
+  buttonIconSize: number;
+  continueAgentKeys: ReturnType<typeof useShortcutKeys>;
+  handleContinueAgent: () => void;
+  t: TFunction;
+}) {
+  const buttonStyle = useCallback(
+    (state: PressableStateCallbackType & { hovered?: boolean }) =>
+      buildRealtimeVoiceButtonStyle(state.hovered, false, false),
+    [],
+  );
+  const renderTriggerContent = useCallback(
+    ({ hovered }: PressableStateCallbackType & { hovered?: boolean }) => (
+      <ThemedStepForward
+        size={buttonIconSize}
+        uniProps={hovered ? iconForegroundMapping : iconForegroundMutedMapping}
+      />
+    ),
+    [buttonIconSize],
+  );
+  return (
+    <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+      <TooltipTrigger
+        onPress={handleContinueAgent}
+        accessibilityLabel={t("composer.continue.continueAgent")}
+        accessibilityRole="button"
+        style={buttonStyle}
+        testID="composer-continue-agent"
+      >
+        {renderTriggerContent}
+      </TooltipTrigger>
+      <TooltipContent side="top" align="center" offset={8}>
+        <View style={styles.tooltipRow}>
+          <Text style={styles.tooltipText}>{t("composer.continue.continue")}</Text>
+          {continueAgentKeys ? <Shortcut chord={continueAgentKeys} /> : null}
+        </View>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -1191,6 +1270,7 @@ function ComposerContentImpl({
   const voice = useVoiceOptional();
   const voiceToggleKeys = useShortcutKeys("voice-toggle");
   const agentInterruptKeys = useShortcutKeys("agent-interrupt");
+  const continueAgentKeys = useShortcutKeys("agent.continue");
   const isDictationReady = useIsDictationReady({
     serverId,
     isConnected,
@@ -1866,6 +1946,19 @@ function ComposerContentImpl({
   );
 
   const hasSendableContent = userInput.trim().length > 0 || selectedAttachments.length > 0;
+  const canContinueAgent =
+    hasAgent &&
+    isConnected &&
+    !isAgentRunning &&
+    !hasPendingPermission &&
+    !hasSendableContent &&
+    !hasExternalContent &&
+    !isProcessing &&
+    !isSubmitLoading;
+  const handleContinueAgent = useCallback(() => {
+    if (!canContinueAgent) return;
+    void sendMessageWithContent(AGENT_CONTINUE_PROMPT, [], true);
+  }, [canContinueAgent, sendMessageWithContent]);
 
   // Handle keyboard navigation for command autocomplete.
   const handleCommandKeyPress = useCallback(
@@ -1918,6 +2011,9 @@ function ComposerContentImpl({
         hasSendableContent={hasSendableContent}
         isCompact={isCompactLayout}
         showVoice={mode.showVoice}
+        canContinueAgent={canContinueAgent}
+        handleContinueAgent={handleContinueAgent}
+        continueAgentKeys={continueAgentKeys}
         buttonIconSize={buttonIconSize}
         handleToggleRealtimeVoice={handleToggleRealtimeVoice}
         isConnected={isConnected}
@@ -1932,6 +2028,9 @@ function ComposerContentImpl({
       handleToggleRealtimeVoice,
       hasAgent,
       hasSendableContent,
+      canContinueAgent,
+      continueAgentKeys,
+      handleContinueAgent,
       isAgentRunning,
       isConnected,
       isCompactLayout,
@@ -2263,6 +2362,8 @@ function ComposerContentImpl({
         isCancellingAgent={isCancellingAgent}
         isConnected={isConnected}
         handleCancelAgent={handleCancelAgent}
+        canContinueAgent={canContinueAgent}
+        handleContinueAgent={handleContinueAgent}
         focusMessageInputForKeyboardAction={focusMessageInputForKeyboardAction}
         isMessageInputFocused={isMessageInputFocused}
       />
@@ -2509,6 +2610,7 @@ const ThemedArrowUp = withUnistyles(ArrowUp);
 const ThemedGitPullRequest = withUnistyles(GitPullRequest);
 const ThemedCircleDot = withUnistyles(CircleDot);
 const ThemedAudioLines = withUnistyles(AudioLines);
+const ThemedStepForward = withUnistyles(StepForward);
 const ThemedPaperclip = withUnistyles(Paperclip);
 const ThemedImageIcon = withUnistyles(ImageIcon);
 const ThemedClipboardPaste = withUnistyles(ClipboardPaste);

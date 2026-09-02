@@ -8014,6 +8014,147 @@ test("turn_failed emits a system error assistant timeline message and keeps erro
   expect(systemErrors[0]?.text).toContain("invalid model id");
 });
 
+test("model capacity failures automatically continue the same agent after 60 seconds", async () => {
+  vi.useFakeTimers();
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-capacity-retry-"));
+
+  class CapacityRetrySession extends TestAgentSession {
+    readonly prompts: AgentPromptInput[] = [];
+    private turns = 0;
+
+    override async startTurn(prompt: AgentPromptInput): Promise<{ turnId: string }> {
+      this.prompts.push(prompt);
+      const turnId = `capacity-turn-${++this.turns}`;
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        this.pushEvent(
+          this.turns === 1
+            ? {
+                type: "turn_failed",
+                provider: this.provider,
+                error: "Selected model is at capacity. Please try a different model.",
+                failureReason: "model_at_capacity",
+                turnId,
+              }
+            : { type: "turn_completed", provider: this.provider, turnId },
+        );
+      }, 0);
+      return { turnId };
+    }
+  }
+
+  const session = new CapacityRetrySession({ provider: "codex", cwd: workdir });
+  const client: AgentClient = {
+    provider: "codex",
+    capabilities: TEST_CAPABILITIES,
+    isAvailable: async () => true,
+    createSession: async () => session,
+    resumeSession: async () => session,
+  };
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+
+  try {
+    const agent = await manager.createAgent(
+      { provider: "codex", cwd: workdir },
+      "00000000-0000-4000-8000-000000000231",
+      { workspaceId: undefined },
+    );
+    const initialRun = manager.runAgent(agent.id, "Investigate the failure");
+    const initialFailure = expect(initialRun).rejects.toThrow("Selected model is at capacity");
+    await vi.advanceTimersByTimeAsync(0);
+    await initialFailure;
+
+    expect(session.prompts).toEqual(["Investigate the failure"]);
+    expect(manager.getTimeline(agent.id).at(-1)).toEqual({
+      type: "assistant_message",
+      text:
+        "[System Error] Selected model is at capacity. Please try a different model.\n\n" +
+        "Paseo will continue this session automatically in 60 seconds.",
+    });
+    expect(manager.getAgent(agent.id)?.attention).toEqual({ requiresAttention: false });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.runOnlyPendingTimersAsync();
+    await manager.flush();
+
+    expect(session.prompts).toEqual([
+      "Investigate the failure",
+      "Continue from where you left off.",
+    ]);
+    expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+    expect(manager.getAgent(agent.id)?.attention).toMatchObject({
+      requiresAttention: true,
+      attentionReason: "finished",
+    });
+  } finally {
+    await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
+    vi.useRealTimers();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("a manual follow-up cancels a pending model capacity retry", async () => {
+  vi.useFakeTimers();
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-capacity-manual-"));
+
+  class CapacityThenSuccessSession extends TestAgentSession {
+    readonly prompts: AgentPromptInput[] = [];
+
+    override async startTurn(prompt: AgentPromptInput): Promise<{ turnId: string }> {
+      this.prompts.push(prompt);
+      const turnId = `manual-turn-${this.prompts.length}`;
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        this.pushEvent(
+          this.prompts.length === 1
+            ? {
+                type: "turn_failed",
+                provider: this.provider,
+                error: "Selected model is at capacity. Please try a different model.",
+                failureReason: "model_at_capacity",
+                turnId,
+              }
+            : { type: "turn_completed", provider: this.provider, turnId },
+        );
+      }, 0);
+      return { turnId };
+    }
+  }
+
+  const session = new CapacityThenSuccessSession({ provider: "codex", cwd: workdir });
+  const client: AgentClient = {
+    provider: "codex",
+    capabilities: TEST_CAPABILITIES,
+    isAvailable: async () => true,
+    createSession: async () => session,
+    resumeSession: async () => session,
+  };
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+
+  try {
+    const agent = await manager.createAgent(
+      { provider: "codex", cwd: workdir },
+      "00000000-0000-4000-8000-000000000232",
+      { workspaceId: undefined },
+    );
+    const initialRun = manager.runAgent(agent.id, "Initial task");
+    const initialFailure = expect(initialRun).rejects.toThrow("Selected model is at capacity");
+    await vi.advanceTimersByTimeAsync(0);
+    await initialFailure;
+
+    const manualRun = manager.runAgent(agent.id, "Use this manual follow-up instead");
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(manualRun).resolves.toMatchObject({ canceled: false });
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(session.prompts).toEqual(["Initial task", "Use this manual follow-up instead"]);
+  } finally {
+    await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
+    vi.useRealTimers();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("turn_failed surfaces provider code and diagnostic in system error message", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-turn-failed-detail-"));
   const storagePath = join(workdir, "agents");

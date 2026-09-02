@@ -110,6 +110,7 @@ export const es: TranslationResources = {
       stopAgent: "detener agente",
       interrupt: "Interrumpir",
     },
+    continue: { continueAgent: "Continuar agente", continue: "Continuar" },
     voice: {
       enableVoiceMode: "Habilitar el modo de voz",
       voiceMode: "Modo de voz",
@@ -2284,6 +2285,7 @@ export const es: TranslationResources = {
         toggleVoiceMode: "Alternar modo de voz",
         startStopDictation: "Iniciar dictado/stop",
         interruptAgent: "agente de interrupción",
+        continueAgent: "Continuar agente",
         sendMessage: "enviar mensaje",
         queueMessage: "mensaje de cola",
         muteUnmuteVoiceMode: "Silenciar el modo de voz/unmute",
