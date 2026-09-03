@@ -26,6 +26,7 @@ export function resolveSidebarWorkspaceAccessibilityLabel(input: {
   hostBadgeLabel?: string | null;
   pullRequestLabel?: string | null;
   serviceLabel?: string | null;
+  snoozed?: boolean;
 }): string {
   return [
     input.leadingProjectName,
@@ -33,6 +34,7 @@ export function resolveSidebarWorkspaceAccessibilityLabel(input: {
     input.hostBadgeLabel,
     input.pullRequestLabel,
     input.serviceLabel,
+    input.snoozed ? "Snoozed" : null,
     input.workspace.statusBucket === "done"
       ? null
       : STATUS_BUCKET_LABELS[input.workspace.statusBucket],

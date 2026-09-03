@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
 import {
   getParentAgentIdFromLabels,
+  getScheduleRunStartedAtFromLabels,
   getOpenAgentTabLabel,
   hasOpenAgentTab,
   isDelegatedAgent,
   isOpenAgentTabLabel,
   PARENT_AGENT_ID_LABEL,
+  SCHEDULE_RUN_STARTED_AT_LABEL,
 } from "./agent-labels.js";
 
 describe("agent label policy", () => {
@@ -35,5 +37,17 @@ describe("agent label policy", () => {
     expect(isOpenAgentTabLabel(getOpenAgentTabLabel("client-a"))).toBe(true);
     expect(isOpenAgentTabLabel("paseo.open-agent-tab")).toBe(false);
     expect(isOpenAgentTabLabel("custom.open-agent-tab.client-a")).toBe(false);
+  });
+
+  test("reads only valid schedule run timestamps", () => {
+    expect(
+      getScheduleRunStartedAtFromLabels({
+        [SCHEDULE_RUN_STARTED_AT_LABEL]: "2026-09-03T09:00:00.000Z",
+      }),
+    ).toBe("2026-09-03T09:00:00.000Z");
+    expect(
+      getScheduleRunStartedAtFromLabels({ [SCHEDULE_RUN_STARTED_AT_LABEL]: "not-a-date" }),
+    ).toBeNull();
+    expect(getScheduleRunStartedAtFromLabels({ [SCHEDULE_RUN_STARTED_AT_LABEL]: 42 })).toBeNull();
   });
 });

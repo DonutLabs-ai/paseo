@@ -10,6 +10,8 @@ import { acceptAgentDirectoryUpdate } from "@/utils/agent-directory-update-polic
 import { buildDraftStoreKey } from "@/stores/draft-keys";
 import { useDraftStore } from "@/stores/draft-store";
 import { getInitDeferred, getInitKey, rejectInitDeferred } from "@/utils/agent-initialization";
+import { getScheduleRunStartedAtFromLabels } from "@getpaseo/protocol/agent-labels";
+import { useCockpitSnoozeStore } from "@/stores/cockpit-snooze-store";
 
 type AgentDirectoryFetchEntry = FetchAgentsEntry;
 export type AgentDirectoryDelta = Extract<
@@ -74,8 +76,18 @@ export function upsertAgentReplica(serverId: string, agent: Agent): Agent {
     next.set(agent.id, acceptedAgent);
     return next;
   });
+  wakeWorkspaceForScheduleRun(serverId, acceptedAgent);
   applyAgentTurnSnapshot(serverId, acceptedAgent);
   return acceptedAgent;
+}
+
+export function wakeWorkspaceForScheduleRun(serverId: string, agent: Agent): void {
+  if (!agent.workspaceId) return;
+  const scheduleRunStartedAt = getScheduleRunStartedAtFromLabels(agent.labels);
+  if (!scheduleRunStartedAt) return;
+  useCockpitSnoozeStore
+    .getState()
+    .wakeForScheduleRun(`${serverId}:${agent.workspaceId}`, scheduleRunStartedAt);
 }
 
 function applyAgentTurnSnapshot(serverId: string, agent: Agent): void {
@@ -197,6 +209,7 @@ export function replaceFetchedAgentDirectory(input: {
 
   store.setAgents(input.serverId, agents);
   for (const agent of agents.values()) {
+    wakeWorkspaceForScheduleRun(input.serverId, agent);
     applyAgentTurnSnapshot(input.serverId, agent);
   }
   store.setAgentDetails(input.serverId, (prev) => {

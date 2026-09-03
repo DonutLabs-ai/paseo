@@ -41,6 +41,11 @@ import {
 } from "./service.js";
 import { ScheduleStore } from "./store.js";
 import type { ScheduleExecutionResult, StoredSchedule } from "@getpaseo/protocol/schedule/types";
+import {
+  SCHEDULE_ID_LABEL,
+  SCHEDULE_RUN_ID_LABEL,
+  SCHEDULE_RUN_STARTED_AT_LABEL,
+} from "@getpaseo/protocol/agent-labels";
 
 interface ScheduleServiceInternals {
   executeSchedule(schedule: StoredSchedule, runId: string): Promise<ScheduleExecutionResult>;
@@ -470,7 +475,7 @@ describe("ScheduleService", () => {
       registry: agentStorage,
     });
     const agent = await manager.createAgent({ provider: "claude", cwd: tempDir }, undefined, {
-      workspaceId: undefined,
+      workspaceId: "workspace-heartbeat",
     });
     const steerOrReplace = vi.spyOn(manager, "steerOrReplaceActiveTurn");
     const service = createScheduleService({
@@ -495,6 +500,14 @@ describe("ScheduleService", () => {
       expect.stringContaining(`Schedule fired (id=${schedule.id}, run=`),
       undefined,
     ]);
+    const completed = await service.inspect(schedule.id);
+    const runId = completed.runs[0]?.id;
+    expect(runId).toBeTypeOf("string");
+    expect(manager.getAgent(agent.id)?.labels).toMatchObject({
+      [SCHEDULE_ID_LABEL]: schedule.id,
+      [SCHEDULE_RUN_ID_LABEL]: runId,
+      [SCHEDULE_RUN_STARTED_AT_LABEL]: now.toISOString(),
+    });
   });
 
   test("titles scheduled new agents from the schedule prompt", async () => {

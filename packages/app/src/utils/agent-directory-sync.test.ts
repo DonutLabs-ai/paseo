@@ -1,7 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@react-native-async-storage/async-storage", () => {
+  const values = new Map<string, string>();
+  return {
+    default: {
+      getItem: async (key: string) => values.get(key) ?? null,
+      setItem: async (key: string, value: string) => {
+        values.set(key, value);
+      },
+      removeItem: async (key: string) => {
+        values.delete(key);
+      },
+    },
+  };
+});
 import type { DaemonClient, FetchAgentsEntry } from "@getpaseo/client/internal/daemon-client";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
-import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
+import {
+  PARENT_AGENT_ID_LABEL,
+  SCHEDULE_RUN_STARTED_AT_LABEL,
+} from "@getpaseo/protocol/agent-labels";
 import type { AgentPermissionRequest } from "@getpaseo/protocol/agent-types";
 import { useSessionStore } from "@/stores/session-store";
 import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
@@ -9,6 +27,7 @@ import { isAgentArchiving, setAgentArchiving } from "@/hooks/use-archive-agent";
 import { queryClient } from "@/data/query-client";
 import { createUserMessage } from "@/types/stream";
 import { applyAgentDirectoryDelta, replaceFetchedAgentDirectory } from "./agent-directory-sync";
+import { useCockpitSnoozeStore } from "@/stores/cockpit-snooze-store";
 
 function createAgentPayload(
   input: Partial<Omit<AgentSnapshotPayload, "labels">> & {
@@ -20,6 +39,7 @@ function createAgentPayload(
     id: input.id,
     provider: input.provider ?? "codex",
     cwd: input.cwd ?? "/repo",
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
     model: input.model ?? null,
     createdAt: input.createdAt ?? "2026-04-20T00:00:00.000Z",
     updatedAt: input.updatedAt ?? "2026-04-20T00:01:00.000Z",
@@ -97,6 +117,30 @@ function applyAgentStatus(input: {
     delta: { kind: "upsert", agent, project: createEntry(agent).project },
   });
 }
+
+describe("scheduled workspace activation", () => {
+  it("wakes a snoozed workspace from a durable agent directory update", () => {
+    const serverId = "server-schedule-wake";
+    const workspaceId = "workspace-schedule-wake";
+    const workspaceKey = `${serverId}:${workspaceId}`;
+    useSessionStore.getState().initializeSession(serverId, null as unknown as DaemonClient);
+    useCockpitSnoozeStore.setState({
+      snoozedAtByWorkspace: { [workspaceKey]: "2026-09-03T09:00:00.000Z" },
+    });
+    const agent = createAgentPayload({
+      id: "agent-schedule-wake",
+      workspaceId,
+      labels: { [SCHEDULE_RUN_STARTED_AT_LABEL]: "2026-09-03T09:00:01.000Z" },
+    });
+
+    applyAgentDirectoryDelta({
+      serverId,
+      delta: { kind: "upsert", agent, project: createEntry(agent).project },
+    });
+
+    expect(useCockpitSnoozeStore.getState().snoozedAtByWorkspace[workspaceKey]).toBeUndefined();
+  });
+});
 
 describe("turn liveness authority", () => {
   it("normalizes old-daemon status into the shared activity replica", () => {

@@ -3,6 +3,7 @@ import type { StateStorage } from "zustand/middleware";
 import {
   createCockpitSnoozeStore,
   shouldSuppressSnoozedAttentionNotification,
+  shouldWakeForScheduleRun,
   shouldWakeSnoozedWorkspace,
 } from "./cockpit-snooze-store";
 
@@ -16,6 +17,17 @@ function createMemoryStorage(): StateStorage {
     removeItem: async (name) => {
       values.delete(name);
     },
+  };
+}
+
+function createDeferred<T>() {
+  let resolve: ((value: T | PromiseLike<T>) => void) | null = null;
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return {
+    promise,
+    resolve: (value: T | PromiseLike<T>) => resolve?.(value),
   };
 }
 
@@ -61,5 +73,42 @@ describe("cockpit snooze store", () => {
     expect(shouldSuppressSnoozedAttentionNotification("finished", false)).toBe(false);
     expect(shouldSuppressSnoozedAttentionNotification("permission", true)).toBe(false);
     expect(shouldSuppressSnoozedAttentionNotification("error", true)).toBe(false);
+  });
+
+  it("wakes only when a schedule run started after the workspace was snoozed", async () => {
+    const store = createCockpitSnoozeStore(storage);
+    await store.persist.rehydrate();
+    store.setState({
+      snoozedAtByWorkspace: { "host:workspace": "2026-09-03T09:00:00.000Z" },
+    });
+
+    store.getState().wakeForScheduleRun("host:workspace", "2026-09-03T08:59:59.000Z");
+    expect(store.getState().snoozedAtByWorkspace["host:workspace"]).toBeTypeOf("string");
+
+    store.getState().wakeForScheduleRun("host:workspace", "2026-09-03T09:00:01.000Z");
+    expect(store.getState().snoozedAtByWorkspace["host:workspace"]).toBeUndefined();
+    expect(shouldWakeForScheduleRun(undefined, "2026-09-03T09:00:01.000Z")).toBe(false);
+    expect(shouldWakeForScheduleRun("invalid", "2026-09-03T09:00:01.000Z")).toBe(false);
+  });
+
+  it("does not restore stale snooze state when the agent directory loaded first", async () => {
+    const persisted = createCockpitSnoozeStore(storage);
+    await persisted.persist.rehydrate();
+    persisted.setState({
+      snoozedAtByWorkspace: { "host:workspace": "2026-09-03T09:00:00.000Z" },
+    });
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    const delayedRead = createDeferred<string | null>();
+    const delayedStorage: StateStorage = {
+      ...storage,
+      getItem: async () => delayedRead.promise,
+    };
+    const restored = createCockpitSnoozeStore(delayedStorage);
+    restored.getState().wakeForScheduleRun("host:workspace", "2026-09-03T09:00:01.000Z");
+    delayedRead.resolve(await storage.getItem("cockpit-snooze-state"));
+    await restored.persist.rehydrate();
+
+    expect(restored.getState().snoozedAtByWorkspace["host:workspace"]).toBeUndefined();
   });
 });
