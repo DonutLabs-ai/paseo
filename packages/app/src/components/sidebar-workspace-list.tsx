@@ -148,6 +148,7 @@ import { getDesktopHost } from "@/desktop/host";
 import { OpenInFileManagerMenuItem } from "@/workspace/open-in-file-manager/menu-item";
 import { useLocalDaemonServerId } from "@/hooks/use-is-local-daemon";
 import type { HostBadgeModel } from "@/hosts/appearance";
+import { useCockpitSnoozeStore } from "@/stores/cockpit-snooze-store";
 import { useHostBadges } from "@/hosts/use-host-badges";
 import { useSidebarRowItems } from "@/components/sidebar/display-preferences/model";
 import { PullRequestStateIcon } from "@/git/pull-request-state-icon";
@@ -1073,6 +1074,9 @@ function WorkspaceRowInner({
   const isCompact = useIsCompactFormFactor();
   const [isPressed, setIsPressed] = useState(false);
   const isTouchPlatform = platformIsNative || isCompact;
+  const isSnoozed = useCockpitSnoozeStore((state) =>
+    Boolean(state.snoozedAtByWorkspace[workspace.workspaceKey]),
+  );
   const interaction = useLongPressDragInteraction({
     drag,
     menuController,
@@ -1129,6 +1133,7 @@ function WorkspaceRowInner({
               contextMenuOpen={contextMenuOpen}
               onContextMenuOpenChange={onContextMenuOpenChange}
               workspace={workspace}
+              snoozed={isSnoozed}
               leadingProjectName={leadingProjectName}
               hostBadgeLabel={hostBadge?.label}
               workspaceKey={workspace.workspaceKey}
@@ -1168,6 +1173,7 @@ function WorkspaceRowInner({
                 shortcutNumber={shortcutNumber}
                 showShortcutBadge={showShortcutBadge}
                 reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
+                snoozed={isSnoozed}
               >
                 <WorkspaceRowRightGroup
                   workspace={workspace}

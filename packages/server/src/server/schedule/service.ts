@@ -28,6 +28,11 @@ import type {
   UpdateScheduleNewAgentConfig,
 } from "@getpaseo/protocol/schedule/types";
 import type { FirstAgentContext } from "@getpaseo/protocol/messages";
+import {
+  SCHEDULE_ID_LABEL,
+  SCHEDULE_RUN_ID_LABEL,
+  SCHEDULE_RUN_STARTED_AT_LABEL,
+} from "@getpaseo/protocol/agent-labels";
 
 const SCHEDULE_TICK_INTERVAL_MS = 1000;
 
@@ -215,6 +220,7 @@ type ScheduleAgentManager = Pick<
     | "hydrateTimelineFromProvider"
     | "resumeAgentFromPersistence"
     | "runAgent"
+    | "updateAgentMetadata"
     | "waitForAgentEvent"
     | "waitForAgentClose"
   >;
@@ -854,6 +860,13 @@ export class ScheduleService {
       if (this.agentManager.hasInFlightRun(agent.id)) {
         throw new Error(`Agent ${agent.id} already has an active run`);
       }
+      await this.agentManager.updateAgentMetadata(agent.id, {
+        labels: {
+          [SCHEDULE_ID_LABEL]: schedule.id,
+          [SCHEDULE_RUN_ID_LABEL]: runId,
+          [SCHEDULE_RUN_STARTED_AT_LABEL]: this.now().toISOString(),
+        },
+      });
       await startAgentRun(this.agentManager, agent.id, wrappedPrompt, this.logger, {
         replaceRunning: true,
         activeTurnBehavior: "steer",
@@ -901,8 +914,9 @@ export class ScheduleService {
         workspaceId: workspace.workspaceId,
         title: resolveScheduleAgentTitle(config, schedule.prompt),
         labels: {
-          "paseo.schedule-id": schedule.id,
-          "paseo.schedule-run": runId,
+          [SCHEDULE_ID_LABEL]: schedule.id,
+          [SCHEDULE_RUN_ID_LABEL]: runId,
+          [SCHEDULE_RUN_STARTED_AT_LABEL]: this.now().toISOString(),
         },
         mode: config.modeId,
         thinking: config.thinkingOptionId,

@@ -11,6 +11,7 @@ import {
   replaceAgentPendingPermissions,
   replaceFetchedAgentDirectory,
   upsertAgentReplica,
+  wakeWorkspaceForScheduleRun,
 } from "@/utils/agent-directory-sync";
 import { reconcileAgentDirectory } from "@/utils/agent-directory-reconciliation";
 import { applyLegacyDaemonWorkspaceOwnership } from "@/workspace/legacy-daemon-workspaces";
@@ -49,6 +50,7 @@ export class AgentDirectoryReplica {
     this.members.clear();
     for (const [agentId, agent] of agents) {
       this.members.add(agentId);
+      wakeWorkspaceForScheduleRun(this.serverId, agent);
       useSessionStore.getState().setAgentLastActivity(agentId, agent.lastActivityAt);
     }
     useSessionStore.getState().setAgents(this.serverId, agents);
@@ -59,6 +61,7 @@ export class AgentDirectoryReplica {
     if (token.version !== (this.lifecycleVersions.get(token.agentId) ?? 0)) return false;
     if (this.members.has(agent.id)) return false;
     this.members.add(agent.id);
+    wakeWorkspaceForScheduleRun(this.serverId, agent);
     useSessionStore.getState().setAgents(this.serverId, (current) => {
       if (current.has(agent.id)) return current;
       const next = new Map(current);

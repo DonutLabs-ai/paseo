@@ -7,8 +7,10 @@ import { createValidatedPersistStorage } from "@/storage/validated-persist-stora
 
 interface CockpitSnoozeState {
   snoozedAtByWorkspace: Record<string, string>;
+  latestScheduleRunStartedAtByWorkspace: Record<string, string>;
   setSnoozed: (workspaceKey: string, snoozed: boolean) => void;
   wakeForAttention: (workspaceKey: string, reason: AgentAttentionReason) => void;
+  wakeForScheduleRun: (workspaceKey: string, scheduleRunStartedAt: string) => void;
 }
 
 const CockpitSnoozePersistedStateSchema = z.strictObject({
@@ -26,6 +28,20 @@ export function shouldSuppressSnoozedAttentionNotification(
   return reason === "finished" && isSnoozed;
 }
 
+export function shouldWakeForScheduleRun(
+  snoozedAt: string | undefined,
+  scheduleRunStartedAt: string,
+): boolean {
+  if (!snoozedAt) return false;
+  const snoozedAtMs = Date.parse(snoozedAt);
+  const scheduleRunStartedAtMs = Date.parse(scheduleRunStartedAt);
+  return (
+    Number.isFinite(snoozedAtMs) &&
+    Number.isFinite(scheduleRunStartedAtMs) &&
+    scheduleRunStartedAtMs > snoozedAtMs
+  );
+}
+
 function withoutWorkspace(
   snoozedAtByWorkspace: Readonly<Record<string, string>>,
   workspaceKey: string,
@@ -35,11 +51,34 @@ function withoutWorkspace(
   );
 }
 
+function latestTimestamp(current: string | undefined, candidate: string): string | null {
+  const candidateMs = Date.parse(candidate);
+  if (!Number.isFinite(candidateMs)) return null;
+  if (!current) return candidate;
+  return candidateMs > Date.parse(current) ? candidate : current;
+}
+
+function reconcileSnoozedWorkspaces(
+  snoozedAtByWorkspace: Readonly<Record<string, string>>,
+  latestScheduleRunStartedAtByWorkspace: Readonly<Record<string, string>>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(snoozedAtByWorkspace).filter(
+      ([workspaceKey, snoozedAt]) =>
+        !shouldWakeForScheduleRun(
+          snoozedAt,
+          latestScheduleRunStartedAtByWorkspace[workspaceKey] ?? "",
+        ),
+    ),
+  );
+}
+
 export function createCockpitSnoozeStore(storage: StateStorage) {
   return create<CockpitSnoozeState>()(
     persist<CockpitSnoozeState, [], [], z.infer<typeof CockpitSnoozePersistedStateSchema>>(
       (set) => ({
         snoozedAtByWorkspace: {},
+        latestScheduleRunStartedAtByWorkspace: {},
         setSnoozed: (workspaceKey, snoozed) =>
           set((state) => {
             const current = state.snoozedAtByWorkspace[workspaceKey];
@@ -65,6 +104,32 @@ export function createCockpitSnoozeStore(storage: StateStorage) {
               snoozedAtByWorkspace: withoutWorkspace(state.snoozedAtByWorkspace, workspaceKey),
             };
           }),
+        wakeForScheduleRun: (workspaceKey, scheduleRunStartedAt) =>
+          set((state) => {
+            const latest = latestTimestamp(
+              state.latestScheduleRunStartedAtByWorkspace[workspaceKey],
+              scheduleRunStartedAt,
+            );
+            if (!latest) return state;
+            const scheduleChanged =
+              latest !== state.latestScheduleRunStartedAtByWorkspace[workspaceKey];
+            const shouldWake = shouldWakeForScheduleRun(
+              state.snoozedAtByWorkspace[workspaceKey],
+              latest,
+            );
+            if (!scheduleChanged && !shouldWake) return state;
+            return {
+              latestScheduleRunStartedAtByWorkspace: scheduleChanged
+                ? {
+                    ...state.latestScheduleRunStartedAtByWorkspace,
+                    [workspaceKey]: latest,
+                  }
+                : state.latestScheduleRunStartedAtByWorkspace,
+              snoozedAtByWorkspace: shouldWake
+                ? withoutWorkspace(state.snoozedAtByWorkspace, workspaceKey)
+                : state.snoozedAtByWorkspace,
+            };
+          }),
       }),
       {
         name: "cockpit-snooze-state",
@@ -75,7 +140,12 @@ export function createCockpitSnoozeStore(storage: StateStorage) {
           const result = CockpitSnoozePersistedStateSchema.safeParse(persistedState);
           return {
             ...currentState,
-            snoozedAtByWorkspace: result.success ? result.data.snoozedAtByWorkspace : {},
+            snoozedAtByWorkspace: result.success
+              ? reconcileSnoozedWorkspaces(
+                  result.data.snoozedAtByWorkspace,
+                  currentState.latestScheduleRunStartedAtByWorkspace,
+                )
+              : {},
           };
         },
       },

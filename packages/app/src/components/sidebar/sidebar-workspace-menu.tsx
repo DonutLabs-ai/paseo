@@ -315,6 +315,7 @@ export function SidebarWorkspaceContextMenu({
   leadingProjectName,
   hostBadgeLabel,
   serviceSummary,
+  snoozed,
   workspaceKey,
   onCopyPath,
   onCopyBranchName,
@@ -340,6 +341,7 @@ export function SidebarWorkspaceContextMenu({
       leadingProjectName?: string | null;
       hostBadgeLabel?: string | null;
       serviceSummary?: WorkspaceServiceSummary | null;
+      snoozed?: boolean;
       highlightStyle: ComponentProps<typeof ContextMenuTrigger>["highlightStyle"];
     }
 >) {
@@ -362,6 +364,7 @@ export function SidebarWorkspaceContextMenu({
     serviceLabel: serviceSummary
       ? t(workspaceServiceLabelKey(serviceSummary), { name: serviceSummary.name })
       : null,
+    snoozed,
   });
   const workspaceTarget = useMemo<WorkspaceLabelTarget>(
     () => ({

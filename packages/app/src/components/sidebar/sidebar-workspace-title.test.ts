@@ -86,4 +86,14 @@ describe("resolveSidebarWorkspaceAccessibilityLabel", () => {
 
     expect(label).toBe("Search project, Investigate search, Build host");
   });
+
+  it("announces a snoozed workspace independently of its activity status", () => {
+    const label = resolveSidebarWorkspaceAccessibilityLabel({
+      workspace: { name: "Investigate search", currentBranch: "fix/search", statusBucket: "done" },
+      workspaceTitleSource: "title",
+      snoozed: true,
+    });
+
+    expect(label).toBe("Investigate search, Snoozed");
+  });
 });
