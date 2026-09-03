@@ -8,6 +8,7 @@ export type StreamToolSequence = "single" | "first" | "middle" | "last" | "none"
 
 export interface TurnFooterHost {
   itemId: string;
+  assistantMessageAt: Date;
   items: StreamItem[];
   timing?: TurnTiming;
   startIndex: number;
@@ -66,13 +67,14 @@ interface AssistantFooterSource {
 }
 
 function createTurnFooterHost(input: {
-  item: StreamItem;
+  item: Extract<StreamItem, { kind: "assistant_message" }>;
   items: StreamItem[];
   index: number;
   timingByAssistantId: Map<string, TurnTiming>;
 }): TurnFooterHost {
   return {
     itemId: input.item.id,
+    assistantMessageAt: input.item.timestamp,
     items: input.items,
     timing: input.timingByAssistantId.get(input.item.id),
     startIndex: input.index,

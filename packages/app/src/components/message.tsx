@@ -576,6 +576,7 @@ export const UserMessage = memo(function UserMessage({
 
 interface AssistantTurnFooterProps {
   getContent: () => string;
+  completedAt: Date;
   durationMs?: number;
   onFork?: (target: AssistantForkTarget) => Promise<void> | void;
 }
@@ -585,6 +586,7 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
+    width: "100%",
   },
   copyButton: {
     alignSelf: "center",
@@ -598,15 +600,22 @@ const assistantTurnFooterStylesheet = StyleSheet.create((theme) => ({
     fontSize: STREAM_METADATA_FONT_SIZE,
     fontVariant: ["tabular-nums"],
   },
+  timestamp: {
+    marginLeft: "auto",
+    color: theme.colors.foregroundMuted,
+    fontSize: STREAM_METADATA_FONT_SIZE,
+    fontVariant: ["tabular-nums"],
+  },
 }));
 
 /**
- * Footer rendered next to the copy button at the end of an assistant turn.
- * The exact message timestamp lives with the message itself, so this footer
- * only presents turn-level actions and elapsed time.
+ * Footer rendered at the end of an assistant turn. Actions and elapsed time
+ * stay left-aligned while the exact final-message timestamp stays at the right
+ * edge of the same row.
  */
 export const AssistantTurnFooter = memo(function AssistantTurnFooter({
   getContent,
+  completedAt,
   durationMs,
   onFork,
 }: AssistantTurnFooterProps) {
@@ -614,6 +623,7 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
     () => (durationMs !== undefined ? `Worked for ${formatDuration(durationMs)}` : ""),
     [durationMs],
   );
+  const timestampLabel = useMemo(() => formatLocalDateTime(completedAt), [completedAt]);
   const handleFork = useCallback(
     (target: AssistantForkTarget) => {
       return onFork?.(target);
@@ -634,6 +644,12 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
           {durationLabel}
         </Text>
       ) : null}
+      <Text
+        style={assistantTurnFooterStylesheet.timestamp}
+        testID="assistant-message-bottom-timestamp"
+      >
+        {timestampLabel}
+      </Text>
     </View>
   );
 });
@@ -681,7 +697,6 @@ interface AssistantMessageProps {
   occurrenceKey: string;
   message: string;
   timestamp: number;
-  showTimestampAtBottom: boolean;
   workspaceRoot?: string;
   serverId?: string;
   client?: DaemonClient | null;
@@ -711,13 +726,6 @@ export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
     marginVertical: 0,
   },
   separatorTimestamp: {
-    color: theme.colors.foregroundMuted,
-    fontSize: STREAM_METADATA_FONT_SIZE,
-    fontVariant: ["tabular-nums"],
-  },
-  bottomTimestamp: {
-    alignSelf: "flex-end",
-    marginTop: theme.spacing[2],
     color: theme.colors.foregroundMuted,
     fontSize: STREAM_METADATA_FONT_SIZE,
     fontVariant: ["tabular-nums"],
@@ -1441,7 +1449,6 @@ export const AssistantMessage = memo(function AssistantMessage({
   occurrenceKey,
   message,
   timestamp,
-  showTimestampAtBottom,
   workspaceRoot,
   serverId,
   client,
@@ -1953,15 +1960,6 @@ export const AssistantMessage = memo(function AssistantMessage({
           />
         </AssistantMessageBlockContainer>
       ))}
-      {showTimestampAtBottom ? (
-        <Text
-          style={assistantMessageStylesheet.bottomTimestamp}
-          dataSet={markdownCopyDataSet.ignore}
-          testID="assistant-message-bottom-timestamp"
-        >
-          {formattedTimestamp}
-        </Text>
-      ) : null}
     </View>
   );
 });
