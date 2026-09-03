@@ -139,7 +139,10 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   );
 
   return (
-    <View style={styles.workspaceRowContent}>
+    <View
+      style={[styles.workspaceRowContent, snoozed ? styles.workspaceRowContentSnoozed : null]}
+      testID={`sidebar-workspace-content-${workspace.workspaceKey}`}
+    >
       <View style={styles.workspaceRowMain}>
         {leadingProjectName ? (
           <ProjectStatusIndicator
@@ -469,6 +472,9 @@ export function SidebarWorkspaceTrailingActionOverlay({
 const styles = StyleSheet.create((theme) => ({
   workspaceRowContent: {
     position: "relative",
+  },
+  workspaceRowContentSnoozed: {
+    opacity: theme.opacity[50],
   },
   workspaceRowMain: {
     flexDirection: "row",
