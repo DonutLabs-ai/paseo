@@ -20,7 +20,6 @@ function createTimelineBridge() {
     getAgentTimelineStatus: () => "ready",
     getAgentTimelineError: () => null,
     retryVisibleAgentTimeline: () => undefined,
-    reprojectVisibleTimelines: () => undefined,
   };
   return { bridge, replaceVisibleAgentIds };
 }

@@ -15,6 +15,7 @@ import { deriveAgentStreamTurnLiveness } from "@/timeline/session-stream-reducer
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
 import { requestTimelineReplacement } from "@/timeline/timeline-replacement";
 import {
+  consumeForcedTimelineTailReplacement,
   type TimelineDeliveryMode,
   type TimelineResponsePayload,
   type ViewedTimelineOwner,
@@ -62,15 +63,6 @@ import {
   shouldSuppressSnoozedAttentionNotification,
   useCockpitSnoozeStore,
 } from "@/stores/cockpit-snooze-store";
-
-function consumeForcedTimelineTailReplacement(
-  payload: TimelineResponsePayload,
-  replacements: Set<string>,
-): TimelineResponsePayload {
-  if (payload.direction !== "tail") return payload;
-  if (!replacements.delete(payload.agentId)) return payload;
-  return { ...payload, reset: true };
-}
 
 function shouldSuppressDesktopAgentAttention(input: {
   reason: "finished" | "error" | "permission";
