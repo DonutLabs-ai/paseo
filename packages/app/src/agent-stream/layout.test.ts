@@ -315,6 +315,7 @@ describe("layoutStream", () => {
     const assistantRow = findLayoutItem(layout, assistant.id);
 
     expect(assistantRow.completedFooter?.itemId).toBe(assistant.id);
+    expect(assistantRow.completedFooter?.assistantMessageAt).toEqual(assistant.timestamp);
     expect(assistantRow.frameOrder).toBe("content-then-footer");
   });
 

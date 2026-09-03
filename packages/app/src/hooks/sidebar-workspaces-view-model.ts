@@ -448,6 +448,9 @@ function areSidebarWorkspaceEntriesEqual(
   const keys = Object.keys(left) as Array<keyof SidebarWorkspaceEntry>;
   if (keys.length !== Object.keys(right).length) return false;
   return keys.every((key) => {
+    if (key === "recentReplies") {
+      return areWorkspaceReplyPreviewsEqual(left.recentReplies, right.recentReplies);
+    }
     if (key !== "prHint") return Object.is(left[key], right[key]);
     const leftHint = left.prHint;
     const rightHint = right.prHint;
@@ -463,6 +466,17 @@ function areSidebarWorkspaceEntriesEqual(
         leftHint.reviewDecision === rightHint.reviewDecision)
     );
   });
+}
+
+function areWorkspaceReplyPreviewsEqual(
+  left: readonly WorkspaceReplyPreview[],
+  right: readonly WorkspaceReplyPreview[],
+): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every(
+    (reply, index) => reply.id === right[index]?.id && reply.text === right[index]?.text,
+  );
 }
 
 export function buildSidebarProjectsFromStructure(input: {

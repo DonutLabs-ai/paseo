@@ -77,6 +77,7 @@ export const TurnFooter = memo(function TurnFooter({
       strategy={strategy}
       items={host.items}
       timing={host.timing}
+      assistantMessageAt={host.assistantMessageAt}
       startIndex={host.startIndex}
       supportsTimelineCursor={supportsTimelineCursor}
       onForkAssistantTurn={onForkAssistantTurn}
@@ -88,6 +89,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   strategy,
   items,
   timing,
+  assistantMessageAt,
   startIndex,
   supportsTimelineCursor,
   onForkAssistantTurn,
@@ -95,6 +97,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
   strategy: TurnContentStrategy;
   items: StreamItem[];
   timing?: TurnTiming;
+  assistantMessageAt: Date;
   startIndex: number;
   supportsTimelineCursor: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
@@ -105,6 +108,7 @@ export const CompletedTurnFooterRow = memo(function CompletedTurnFooterRow({
         strategy={strategy}
         items={items}
         timing={timing}
+        assistantMessageAt={assistantMessageAt}
         startIndex={startIndex}
         supportsTimelineCursor={supportsTimelineCursor}
         onForkAssistantTurn={onForkAssistantTurn}
@@ -161,6 +165,7 @@ function CompletedTurnFooter({
   strategy,
   items,
   timing,
+  assistantMessageAt,
   startIndex,
   supportsTimelineCursor,
   onForkAssistantTurn,
@@ -168,6 +173,7 @@ function CompletedTurnFooter({
   strategy: TurnContentStrategy;
   items: StreamItem[];
   timing?: TurnTiming;
+  assistantMessageAt: Date;
   startIndex: number;
   supportsTimelineCursor: boolean;
   onForkAssistantTurn?: AssistantTurnForkHandler;
@@ -199,6 +205,7 @@ function CompletedTurnFooter({
     <View style={stylesheet.turnFooterSlot}>
       <AssistantTurnFooter
         getContent={getContent}
+        completedAt={assistantMessageAt}
         durationMs={timing?.durationMs}
         onFork={boundary && onForkAssistantTurn ? handleFork : undefined}
       />
@@ -224,7 +231,7 @@ const stylesheet = StyleSheet.create((theme) => ({
   turnFooterSlot: {
     flexDirection: "row",
     alignItems: "center",
-    alignSelf: "flex-start",
+    width: "100%",
     minHeight: 24,
     paddingBottom: TURN_FOOTER_BOTTOM_SPACING,
   },
