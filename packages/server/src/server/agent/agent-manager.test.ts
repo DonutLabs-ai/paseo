@@ -10304,6 +10304,43 @@ test("user_message events wrapping a paseo-system envelope are not restored duri
   expect(userMessages[0].text).toBe("real user message");
 });
 
+test("scheduled paseo-system prompts are restored as visible, addressable user messages", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-schedule-envelope-history-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const codex = fakeCodexEmitting({
+    historyItems: [
+      {
+        type: "user_message",
+        text: formatSystemNotificationPrompt(
+          'Schedule "closeout" fired (id=schedule-1, run=run-1).\nCheck rollout health.',
+        ),
+        messageId: "provider-message-1",
+      },
+    ],
+  });
+  const manager = new AgentManager({
+    clients: { codex },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-0000000005a3",
+  });
+  const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+
+  await manager.hydrateTimelineFromProvider(snapshot.id, { force: true });
+
+  expect(manager.getTimeline(snapshot.id)).toEqual([
+    {
+      type: "user_message",
+      text: "Check rollout health.",
+      messageId: "provider-message-1",
+      scheduleId: "schedule-1",
+      scheduleRunId: "run-1",
+    },
+  ]);
+});
+
 test("commandMayHaveChangedExternalState matches remote-state commands", () => {
   // GitHub PR operations (remote, no local file changes)
   expect(commandMayHaveChangedExternalState("gh pr merge 123")).toBe(true);

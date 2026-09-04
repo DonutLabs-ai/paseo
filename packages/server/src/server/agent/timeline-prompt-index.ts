@@ -6,6 +6,9 @@ export interface TimelinePromptIndexEntry {
   seq: number;
   timestamp: string;
   preview: string;
+  messageId?: string;
+  scheduleId?: string;
+  scheduleRunId?: string;
 }
 
 export interface TimelinePromptIndex {
@@ -34,6 +37,11 @@ export function buildTimelinePromptIndex(
               seq: row.seq,
               timestamp: row.timestamp,
               preview: promptPreview(row.item.text),
+              ...(row.item.clientMessageId || row.item.messageId
+                ? { messageId: row.item.clientMessageId ?? row.item.messageId }
+                : {}),
+              ...(row.item.scheduleId ? { scheduleId: row.item.scheduleId } : {}),
+              ...(row.item.scheduleRunId ? { scheduleRunId: row.item.scheduleRunId } : {}),
             },
           ]
         : [],

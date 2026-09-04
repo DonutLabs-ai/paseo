@@ -18,7 +18,13 @@ describe("buildTimelinePromptIndex", () => {
       {
         seq: 8,
         timestamp: "2026-01-01T00:00:02.000Z",
-        item: { type: "user_message", text: "Second prompt" },
+        item: {
+          type: "user_message",
+          text: "Second prompt",
+          clientMessageId: "prompt-2",
+          scheduleId: "schedule-1",
+          scheduleRunId: "run-1",
+        },
       },
     ];
 
@@ -26,7 +32,14 @@ describe("buildTimelinePromptIndex", () => {
       epoch: "epoch-1",
       prompts: [
         { seq: 3, timestamp: "2026-01-01T00:00:00.000Z", preview: "First prompt" },
-        { seq: 8, timestamp: "2026-01-01T00:00:02.000Z", preview: "Second prompt" },
+        {
+          seq: 8,
+          timestamp: "2026-01-01T00:00:02.000Z",
+          preview: "Second prompt",
+          messageId: "prompt-2",
+          scheduleId: "schedule-1",
+          scheduleRunId: "run-1",
+        },
       ],
     });
   });

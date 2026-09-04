@@ -343,6 +343,14 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         bottomAnchorController.prepareForStickyViewportChange();
         markNativeViewportSettling();
       },
+      scrollToMessage: (itemId) => {
+        const index = historyRows.findIndex((item) => item.id === itemId);
+        if (index < 0) {
+          return;
+        }
+        programmaticScrollEventBudgetRef.current = 3;
+        flatListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+      },
     };
     viewportRef.current = handle;
     return () => {
@@ -350,7 +358,23 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         viewportRef.current = null;
       }
     };
-  }, [agentId, bottomAnchorController, markNativeViewportSettling, viewportRef]);
+  }, [agentId, bottomAnchorController, historyRows, markNativeViewportSettling, viewportRef]);
+
+  const handleScrollToIndexFailed = useStableEvent(
+    (info: { index: number; averageItemLength: number }) => {
+      flatListRef.current?.scrollToOffset({
+        offset: info.index * info.averageItemLength,
+        animated: false,
+      });
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToIndex({
+          index: info.index,
+          animated: true,
+          viewPosition: 0.5,
+        });
+      });
+    },
+  );
 
   const isScrollEventNearBottom = useStableEvent(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -579,6 +603,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       onMomentumScrollEnd={handleMomentumScrollEnd}
       scrollEventThrottle={16}
       onContentSizeChange={handleContentSizeChange}
+      onScrollToIndexFailed={handleScrollToIndexFailed}
       maintainVisibleContentPosition={maintainVisibleContentPosition}
       initialNumToRender={12}
       windowSize={10}

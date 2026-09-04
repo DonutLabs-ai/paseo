@@ -88,6 +88,67 @@ describe("useChatOutline", () => {
     expect(result.current.prompts[0]?.seq).toBe(2);
   });
 
+  it("does not expose the previous agent prompt index while the next agent loads", async () => {
+    const nextAgent = deferred<{
+      epoch: string;
+      prompts: Array<{ seq: number; timestamp: string; preview: string }>;
+    }>();
+    runtime.listAgentTimelinePrompts
+      .mockResolvedValueOnce({
+        epoch: "epoch-1",
+        prompts: [{ seq: 1, timestamp: new Date(1).toISOString(), preview: "first agent" }],
+      })
+      .mockReturnValueOnce(nextAgent.promise);
+    const viewportRef = createRef<StreamViewportHandle>();
+    const { result, rerender } = renderHook(
+      ({ agentId }) =>
+        useChatOutline({
+          agentId,
+          serverId: "server-1",
+          timelineEpoch: "epoch-1",
+          tail: [],
+          head: [],
+          enabled: true,
+          viewportRef,
+          onJumpError: vi.fn(),
+        }),
+      { initialProps: { agentId: "agent-1" } },
+    );
+    await waitFor(() => expect(result.current.prompts).toHaveLength(1));
+
+    rerender({ agentId: "agent-2" });
+    expect(result.current.isLoaded).toBe(false);
+    expect(result.current.prompts).toEqual([]);
+
+    await act(async () =>
+      nextAgent.resolve({
+        epoch: "epoch-1",
+        prompts: [{ seq: 2, timestamp: new Date(2).toISOString(), preview: "second agent" }],
+      }),
+    );
+    await waitFor(() => expect(result.current.prompts[0]?.seq).toBe(2));
+  });
+
+  it("exposes an initial prompt index failure to navigation consumers", async () => {
+    runtime.listAgentTimelinePrompts.mockRejectedValue(new Error("disconnected"));
+    const viewportRef = createRef<StreamViewportHandle>();
+    const { result } = renderHook(() =>
+      useChatOutline({
+        agentId: "agent-1",
+        serverId: "server-1",
+        timelineEpoch: "epoch-1",
+        tail: [],
+        head: [],
+        enabled: true,
+        viewportRef,
+        onJumpError: vi.fn(),
+      }),
+    );
+
+    await waitFor(() => expect(result.current.hasLoadError).toBe(true));
+    expect(result.current.isLoaded).toBe(false);
+  });
+
   it("keeps the newest prompt index response within one epoch", async () => {
     const older = deferred<{
       epoch: string;

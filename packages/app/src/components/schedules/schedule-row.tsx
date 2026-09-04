@@ -1,4 +1,12 @@
-import { MoreVertical, Pause, Pencil, Play, RotateCw, Trash2 } from "lucide-react-native";
+import {
+  MessageSquareText,
+  MoreVertical,
+  Pause,
+  Pencil,
+  Play,
+  RotateCw,
+  Trash2,
+} from "lucide-react-native";
 import { useCallback, useState, type ReactElement } from "react";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -32,6 +40,7 @@ const ThemedPause = withUnistyles(Pause);
 const ThemedPlay = withUnistyles(Play);
 const ThemedRotateCw = withUnistyles(RotateCw);
 const ThemedTrash2 = withUnistyles(Trash2);
+const ThemedMessageSquareText = withUnistyles(MessageSquareText);
 const ThemedKebab = withUnistyles(MoreVertical);
 
 const mutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
@@ -44,6 +53,7 @@ const PROVIDER_ICON_SIZE = 16;
 // Pending flags for each action so the parent table can wire a mutation hook
 // and the row reflects in-flight state without owning the mutation itself.
 export interface ScheduleRowPending {
+  openTarget?: boolean;
   pause?: boolean;
   resume?: boolean;
   runNow?: boolean;
@@ -51,6 +61,7 @@ export interface ScheduleRowPending {
 }
 
 export interface ScheduleRowActions {
+  onOpenTarget: () => void;
   onEdit: () => void;
   onPause: () => void;
   onResume: () => void;
@@ -147,6 +158,7 @@ export function ScheduleRow({
   pending,
   isFirst,
   onEdit,
+  onOpenTarget,
   onPause,
   onResume,
   onRunNow,
@@ -208,8 +220,10 @@ export function ScheduleRow({
           <StatusBadge label={badge.label} variant={badge.variant} />
           <ScheduleKebabMenu
             schedule={schedule}
+            state={state}
             canRun={canRun}
             pending={pending}
+            onOpenTarget={onOpenTarget}
             onEdit={onEdit}
             onPause={onPause}
             onResume={onResume}
@@ -223,6 +237,9 @@ export function ScheduleRow({
 }
 
 const editLeading = <ThemedPencil size={MENU_ICON_SIZE} uniProps={mutedColorMapping} />;
+const openTargetLeading = (
+  <ThemedMessageSquareText size={MENU_ICON_SIZE} uniProps={mutedColorMapping} />
+);
 const pauseLeading = <ThemedPause size={MENU_ICON_SIZE} uniProps={mutedColorMapping} />;
 const resumeLeading = <ThemedPlay size={MENU_ICON_SIZE} uniProps={mutedColorMapping} />;
 const runLeading = <ThemedRotateCw size={MENU_ICON_SIZE} uniProps={mutedColorMapping} />;
@@ -299,16 +316,26 @@ function renderKebabTriggerIcon({ hovered }: { hovered?: boolean }): ReactElemen
 
 function ScheduleKebabMenu({
   schedule,
+  state,
   canRun,
   pending,
   onEdit,
+  onOpenTarget,
   onPause,
   onResume,
   onRunNow,
   onDelete,
 }: Pick<
   ScheduleRowProps,
-  "schedule" | "pending" | "onEdit" | "onPause" | "onResume" | "onRunNow" | "onDelete"
+  | "schedule"
+  | "state"
+  | "pending"
+  | "onOpenTarget"
+  | "onEdit"
+  | "onPause"
+  | "onResume"
+  | "onRunNow"
+  | "onDelete"
 > & {
   canRun: boolean;
 }): ReactElement {
@@ -326,6 +353,22 @@ function ScheduleKebabMenu({
         {renderKebabTriggerIcon}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" width={220}>
+        {schedule.target.type === "agent" ? (
+          <>
+            <DropdownMenuItem
+              leading={openTargetLeading}
+              status={pending?.openTarget ? "pending" : "idle"}
+              pendingLabel="Opening..."
+              onSelect={onOpenTarget}
+              testID={`schedule-menu-open-target-${schedule.id}`}
+            >
+              {state === "active" || state === "paused"
+                ? "Open associated session"
+                : "Open last scheduled prompt"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         <DropdownMenuItem
           leading={editLeading}
           onSelect={onEdit}

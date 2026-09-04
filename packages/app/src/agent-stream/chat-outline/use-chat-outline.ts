@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { AgentTimelinePromptIndexPayload } from "@getpaseo/client/internal/daemon-client";
-import { isWeb } from "@/constants/platform";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { planTimelinePromptJump } from "@/timeline/timeline-sync-plan";
@@ -24,6 +23,16 @@ interface PendingPromptJump {
   hasScrolled: boolean;
 }
 
+interface PromptIndexScope {
+  serverId: string;
+  agentId: string;
+  timelineEpoch: string | null;
+}
+
+type ScopedPromptIndex =
+  | (PromptIndexScope & { status: "loaded"; payload: AgentTimelinePromptIndexPayload })
+  | (PromptIndexScope & { status: "error" });
+
 export interface UseChatOutlineInput {
   agentId: string;
   serverId: string;
@@ -39,6 +48,8 @@ export interface UseChatOutlineInput {
 
 export interface ChatOutline {
   prompts: ChatOutlinePrompt[];
+  isLoaded: boolean;
+  hasLoadError: boolean;
   activePrompt: ActivePromptSource;
   jumpToPrompt: (seq: number) => void;
   reportReadingPosition: (rowId: string | null) => void;
@@ -56,23 +67,33 @@ export function useChatOutline({
   visibleItemIds,
   revealLoadedItem,
 }: UseChatOutlineInput): ChatOutline {
-  const [index, setIndex] = useState<AgentTimelinePromptIndexPayload | null>(null);
+  const [scopedIndex, setScopedIndex] = useState<ScopedPromptIndex | null>(null);
   const [pendingJump, setPendingJump] = useState<PendingPromptJump | null>(null);
   const [activePrompt] = useState(createActivePromptPublisher);
   const readingRowIdRef = useRef<string | null>(null);
   const nextJumpRequestIdRef = useRef(0);
   const nextIndexRequestIdRef = useRef(0);
   const loadedItems = useMemo(() => [...tail, ...(head ?? NO_STREAM_ITEMS)], [head, tail]);
-  const prompts = enabled ? (index?.prompts ?? NO_PROMPTS) : NO_PROMPTS;
+  const currentIndex =
+    enabled &&
+    scopedIndex?.serverId === serverId &&
+    scopedIndex.agentId === agentId &&
+    scopedIndex.timelineEpoch === timelineEpoch
+      ? scopedIndex
+      : null;
+  const index = currentIndex?.status === "loaded" ? currentIndex.payload : null;
+  const prompts = index?.prompts ?? NO_PROMPTS;
 
   useEffect(() => {
-    if (!isWeb || !enabled) {
-      setIndex(null);
+    if (!enabled) {
+      setScopedIndex(null);
       return;
     }
-    setIndex(null);
     const client = getHostRuntimeStore().getClient(serverId);
-    if (!client) return;
+    if (!client) {
+      setScopedIndex({ serverId, agentId, timelineEpoch, status: "error" });
+      return;
+    }
     let active = true;
     const refresh = () => {
       const requestId = ++nextIndexRequestIdRef.current;
@@ -84,11 +105,16 @@ export function useChatOutline({
             requestId === nextIndexRequestIdRef.current &&
             shouldAcceptPromptIndexEpoch(timelineEpoch, payload.epoch)
           ) {
-            setIndex(payload);
+            setScopedIndex({ serverId, agentId, timelineEpoch, status: "loaded", payload });
           }
           return undefined;
         })
-        .catch(() => undefined);
+        .catch((error: unknown) => {
+          console.warn("Failed to load the timeline prompt index", error);
+          if (active && requestId === nextIndexRequestIdRef.current) {
+            setScopedIndex({ serverId, agentId, timelineEpoch, status: "error" });
+          }
+        });
     };
     refresh();
     const unsubscribe = client.on("agent_stream", (message) => {
@@ -188,5 +214,12 @@ export function useChatOutline({
     [agentId, index, loadedItems, onJumpError, revealLoadedItem, serverId, viewportRef],
   );
 
-  return { prompts, activePrompt, jumpToPrompt, reportReadingPosition };
+  return {
+    prompts,
+    isLoaded: index !== null,
+    hasLoadError: currentIndex?.status === "error",
+    activePrompt,
+    jumpToPrompt,
+    reportReadingPosition,
+  };
 }
