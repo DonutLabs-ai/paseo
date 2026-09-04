@@ -1,5 +1,5 @@
 import { useCallback, useState, type ReactElement } from "react";
-import { View } from "react-native";
+import { Alert, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { ScheduleRow, type ScheduleRowPending } from "@/components/schedules/schedule-row";
 import { useScheduleMutations } from "@/hooks/use-schedule-mutations";
@@ -8,6 +8,8 @@ import type { ScheduleDerivedState } from "@/schedules/schedule-derivation";
 import { settingsStyles } from "@/styles/settings";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { resolveScheduleTitle, scheduleProductName } from "@/utils/schedule-format";
+import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { navigateToAgent } from "@/utils/navigate-to-agent";
 
 /** A schedule plus the client-derived fields the row renders. */
 export interface ScheduleRowView {
@@ -74,6 +76,7 @@ function SchedulesTableRow({
   const { schedule } = row;
   const { id, serverId } = schedule;
   const mutations = useScheduleMutations({ serverId });
+  const client = useHostRuntimeClient(serverId);
   const [pending, setPending] = useState<ScheduleRowPending>(NO_PENDING);
 
   const runAction = useCallback(
@@ -98,6 +101,62 @@ function SchedulesTableRow({
   const handleEdit = useCallback(() => {
     onEditSchedule(schedule);
   }, [onEditSchedule, schedule]);
+
+  const handleOpenTarget = useCallback(() => {
+    if (schedule.target.type !== "agent") {
+      return;
+    }
+    const agentId = schedule.target.agentId;
+    void (async () => {
+      setPending((current) => ({ ...current, openTarget: true }));
+      try {
+        const isEnded = row.state !== "active" && row.state !== "paused";
+        if (!isEnded) {
+          navigateToAgent({ serverId, agentId });
+          return;
+        }
+        if (!client) {
+          throw new Error("The daemon is not connected");
+        }
+        const payload = await client.scheduleInspect({ id });
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
+        if (!payload.schedule) {
+          throw new Error(`Schedule ${id} was not found`);
+        }
+        const promptCandidates = payload.schedule.runs
+          .toReversed()
+          .filter((run) => run.status !== "running")
+          .map((run) =>
+            run.promptMessageId
+              ? { scheduleRunId: run.id, messageId: run.promptMessageId }
+              : { scheduleRunId: run.id },
+          );
+        navigateToAgent({
+          serverId,
+          agentId,
+          ...(promptCandidates.length > 0
+            ? {
+                timelinePrompt: {
+                  scheduleId: id,
+                  candidates: promptCandidates,
+                },
+              }
+            : {}),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to open the session";
+        Alert.alert("Couldn’t open associated session", message);
+      } finally {
+        setPending((current) => {
+          const next = { ...current };
+          delete next.openTarget;
+          return next;
+        });
+      }
+    })();
+  }, [client, id, row.state, schedule.target, serverId]);
 
   const handlePause = useCallback(() => {
     void runAction("pause", () => mutations.pauseSchedule(id));
@@ -137,6 +196,7 @@ function SchedulesTableRow({
       singleHost={row.singleHost}
       isFirst={isFirst}
       pending={pending}
+      onOpenTarget={handleOpenTarget}
       onEdit={handleEdit}
       onPause={handlePause}
       onResume={handleResume}

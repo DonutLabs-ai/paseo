@@ -495,14 +495,28 @@ describe("ScheduleService", () => {
     await service.runOnce(schedule.id);
 
     expect(steerOrReplace).toHaveBeenCalledTimes(1);
-    expect(steerOrReplace.mock.calls[0]).toEqual([
-      agent.id,
-      expect.stringContaining(`Schedule fired (id=${schedule.id}, run=`),
-      undefined,
-    ]);
     const completed = await service.inspect(schedule.id);
     const runId = completed.runs[0]?.id;
+    const promptMessageId = completed.runs[0]?.promptMessageId;
     expect(runId).toBeTypeOf("string");
+    expect(promptMessageId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(steerOrReplace.mock.calls[0]).toEqual([
+      agent.id,
+      expect.stringContaining(`Schedule fired (id=${schedule.id}, run=${runId})`),
+      { clientMessageId: promptMessageId },
+    ]);
+    expect(
+      manager
+        .getTimeline(agent.id)
+        .filter((item) => item.type === "user_message" && item.scheduleRunId === runId),
+    ).toEqual([
+      expect.objectContaining({
+        text: "Check scheduled work",
+        clientMessageId: promptMessageId,
+        scheduleId: schedule.id,
+        scheduleRunId: runId,
+      }),
+    ]);
     expect(manager.getAgent(agent.id)?.labels).toMatchObject({
       [SCHEDULE_ID_LABEL]: schedule.id,
       [SCHEDULE_RUN_ID_LABEL]: runId,

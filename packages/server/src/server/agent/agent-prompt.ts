@@ -181,6 +181,42 @@ export function isSystemInjectedEnvelope(text: string): boolean {
   return SYSTEM_ENVELOPE_PATTERN.test(text);
 }
 
+export interface ScheduleSystemNotificationPrompt {
+  scheduleId: string;
+  runId: string;
+  prompt: string;
+}
+
+const SYSTEM_ENVELOPE_PREFIX = "<paseo-system>\n";
+const SYSTEM_ENVELOPE_SUFFIX = "\n</paseo-system>";
+const SCHEDULE_FIRE_HEADING_PATTERN =
+  /^Schedule(?: "[\s\S]*?")? fired \(id=([^,\r\n]+), run=([^\s)]+)\)\.\r?\n/;
+
+/**
+ * Parse the stable identity carried by schedule notifications. The prompt body
+ * stays user-visible while the outer envelope continues to tell the provider
+ * that the turn was injected by Paseo rather than typed by the user.
+ */
+export function parseScheduleSystemNotificationPrompt(
+  text: string,
+): ScheduleSystemNotificationPrompt | null {
+  if (!isSystemInjectedEnvelope(text)) {
+    return null;
+  }
+  const body = text.slice(SYSTEM_ENVELOPE_PREFIX.length, -SYSTEM_ENVELOPE_SUFFIX.length);
+  const match = SCHEDULE_FIRE_HEADING_PATTERN.exec(body);
+  if (!match) {
+    return null;
+  }
+  const scheduleId = match[1];
+  const runId = match[2];
+  const prompt = body.slice(match[0].length);
+  if (!scheduleId || !runId || !prompt) {
+    return null;
+  }
+  return { scheduleId, runId, prompt };
+}
+
 export interface SendPromptToAgentParams {
   agentManager: AgentManager;
   agentStorage: AgentStorage;

@@ -50,6 +50,8 @@ export const ScheduleRunSchema = z.object({
   status: z.enum(["running", "succeeded", "failed"]),
   agentId: z.guid().nullable(),
   workspaceId: z.string().nullable().optional(),
+  // COMPAT(schedulePromptMessageId): absent on runs created by older daemons.
+  promptMessageId: z.string().optional(),
   output: z.string().nullable(),
   error: z.string().nullable(),
 });

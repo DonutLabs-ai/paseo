@@ -11,6 +11,7 @@ import { AgentStorage } from "./agent-storage.js";
 import {
   formatSystemNotificationPrompt,
   isSystemInjectedEnvelope,
+  parseScheduleSystemNotificationPrompt,
   setupFinishNotification,
   waitForAgentRunStartWithTimeout,
 } from "./agent-prompt.js";
@@ -262,6 +263,47 @@ function createFinishNotificationScenario(
 test("isSystemInjectedEnvelope matches the envelope formatSystemNotificationPrompt produces", () => {
   expect(isSystemInjectedEnvelope(formatSystemNotificationPrompt("child finished"))).toBe(true);
   expect(isSystemInjectedEnvelope("hello world")).toBe(false);
+});
+
+test("parseScheduleSystemNotificationPrompt extracts a stable run identity and visible prompt", () => {
+  expect(
+    parseScheduleSystemNotificationPrompt(
+      formatSystemNotificationPrompt(
+        'Schedule "24h closeout" fired (id=abc12345, run=run-42).\nCheck the rollout.\nReport blockers.',
+      ),
+    ),
+  ).toEqual({
+    scheduleId: "abc12345",
+    runId: "run-42",
+    prompt: "Check the rollout.\nReport blockers.",
+  });
+  expect(
+    parseScheduleSystemNotificationPrompt(
+      formatSystemNotificationPrompt(
+        'Schedule "nightly\ncloseout" fired (id=schedule-2, run=run-43).\r\nContinue the session.',
+      ),
+    ),
+  ).toEqual({
+    scheduleId: "schedule-2",
+    runId: "run-43",
+    prompt: "Continue the session.",
+  });
+  expect(
+    parseScheduleSystemNotificationPrompt(
+      formatSystemNotificationPrompt(
+        "Schedule fired (id=schedule-3, run=run-44).\nCheck the unnamed schedule.",
+      ),
+    ),
+  ).toEqual({
+    scheduleId: "schedule-3",
+    runId: "run-44",
+    prompt: "Check the unnamed schedule.",
+  });
+  expect(
+    parseScheduleSystemNotificationPrompt(
+      formatSystemNotificationPrompt("Agent child-agent finished."),
+    ),
+  ).toBeNull();
 });
 
 test("finish notifications tell the parent the child's last assistant message", async () => {

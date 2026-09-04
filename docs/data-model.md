@@ -385,16 +385,17 @@ One file per schedule. ID is 8 hex characters.
 
 ### Nested: ScheduleRun
 
-| Field          | Type                                   | Description             |
-| -------------- | -------------------------------------- | ----------------------- |
-| `id`           | `string`                               | Run ID                  |
-| `scheduledFor` | `string` (ISO 8601)                    | Intended execution time |
-| `startedAt`    | `string` (ISO 8601)                    |                         |
-| `endedAt`      | `string?` (ISO 8601)                   |                         |
-| `status`       | `"running" \| "succeeded" \| "failed"` |                         |
-| `agentId`      | `string?` (UUID)                       | Agent used for this run |
-| `output`       | `string?`                              | Agent output text       |
-| `error`        | `string?`                              | Error message if failed |
+| Field             | Type                                   | Description                                    |
+| ----------------- | -------------------------------------- | ---------------------------------------------- |
+| `id`              | `string`                               | Run ID                                         |
+| `scheduledFor`    | `string` (ISO 8601)                    | Intended execution time                        |
+| `startedAt`       | `string` (ISO 8601)                    |                                                |
+| `endedAt`         | `string?` (ISO 8601)                   |                                                |
+| `status`          | `"running" \| "succeeded" \| "failed"` |                                                |
+| `agentId`         | `string?` (UUID)                       | Agent used for this run                        |
+| `promptMessageId` | `string?`                              | Stable prompt identity for existing-agent runs |
+| `output`          | `string?`                              | Agent output text                              |
+| `error`           | `string?`                              | Error message if failed                        |
 
 ---
 

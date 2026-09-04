@@ -73,7 +73,7 @@ import {
   type PendingForegroundRun,
 } from "./agent-run-state.js";
 import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
-import { isSystemInjectedEnvelope } from "./agent-prompt.js";
+import { isSystemInjectedEnvelope, parseScheduleSystemNotificationPrompt } from "./agent-prompt.js";
 import { stripInternalPaseoMcpServer, withRuntimePaseoMcpServer } from "./runtime-mcp-config.js";
 import { resolveCreateAgentTitles } from "./create-agent-title.js";
 import type { PaseoToolCatalogFactory } from "./tools/types.js";
@@ -110,6 +110,34 @@ function submittedPromptText(prompt: AgentPromptInput): string {
     .flatMap((block) => (block.type === "text" && !("mimeType" in block) ? [block.text] : []))
     .join("\n")
     .trim();
+}
+
+/**
+ * System envelopes normally stay out of the user transcript. Scheduled prompts
+ * are the exception: they are real resumable checkpoints with a stable run
+ * identity, so project them as their user-facing body and retain that identity
+ * for exact navigation from the Schedules screen.
+ */
+function projectTimelineUserMessage(
+  item: Extract<AgentTimelineItem, { type: "user_message" }>,
+): Extract<AgentTimelineItem, { type: "user_message" }> | null {
+  if (!isSystemInjectedEnvelope(item.text)) {
+    return item;
+  }
+  const scheduled = parseScheduleSystemNotificationPrompt(item.text);
+  if (!scheduled) {
+    return null;
+  }
+  return {
+    ...item,
+    text: scheduled.prompt,
+    scheduleId: scheduled.scheduleId,
+    scheduleRunId: scheduled.runId,
+  };
+}
+
+function projectTimelineItem(item: AgentTimelineItem): AgentTimelineItem | null {
+  return item.type === "user_message" ? projectTimelineUserMessage(item) : item;
 }
 
 export class AgentManagerShuttingDownError extends Error {
@@ -620,13 +648,14 @@ function buildExplicitTimelineSeedForRegister(
 function buildImportedTimelineRows(entries: readonly ImportedTimelineEntry[]): AgentTimelineRow[] {
   const rows: AgentTimelineRow[] = [];
   for (const entry of entries) {
-    if (entry.item.type === "user_message" && isSystemInjectedEnvelope(entry.item.text)) {
+    const item = projectTimelineItem(entry.item);
+    if (!item) {
       continue;
     }
     rows.push({
       seq: rows.length + 1,
       timestamp: entry.timestamp ?? new Date().toISOString(),
-      item: limitAgentTimelineItemContent(entry.item),
+      item: limitAgentTimelineItemContent(item),
     });
   }
   return rows;
@@ -3718,10 +3747,11 @@ export class AgentManager {
     for await (const rawEvent of agent.session.streamHistory()) {
       const event = limitAgentStreamEventContent(rawEvent);
       if (event.type === "timeline") {
-        if (event.item.type === "user_message" && isSystemInjectedEnvelope(event.item.text)) {
+        const item = projectTimelineItem(event.item);
+        if (!item) {
           continue;
         }
-        historyEvents.push(event);
+        historyEvents.push(item === event.item ? event : { ...event, item });
       } else if (event.type === "provider_subagent") {
         providerSubagentEvents.push(event);
       }
@@ -3789,18 +3819,20 @@ export class AgentManager {
         if (event.type !== "timeline") {
           continue;
         }
-        if (event.item.type === "user_message" && isSystemInjectedEnvelope(event.item.text)) {
+        const item = projectTimelineItem(event.item);
+        if (!item) {
           continue;
         }
+        const projectedEvent = item === event.item ? event : { ...event, item };
         const row = this.recordTimeline(
           agent.id,
-          event.item,
-          event.timestamp ? { timestamp: event.timestamp } : undefined,
+          projectedEvent.item,
+          projectedEvent.timestamp ? { timestamp: projectedEvent.timestamp } : undefined,
         );
         if (deferredBroadcast) {
-          timelineEvents.push({ event, row });
+          timelineEvents.push({ event: projectedEvent, row });
         } else if (broadcast) {
-          this.dispatchStream(agent.id, event, {
+          this.dispatchStream(agent.id, projectedEvent, {
             seq: row.seq,
             epoch: this.timelineStore.getEpoch(agent.id),
             timestamp: row.timestamp,
@@ -4098,16 +4130,18 @@ export class AgentManager {
   }): Promise<void> {
     const { agent, event, options, flags } = params;
 
-    if (event.item.type === "user_message" && isSystemInjectedEnvelope(event.item.text)) {
+    const item = projectTimelineItem(event.item);
+    if (!item) {
       flags.shouldDispatchEvent = false;
       flags.shouldNotifyWaiters = false;
       return;
     }
+    const projectedEvent = item === event.item ? event : { ...event, item };
 
     if (
-      event.item.type === "user_message" &&
-      event.item.clientMessageId &&
-      this.reconcileSubmittedPromptEcho(agent, event.item, event.turnId)
+      projectedEvent.item.type === "user_message" &&
+      projectedEvent.item.clientMessageId &&
+      this.reconcileSubmittedPromptEcho(agent, projectedEvent.item, projectedEvent.turnId)
     ) {
       flags.shouldDispatchEvent = false;
       flags.shouldNotifyWaiters = false;
@@ -4117,16 +4151,21 @@ export class AgentManager {
     if (options?.fromHistory) {
       this.recordTimeline(
         agent.id,
-        event.item,
-        event.timestamp ? { timestamp: event.timestamp } : undefined,
+        projectedEvent.item,
+        projectedEvent.timestamp ? { timestamp: projectedEvent.timestamp } : undefined,
       );
       flags.shouldDispatchEvent = false;
       flags.shouldNotifyWaiters = false;
       return;
     }
 
-    this.recordAndDispatchTimelineItem(agent.id, event.item, event.provider, event.turnId);
-    if (event.item.type === "user_message") {
+    this.recordAndDispatchTimelineItem(
+      agent.id,
+      projectedEvent.item,
+      projectedEvent.provider,
+      projectedEvent.turnId,
+    );
+    if (projectedEvent.item.type === "user_message") {
       agent.lastUserMessageAt = new Date();
       this.emitState(agent);
     }
@@ -4382,19 +4421,30 @@ export class AgentManager {
     agent: ActiveManagedAgent,
     prompt: AgentPromptInput,
     clientMessageId: string,
-    options?: { messageId?: string; providerMessageId?: string; turnId?: string },
+    options?: {
+      messageId?: string;
+      providerMessageId?: string;
+      turnId?: string;
+      scheduleId?: string;
+      scheduleRunId?: string;
+    },
   ): void {
     if (this.timelineStore.getSubmittedUserMessage(agent.id, clientMessageId)) {
       return;
     }
-    this.touchUpdatedAt(agent);
-    agent.lastUserMessageAt = new Date();
-    const item: AgentTimelineItem = {
+    const item = projectTimelineUserMessage({
       type: "user_message",
       text: submittedPromptText(prompt),
       clientMessageId,
       ...(options?.messageId ? { messageId: options.messageId } : {}),
-    };
+      ...(options?.scheduleId ? { scheduleId: options.scheduleId } : {}),
+      ...(options?.scheduleRunId ? { scheduleRunId: options.scheduleRunId } : {}),
+    });
+    if (!item) {
+      return;
+    }
+    this.touchUpdatedAt(agent);
+    agent.lastUserMessageAt = new Date();
     this.recordAndDispatchTimelineItem(agent.id, item, agent.provider, options?.turnId, options);
   }
 
@@ -4411,6 +4461,8 @@ export class AgentManager {
         messageId: clientMessageId,
         ...(messageId ? { providerMessageId: messageId } : {}),
         ...(turnId ? { turnId } : {}),
+        ...(item.scheduleId ? { scheduleId: item.scheduleId } : {}),
+        ...(item.scheduleRunId ? { scheduleRunId: item.scheduleRunId } : {}),
       });
       existing = this.timelineStore.getSubmittedUserMessage(agent.id, clientMessageId);
     }
