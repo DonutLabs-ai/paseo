@@ -6,6 +6,8 @@ import {
 } from "@/stores/agent-timeline-navigation-store";
 import type { ChatOutline } from "./use-chat-outline";
 
+export type ScheduledPromptNavigationFailure = "index_load_failed" | "prompt_not_found";
+
 export function useScheduledPromptNavigationRequest(
   serverId: string,
   agentId: string,
@@ -28,7 +30,7 @@ export function shouldLoadTimelinePromptIndex(
 export function useScheduledPromptNavigation(input: {
   request: AgentTimelineNavigationRequest | null;
   chatOutline: ChatOutline;
-  onPromptUnavailable: () => void;
+  onPromptUnavailable: (failure: ScheduledPromptNavigationFailure) => void;
 }): void {
   const { request, chatOutline, onPromptUnavailable } = input;
   const { hasLoadError, isLoaded, jumpToPrompt, prompts } = chatOutline;
@@ -38,7 +40,7 @@ export function useScheduledPromptNavigation(input: {
       return;
     }
     if (hasLoadError) {
-      onPromptUnavailable();
+      onPromptUnavailable("index_load_failed");
       useAgentTimelineNavigationStore.getState().consume(request.id);
       return;
     }
@@ -49,7 +51,7 @@ export function useScheduledPromptNavigation(input: {
     if (prompt) {
       jumpToPrompt(prompt.seq);
     } else {
-      onPromptUnavailable();
+      onPromptUnavailable("prompt_not_found");
     }
     useAgentTimelineNavigationStore.getState().consume(request.id);
   }, [hasLoadError, isLoaded, jumpToPrompt, onPromptUnavailable, prompts, request]);

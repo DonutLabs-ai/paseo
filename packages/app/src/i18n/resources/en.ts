@@ -204,6 +204,7 @@ export const en = {
     empty: "Start chatting with this agent...",
     scrollToBottom: "Scroll to bottom",
     historyLoadFailed: "Couldn't load agent history",
+    scheduledPromptUnavailable: "Opened the session, but couldn't locate its scheduled prompt.",
     messageCapped: "This message was capped ({{bytes}} bytes).",
     permission: {
       plan: "Plan",

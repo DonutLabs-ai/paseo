@@ -3526,6 +3526,10 @@ export const ServerInfoStatusPayloadSchema = z
         rewind: z.boolean().optional(),
         // COMPAT(agentTimelinePromptIndex): added in v0.2.X, drop the gate when floor >= v0.2.X.
         agentTimelinePromptIndex: z.boolean().optional(),
+        // COMPAT(schedulePromptNavigation): added in v0.7.2, remove after 2027-09-05.
+        // Unlike the generic prompt index, this guarantees scheduled prompts retain stable
+        // schedule/run identity when provider history is projected into the timeline.
+        schedulePromptNavigation: z.boolean().optional(),
         // COMPAT(agentHistorySearch): added in v0.3.0, remove gate after 2027-02-07.
         agentHistorySearch: z.boolean().optional(),
         // COMPAT(checkoutRefresh): added in v0.1.86, remove gate after 2026-11-29.

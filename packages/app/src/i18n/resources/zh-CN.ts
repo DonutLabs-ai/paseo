@@ -207,6 +207,7 @@ export const zhCN: TranslationResources = {
     empty: "开始和这个 Agent 对话...",
     scrollToBottom: "滚动到底部",
     historyLoadFailed: "无法加载智能体历史记录",
+    scheduledPromptUnavailable: "已打开 session，但无法定位对应的 schedule prompt。",
     messageCapped: "此消息已被截断（{{bytes}} 字节）。",
     permission: {
       plan: "Plan",

@@ -111,6 +111,7 @@ import { PluginTimelineItemView, useInstalledTimelineTransform } from "@/plugins
 import { projectPluginTimelineItems } from "@/plugins/timeline/projection";
 import {
   shouldLoadTimelinePromptIndex,
+  type ScheduledPromptNavigationFailure,
   useScheduledPromptNavigation,
   useScheduledPromptNavigationRequest,
 } from "@/agent-stream/chat-outline/scheduled-prompt-navigation";
@@ -628,6 +629,16 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const handleTimelineHistoryLoadError = useCallback(() => {
       toast?.error(t("agentStream.historyLoadFailed"));
     }, [t, toast]);
+    const handleScheduledPromptUnavailable = useCallback(
+      (failure: ScheduledPromptNavigationFailure) => {
+        if (failure === "index_load_failed") {
+          handleTimelineHistoryLoadError();
+          return;
+        }
+        toast?.show(t("agentStream.scheduledPromptUnavailable"), { variant: "warning" });
+      },
+      [handleTimelineHistoryLoadError, t, toast],
+    );
     const visibleHistoryItemIds = useMemo(
       () =>
         new Set(
@@ -655,7 +666,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     useScheduledPromptNavigation({
       request: scheduledPromptNavigationRequest,
       chatOutline,
-      onPromptUnavailable: handleTimelineHistoryLoadError,
+      onPromptUnavailable: handleScheduledPromptUnavailable,
     });
 
     useImperativeHandle(
