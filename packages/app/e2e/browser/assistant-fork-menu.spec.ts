@@ -51,9 +51,11 @@ test.describe("Assistant fork menu", () => {
     await openAgentRoute(page, session);
     await expectComposerVisible(page);
     await submitMessage(page, "Emit a synthetic turn failure.");
-    await expect(page.getByText("[System Error] Requested mock provider failure")).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(
+      page
+        .getByTestId("agent-chat-scroll")
+        .getByText("[System Error] Requested mock provider failure"),
+    ).toBeVisible({ timeout: 30_000 });
 
     await forkMostRecentAssistantTurnToNewTab(page);
     await expectChatHistoryAttachment(page);

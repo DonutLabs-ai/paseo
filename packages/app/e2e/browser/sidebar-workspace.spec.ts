@@ -288,7 +288,7 @@ test.describe("Half-screen desktop layout", () => {
     await expect(page.getByTestId("agent-list-backdrop")).not.toBeVisible();
   });
 
-  test("keeps the left toggle center-owned without left window controls", async ({ page }) => {
+  test("keeps the left toggle beside the persistent activity rail", async ({ page }) => {
     await gotoAppShell(page);
 
     const openToggle = page.getByTestId("menu-button");
@@ -306,7 +306,8 @@ test.describe("Half-screen desktop layout", () => {
     await expect(closedIcon).toBeVisible();
     const closedBounds = await closedIcon.boundingBox();
     expect(closedBounds).not.toBeNull();
-    expect(closedBounds?.x).toBeCloseTo(9, 0);
+    expect(closedBounds?.x).toBeGreaterThan(48);
+    expect(closedBounds?.x).toBeLessThan(70);
     expect(closedBounds?.y).toBe(openBounds?.y);
   });
 

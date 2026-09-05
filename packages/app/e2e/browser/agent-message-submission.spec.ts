@@ -336,6 +336,7 @@ async function replaySteeredSleepTurnInBrowser(
   testInfo: { workerIndex: number },
   shape: "claude" | "codex",
 ): Promise<void> {
+  const chat = page.getByTestId("agent-chat-scroll");
   const gate = await installDaemonWebSocketGate(page);
   gate.holdNextShellToolCall("completed");
   await gotoAppShell(page);
@@ -351,16 +352,16 @@ async function replaySteeredSleepTurnInBrowser(
     await expectComposerVisible(page);
     await submitMessage(page, "hello");
 
-    await expect(page.getByText("hello", { exact: true })).toHaveCount(1);
-    await expect(page.getByRole("button", { name: /^Worked for/ })).toHaveCount(0);
+    await expect(chat.getByText("hello", { exact: true })).toHaveCount(1);
+    await expect(chat.getByTestId("assistant-turn-duration")).toHaveCount(0);
     await expectInFlightForkAvailable(page);
 
     await gate.waitForHeldServerMessage();
     gate.releaseHeldServerMessage();
     await agent.client.waitForFinish(agent.agentId, 30_000);
 
-    await expect(page.getByText("hello", { exact: true })).toHaveCount(1);
-    await expect(page.getByRole("button", { name: /^Worked for/ })).toHaveCount(1);
+    await expect(chat.getByText("hello", { exact: true })).toHaveCount(1);
+    await expect(chat.getByTestId("assistant-turn-duration")).toHaveCount(1);
     await expect(page.getByRole("button", { name: "Fork chat" }).last()).toBeVisible();
   } finally {
     gate.restore();
@@ -446,13 +447,14 @@ async function expectHiddenStreamingSubmissionOrderAfterWorkspaceEviction(
       }),
     ),
   );
+  const sidebarAgentIds = [target.agentId, ...evictionAgents.map((agent) => agent.agentId)];
   const prompt = "Keep this hidden image prompt before its streaming output.";
   const targetDeckEntry = workspaceDeckEntryLocator(page, getServerId(), target.workspaceId);
 
   try {
     await openAgentRoute(page, target);
     await expectComposerVisible(page);
-    await subscriptions.waitForSubscribedAgents([target.agentId]);
+    await subscriptions.waitForSubscribedAgents(sidebarAgentIds);
 
     const userMessageCount = gate.getAgentStreamItemCount("user_message");
     gate.setAgentStreamSuppressed(true);
@@ -464,20 +466,18 @@ async function expectHiddenStreamingSubmissionOrderAfterWorkspaceEviction(
       await expectComposerVisible(page);
     }
     await expect(targetDeckEntry).toHaveCount(0);
-    await subscriptions.waitForSubscribedAgents([
-      evictionAgents[WORKSPACE_DECK_MAX_MOUNTED_WORKSPACES - 1]!.agentId,
-    ]);
+    await subscriptions.waitForSubscribedAgents(sidebarAgentIds);
     gate.setAgentStreamSuppressed(false);
 
     await target.client.waitForFinish(target.agentId, 30_000);
-    const requestsBeforeReturn = rememberTimelineRequestCounts(gate);
+    const requestsBeforeReturn = rememberTimelineRequestCounts(gate, target.agentId);
     await waitForWorkspaceInSidebar(page, {
       serverId: getServerId(),
       workspaceId: target.workspaceId,
     });
     await openAgentRoute(page, target);
     await expectComposerVisible(page);
-    await subscriptions.waitForSubscribedAgents([target.agentId]);
+    await subscriptions.waitForSubscribedAgents(sidebarAgentIds);
 
     const response = page.getByText("(end of synthetic stream)", { exact: true }).last();
     await expect(promptRow).toBeVisible();
@@ -698,14 +698,15 @@ async function expectDaemonHandledSubmissionSurvivesReload(
     await submitMessage(page, prompt);
     const command = page.getByTestId("user-message").filter({ hasText: prompt });
     await expect(command).toHaveAttribute("aria-busy", "false");
-    await expect(page.getByText("Mock command handled", { exact: true })).toBeVisible();
+    const chat = page.getByTestId("agent-chat-scroll");
+    await expect(chat.getByText("Mock command handled", { exact: true })).toBeVisible();
     await expect(page.getByTestId("turn-working-indicator")).toHaveCount(0);
 
     await page.reload();
     await expectComposerVisible(page);
     await expect(command).toBeVisible();
     await expect(command).toHaveAttribute("aria-busy", "false");
-    await expect(page.getByText("Mock command handled", { exact: true })).toBeVisible();
+    await expect(chat.getByText("Mock command handled", { exact: true })).toBeVisible();
     await expect(page.getByTestId("turn-working-indicator")).toHaveCount(0);
   } finally {
     await agent.cleanup();
@@ -757,7 +758,9 @@ async function expectOldHostSubmissionBehavior(
     gate.releaseHeldClientRequest();
     const command = page.getByTestId("user-message").filter({ hasText: prompt });
     await expect(command).toHaveAttribute("aria-busy", "false");
-    await expect(page.getByText("Mock command handled", { exact: true })).toBeVisible();
+    await expect(
+      page.getByTestId("agent-chat-scroll").getByText("Mock command handled", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByTestId("turn-working-indicator")).toHaveCount(0);
   } finally {
     gate.restore();

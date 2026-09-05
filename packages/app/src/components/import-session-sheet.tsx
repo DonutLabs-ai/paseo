@@ -305,12 +305,14 @@ function SheetEmptyState({ title }: { title: string }) {
 }
 
 function ImportSessionSheetRow({
+  serverId,
   entry,
   disabled,
   importing,
   folder,
   onImportSession,
 }: {
+  serverId: string | null;
   entry: FetchRecentProviderSessionEntry;
   disabled: boolean;
   importing: boolean;
@@ -323,7 +325,7 @@ function ImportSessionSheetRow({
   const title = getSessionTitle(entry);
   const promptPreview = getPromptPreview(entry);
   const lastActivity = formatTimeAgo(new Date(entry.lastActivityAt));
-  const ProviderIcon = getProviderIcon(entry.providerId);
+  const ProviderIcon = getProviderIcon(entry.providerId, serverId);
   const accessibilityState = useMemo(
     () => (disabled ? DISABLED_ACCESSIBILITY_STATE : undefined),
     [disabled],
@@ -537,12 +539,14 @@ function ImportSessionModeStep({
 }
 
 function SessionRows({
+  serverId,
   entries,
   disabled,
   importingSessionKey,
   resolveFolder,
   onImportSession,
 }: {
+  serverId: string | null;
   entries: ReadonlyArray<FetchRecentProviderSessionEntry>;
   disabled: boolean;
   importingSessionKey: string | null;
@@ -554,6 +558,7 @@ function SessionRows({
       {entries.map((entry) => (
         <ImportSessionSheetRow
           key={`${entry.providerId}:${entry.providerHandleId}`}
+          serverId={serverId}
           entry={entry}
           disabled={disabled}
           importing={importingSessionKey === `${entry.providerId}:${entry.providerHandleId}`}
@@ -733,11 +738,11 @@ export function ImportSessionSheet({
     const map = new Map<string, React.ReactNode>();
     map.set(ALL_FILTER_VALUE, <Layers size={14} color={theme.colors.foregroundMuted} />);
     for (const provider of filterProviders) {
-      const ProviderIcon = getProviderIcon(provider);
+      const ProviderIcon = getProviderIcon(provider, serverId);
       map.set(provider, <ProviderIcon size={14} color={theme.colors.foregroundMuted} />);
     }
     return map;
-  }, [filterProviders, theme.colors.foregroundMuted]);
+  }, [filterProviders, serverId, theme.colors.foregroundMuted]);
 
   const renderFilterOption = useCallback(
     ({
@@ -911,7 +916,7 @@ export function ImportSessionSheet({
   });
   const showFilter = filterProviders.length > 1;
   const SelectedProviderIcon =
-    selectedProvider === ALL_FILTER_VALUE ? null : getProviderIcon(selectedProvider);
+    selectedProvider === ALL_FILTER_VALUE ? null : getProviderIcon(selectedProvider, serverId);
   const showLoadMore = hasMoreSessions(queries, pageLimit);
 
   const filterControl = showFilter ? (
@@ -965,6 +970,7 @@ export function ImportSessionSheet({
       ) : null}
       {visibleEntries.length > 0 ? (
         <SessionRows
+          serverId={serverId}
           entries={visibleEntries}
           disabled={importMutation.isPending}
           importingSessionKey={importingSessionKey}

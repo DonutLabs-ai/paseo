@@ -133,7 +133,9 @@ test.describe("Agent message rewind", () => {
       await submitMessage(page, commandPrompt);
       const commandMessage = page.getByTestId("user-message").filter({ hasText: commandPrompt });
       await expect(commandMessage).toBeVisible();
-      await expect(page.getByText("Mock command handled", { exact: true })).toBeVisible();
+      await expect(
+        page.getByTestId("agent-chat-scroll").getByText("Mock command handled", { exact: true }),
+      ).toBeVisible();
       await commandMessage.getByText(commandPrompt, { exact: true }).hover();
       await expect(
         commandMessage.getByRole("button", { name: "Rewind to this message", exact: true }),

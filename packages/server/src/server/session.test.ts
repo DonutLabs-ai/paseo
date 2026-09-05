@@ -1950,9 +1950,16 @@ describe("daemon status + pairing RPC", () => {
           listen: "127.0.0.1:6767",
           relay: null,
           providers: [
-            { provider: "claude", available: true, error: null },
+            { provider: "claude", available: true },
             { provider: "codex", available: false, error: "boom" },
           ],
+          systemUsage: {
+            collectedAt: expect.any(String),
+            cpuCount: expect.any(Number),
+            loadAverage1m: expect.any(Number),
+            memoryUsedBytes: expect.any(Number),
+            memoryTotalBytes: expect.any(Number),
+          },
         },
       },
     ]);
@@ -1986,9 +1993,16 @@ describe("daemon status + pairing RPC", () => {
           pid: process.pid,
           nodePath: process.execPath,
           startedAt: null,
-          listen: null,
+          listen: "127.0.0.1:6767",
           relay: null,
           providers: [],
+          systemUsage: {
+            collectedAt: expect.any(String),
+            cpuCount: expect.any(Number),
+            loadAverage1m: expect.any(Number),
+            memoryUsedBytes: expect.any(Number),
+            memoryTotalBytes: expect.any(Number),
+          },
         },
       },
     ]);
