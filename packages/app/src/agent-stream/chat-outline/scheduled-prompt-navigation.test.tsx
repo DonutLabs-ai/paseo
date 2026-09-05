@@ -81,7 +81,31 @@ describe("useScheduledPromptNavigation", () => {
       }),
     );
 
-    await waitFor(() => expect(onPromptUnavailable).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onPromptUnavailable).toHaveBeenCalledWith("index_load_failed"));
+    expect(useAgentTimelineNavigationStore.getState().request).toBeNull();
+  });
+
+  it("distinguishes a missing scheduled prompt from an index load failure", async () => {
+    useAgentTimelineNavigationStore.getState().requestPrompt({
+      serverId: "server-1",
+      agentId: "agent-1",
+      target: {
+        scheduleId: "schedule-1",
+        candidates: [{ scheduleRunId: "run-1" }],
+      },
+    });
+    const request = useAgentTimelineNavigationStore.getState().request;
+    const onPromptUnavailable = vi.fn();
+
+    renderHook(() =>
+      useScheduledPromptNavigation({
+        request,
+        chatOutline: createChatOutline({ isLoaded: true, prompts: [] }),
+        onPromptUnavailable,
+      }),
+    );
+
+    await waitFor(() => expect(onPromptUnavailable).toHaveBeenCalledWith("prompt_not_found"));
     expect(useAgentTimelineNavigationStore.getState().request).toBeNull();
   });
 });

@@ -117,6 +117,16 @@ describe("wire schema compatibility", () => {
     });
   });
 
+  test("server info accepts schedule prompt navigation capability", () => {
+    const parsed = ServerInfoStatusPayloadSchema.parse({
+      status: "server_info",
+      serverId: "schedule-capable-server",
+      features: { schedulePromptNavigation: true },
+    });
+
+    expect(parsed.features?.schedulePromptNavigation).toBe(true);
+  });
+
   test("assistant timeline message ids are optional on the wire", () => {
     expect(
       AgentTimelineItemPayloadSchema.parse({

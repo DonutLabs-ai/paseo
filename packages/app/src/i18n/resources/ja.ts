@@ -207,6 +207,8 @@ export const ja: TranslationResources = {
     empty: "このエージェントとチャットを始めましょう...",
     scrollToBottom: "下にスクロール",
     historyLoadFailed: "エージェントの履歴を読み込めませんでした",
+    scheduledPromptUnavailable:
+      "セッションを開きましたが、スケジュールされたプロンプトを特定できませんでした。",
     messageCapped: "このメッセージは上限で切り詰められました（{{bytes}}バイト）。",
     permission: {
       plan: "プラン",

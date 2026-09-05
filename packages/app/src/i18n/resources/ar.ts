@@ -207,6 +207,7 @@ export const ar: TranslationResources = {
     empty: "ابدأ الدردشة مع هذا الوكيل...",
     scrollToBottom: "قم بالتمرير إلى الأسفل",
     historyLoadFailed: "تعذر تحميل سجل الوكيل",
+    scheduledPromptUnavailable: "تم فتح الجلسة، لكن تعذر العثور على المطالبة المجدولة.",
     messageCapped: "تم اقتطاع هذه الرسالة ({{bytes}} بايت).",
     permission: {
       plan: "يخطط",

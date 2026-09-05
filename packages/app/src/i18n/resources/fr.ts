@@ -209,6 +209,8 @@ export const fr: TranslationResources = {
     empty: "Commencez à discuter avec cet agent...",
     scrollToBottom: "Faire défiler vers le bas",
     historyLoadFailed: "Impossible de charger l’historique de l’agent",
+    scheduledPromptUnavailable:
+      "La session est ouverte, mais son invite planifiée est introuvable.",
     messageCapped: "Ce message a été tronqué ({{bytes}} octets).",
     permission: {
       plan: "Plan",

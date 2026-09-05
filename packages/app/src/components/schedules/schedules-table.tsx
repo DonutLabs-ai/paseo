@@ -9,6 +9,7 @@ import { settingsStyles } from "@/styles/settings";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { resolveScheduleTitle, scheduleProductName } from "@/utils/schedule-format";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { useHostFeature } from "@/runtime/host-features";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { resolveScheduleSessionDestination } from "@/schedules/schedule-session-navigation";
 
@@ -78,6 +79,7 @@ function SchedulesTableRow({
   const { id, serverId } = schedule;
   const mutations = useScheduleMutations({ serverId });
   const client = useHostRuntimeClient(serverId);
+  const supportsSchedulePromptNavigation = useHostFeature(serverId, "schedulePromptNavigation");
   const [pending, setPending] = useState<ScheduleRowPending>(NO_PENDING);
 
   const runAction = useCallback(
@@ -129,7 +131,9 @@ function SchedulesTableRow({
         navigateToAgent({
           serverId,
           agentId: destination.agentId,
-          ...(destination.timelinePrompt ? { timelinePrompt: destination.timelinePrompt } : {}),
+          ...(supportsSchedulePromptNavigation && destination.timelinePrompt
+            ? { timelinePrompt: destination.timelinePrompt }
+            : {}),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to open the session";
@@ -142,7 +146,7 @@ function SchedulesTableRow({
         });
       }
     })();
-  }, [client, id, row.state, schedule.target, serverId]);
+  }, [client, id, row.state, schedule.target, serverId, supportsSchedulePromptNavigation]);
 
   const handlePause = useCallback(() => {
     void runAction("pause", () => mutations.pauseSchedule(id));
