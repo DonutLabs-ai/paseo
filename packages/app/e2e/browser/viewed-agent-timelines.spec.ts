@@ -132,14 +132,17 @@ test.describe("Viewed agent timelines", () => {
         scenario.firstAgentId,
         "Committed while the first chat is hidden.",
       );
+      const activeWorkspacePane = page.getByTestId("workspace-pane-main");
       await expect(
-        page.getByText("Committed while the first chat is hidden.", { exact: true }),
+        activeWorkspacePane.getByText("Committed while the first chat is hidden.", { exact: true }),
       ).toHaveCount(0);
       await selectAgent(page, "First viewed chat");
       await expect(
-        page.getByText("Committed while the first chat is hidden.", { exact: true }),
+        activeWorkspacePane.getByText("Committed while the first chat is hidden.", { exact: true }),
       ).toBeVisible();
-      await expect(page.getByText("(end of synthetic stream)", { exact: true })).toBeVisible();
+      await expect(
+        activeWorkspacePane.getByText("(end of synthetic stream)", { exact: true }),
+      ).toBeVisible();
     } finally {
       await scenario.cleanup();
     }

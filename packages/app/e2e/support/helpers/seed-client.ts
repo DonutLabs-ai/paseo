@@ -1,5 +1,6 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
+import type { UtilityTerminalInfo } from "@getpaseo/protocol/messages";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import { connectDaemonClient } from "./daemon-client-loader";
 import { withProjectOwnership } from "./project-ownership";
@@ -99,6 +100,20 @@ export interface SeedDaemonClient {
       activity?: TerminalActivity | null;
     }>;
     error?: string | null;
+  }>;
+  createUtilityTerminal(input: {
+    name: string;
+    cwd: string;
+    command?: string | null;
+    args?: string[];
+  }): Promise<{
+    terminal: UtilityTerminalInfo | null;
+    error: string | null;
+  }>;
+  removeUtilityTerminal(id: string): Promise<{
+    id: string;
+    removed: boolean;
+    error: string | null;
   }>;
   createAgent(options: {
     provider: string;

@@ -205,9 +205,10 @@ export async function sendFollowUpAndExpectVisibleResponse(
   page: Page,
   input: { prompt: string; response: string },
 ): Promise<void> {
+  const chat = page.locator('[data-testid="agent-chat-scroll"]:visible').first();
   await submitMessage(page, input.prompt);
-  await expect(page.getByText(input.prompt, { exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(input.response, { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(chat.getByText(input.prompt, { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(chat.getByText(input.response, { exact: true })).toBeVisible({ timeout: 30_000 });
 }
 
 async function selectSettledAgentTab(page: Page, agent: ArchiveTabAgent): Promise<void> {

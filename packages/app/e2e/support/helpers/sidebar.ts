@@ -78,7 +78,7 @@ export async function expectWorkspaceContextMenuActions(
   const workspaceKey = `${getServerId()}:${workspaceId}`;
   const menu = page.getByTestId(`sidebar-workspace-context-menu-${workspaceKey}`);
   await expect(menu.getByRole("menuitem", { name: "Copy path" })).toBeVisible();
-  await expect(menu.getByRole("menuitem", { name: "Rename workspace" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: "Edit note" })).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Archive" })).toBeVisible();
 }
 

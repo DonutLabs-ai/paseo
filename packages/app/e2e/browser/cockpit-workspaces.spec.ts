@@ -94,39 +94,35 @@ test("dims a snoozed workspace in the sidebar until it is woken", async ({ page 
   }
 });
 
-test("opens a workspace script in the global utility tray across workspace and cockpit routes", async ({
-  page,
-}) => {
+test("opens a global utility terminal across workspace and cockpit routes", async ({ page }) => {
   const workspace = await seedMockAgentWorkspace({
     repoPrefix: "utility-tray-",
     title: "Utility tray",
     initialPrompt: "Verify the global utility tray",
-    repo: {
-      paseoConfig: {
-        scripts: {
-          "process-compose": {
-            type: "script",
-            command:
-              "node -e \"console.log('process-compose ready'); setInterval(() => {}, 1000)\"",
-          },
-        },
-      },
-    },
   });
+  let utilityTerminalId: string | null = null;
 
   try {
+    const created = await workspace.client.createUtilityTerminal({
+      name: "Process Compose",
+      cwd: workspace.cwd,
+      command: process.execPath,
+      args: ["-e", "console.log('process-compose ready'); setInterval(() => {}, 1000)"],
+    });
+    if (!created.terminal) {
+      throw new Error(created.error ?? "Failed to create the global utility terminal");
+    }
+    utilityTerminalId = created.terminal.id;
+
     await openAgentRoute(page, workspace);
     const trigger = page.getByTestId("utility-tray-trigger");
     await expect(trigger).toHaveCount(1);
     await expect(trigger).toBeVisible();
     await trigger.click();
     await expect(page.getByTestId("utility-tray-overlay")).toBeVisible();
-    const scriptRow = page.getByTestId(
-      `utility-tray-script-${getServerId()}:${workspace.workspaceId}:process-compose`,
-    );
-    await expect(scriptRow).toBeVisible({ timeout: 15_000 });
-    await scriptRow.click();
-    await page.getByTestId("utility-tray-start").click();
+    const terminalRow = page.getByText("Process Compose", { exact: true });
+    await expect(terminalRow).toBeVisible({ timeout: 15_000 });
+    await terminalRow.click();
     await expect(page.locator(".xterm-screen")).toBeVisible({
       timeout: 15_000,
     });
@@ -143,7 +139,15 @@ test("opens a workspace script in the global utility tray across workspace and c
       timeout: 15_000,
     });
   } finally {
-    await workspace.cleanup();
+    try {
+      if (utilityTerminalId) {
+        const removed = await workspace.client.removeUtilityTerminal(utilityTerminalId);
+        expect.soft(removed.error).toBeNull();
+        expect.soft(removed.removed).toBe(true);
+      }
+    } finally {
+      await workspace.cleanup();
+    }
   }
 });
 
@@ -339,9 +343,8 @@ test("persists equal cockpit panes and reflows after an empty pane closes", asyn
     const card = page.getByTestId(`cockpit-workspace-card-${workspaceKey}`);
     await expect(card).toBeVisible({ timeout: 30_000 });
     const fullWidth = (await card.boundingBox())?.width ?? 0;
-    const focusedBorderColor = await card.evaluate(
-      (element) => getComputedStyle(element).borderTopColor,
-    );
+    const focusRing = card.getByTestId(`cockpit-focus-ring-${workspaceKey}`);
+    await expect(focusRing).toBeVisible();
     const splitDownBounds = await card
       .getByRole("button", { name: "Split pane down" })
       .boundingBox();
@@ -356,14 +359,7 @@ test("persists equal cockpit panes and reflows after an empty pane closes", asyn
     await page.keyboard.press("Control+\\");
     const emptyPane = page.getByTestId(/^cockpit-empty-pane-/);
     await expect(emptyPane).toBeVisible();
-    const unfocusedBorderColor = await card.evaluate(
-      (element) => getComputedStyle(element).borderTopColor,
-    );
-    const emptyPaneBorderColor = await emptyPane.evaluate(
-      (element) => getComputedStyle(element).borderTopColor,
-    );
-    expect(unfocusedBorderColor).not.toBe(focusedBorderColor);
-    expect(emptyPaneBorderColor).toBe(focusedBorderColor);
+    await expect(focusRing).toHaveCount(0);
     const splitCardWidth = (await card.boundingBox())?.width ?? 0;
     const splitEmptyWidth = (await emptyPane.boundingBox())?.width ?? 0;
     expect(Math.abs(splitCardWidth - splitEmptyWidth)).toBeLessThanOrEqual(2);

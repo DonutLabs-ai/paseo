@@ -8,6 +8,7 @@ type DaemonWebSocketGate = Awaited<ReturnType<typeof installDaemonWebSocketGate>
 export interface TimelineRequestCounts {
   after: number;
   tail: number;
+  agentId?: string;
 }
 
 export interface BackgroundTimelineTurns {
@@ -33,10 +34,14 @@ export async function commitTimelineTurnsWhileDisconnected(
   };
 }
 
-export function rememberTimelineRequestCounts(gate: DaemonWebSocketGate): TimelineRequestCounts {
+export function rememberTimelineRequestCounts(
+  gate: DaemonWebSocketGate,
+  agentId?: string,
+): TimelineRequestCounts {
   return {
-    after: gate.getTimelineRequestCount("after"),
-    tail: gate.getTimelineRequestCount("tail"),
+    after: gate.getTimelineRequestCount("after", agentId),
+    tail: gate.getTimelineRequestCount("tail", agentId),
+    agentId,
   };
 }
 
@@ -44,16 +49,16 @@ export function expectOneResumeCheckWithoutTail(
   gate: DaemonWebSocketGate,
   before: TimelineRequestCounts,
 ): void {
-  expect(gate.getTimelineRequestCount("after") - before.after).toBe(1);
-  expect(gate.getTimelineRequestCount("tail") - before.tail).toBe(0);
+  expect(gate.getTimelineRequestCount("after", before.agentId) - before.after).toBe(1);
+  expect(gate.getTimelineRequestCount("tail", before.agentId) - before.tail).toBe(0);
 }
 
 export function expectResumeOverflowFallsBackToOneTail(
   gate: DaemonWebSocketGate,
   before: TimelineRequestCounts,
 ): void {
-  expect(gate.getTimelineRequestCount("after") - before.after).toBe(1);
-  expect(gate.getTimelineRequestCount("tail") - before.tail).toBe(1);
+  expect(gate.getTimelineRequestCount("after", before.agentId) - before.after).toBe(1);
+  expect(gate.getTimelineRequestCount("tail", before.agentId) - before.tail).toBe(1);
 }
 
 export async function disconnectViewedTimeline(

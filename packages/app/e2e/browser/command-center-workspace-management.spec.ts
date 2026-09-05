@@ -116,7 +116,7 @@ test.describe("Command center workspace management", () => {
       await openWorkspace(page, workspace.workspaceId);
       await collapseProjectSection(page, workspace);
 
-      await runCommand(page, "rename", "Rename workspace");
+      await runCommand(page, "note", "Edit note");
 
       // Focused, not merely visible. A modal that mounts behind the closing palette, or loses the
       // focus race with its focus-restore, still renders — you just cannot type into it.

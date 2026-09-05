@@ -848,7 +848,12 @@ export async function installDaemonWebSocketGate(page: Page) {
     getClientRequests(type: string): ReadonlyArray<ClientRequest> {
       return [...(clientRequests.get(type) ?? [])];
     },
-    getTimelineRequestCount(direction: "tail" | "before" | "after"): number {
+    getTimelineRequestCount(direction: "tail" | "before" | "after", agentId?: string): number {
+      if (agentId) {
+        return (clientRequests.get("fetch_agent_timeline_request") ?? []).filter(
+          (request) => request.direction === direction && request.agentId === agentId,
+        ).length;
+      }
       return timelineRequestCounts.get(direction) ?? 0;
     },
     getAgentStreamItemCount(type: string): number {

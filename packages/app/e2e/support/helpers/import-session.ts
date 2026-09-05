@@ -101,6 +101,7 @@ export class ImportSessionFlow {
   }
   async importSession(id: string) {
     await this.page.getByTestId(rowTestId(id)).click();
+    await this.page.getByTestId("import-session-mode-confirm").click();
     await expect(this.page.getByTestId("import-session-sheet")).toHaveCount(0, {
       timeout: 30_000,
     });
