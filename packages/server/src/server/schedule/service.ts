@@ -821,6 +821,7 @@ export class ScheduleService {
     runId: string;
     workspaceId: string;
     agentId: string | null;
+    promptMessageId?: string;
   }): Promise<void> {
     const updatedSchedule = await this.store.update(params.scheduleId, (schedule) => ({
       ...schedule,
@@ -831,6 +832,7 @@ export class ScheduleService {
               ...run,
               workspaceId: params.workspaceId,
               agentId: params.agentId,
+              ...(params.promptMessageId ? { promptMessageId: params.promptMessageId } : {}),
             }
           : run,
       ),
@@ -958,16 +960,24 @@ export class ScheduleService {
       });
       const agent = created.snapshot;
       agentId = agent.id;
+      const promptMessageId = randomUUID();
       await this.recordRunWorkspace({
         scheduleId: schedule.id,
         runId,
         workspaceId: workspace.workspaceId,
         agentId,
+        promptMessageId,
       });
       if (created.initialPromptError) {
         throw created.initialPromptError;
       }
-      const result = await this.agentManager.runAgent(agent.id, schedule.prompt);
+      const result = await this.agentManager.runAgent(agent.id, schedule.prompt, {
+        clientMessageId: promptMessageId,
+        timelineMetadata: {
+          scheduleId: schedule.id,
+          scheduleRunId: runId,
+        },
+      });
       const waitResult = await this.agentManager.waitForAgentEvent(agent.id, {
         waitForActive: true,
       });

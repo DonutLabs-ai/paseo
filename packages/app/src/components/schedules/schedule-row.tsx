@@ -314,6 +314,16 @@ function renderKebabTriggerIcon({ hovered }: { hovered?: boolean }): ReactElemen
   );
 }
 
+function openSessionLabel(schedule: ScheduleSummary, state: ScheduleDerivedState): string {
+  if (schedule.target.type === "new-agent") {
+    return "Open last run session";
+  }
+  if (state === "active" || state === "paused") {
+    return "Open associated session";
+  }
+  return "Open last scheduled prompt";
+}
+
 function ScheduleKebabMenu({
   schedule,
   state,
@@ -341,6 +351,7 @@ function ScheduleKebabMenu({
 }): ReactElement {
   const productName = scheduleProductName(schedule);
   const productNameLower = productName.toLowerCase();
+  const canOpenSession = schedule.target.type === "agent" || schedule.lastRunAt !== null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -353,7 +364,7 @@ function ScheduleKebabMenu({
         {renderKebabTriggerIcon}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" width={220}>
-        {schedule.target.type === "agent" ? (
+        {canOpenSession ? (
           <>
             <DropdownMenuItem
               leading={openTargetLeading}
@@ -362,9 +373,7 @@ function ScheduleKebabMenu({
               onSelect={onOpenTarget}
               testID={`schedule-menu-open-target-${schedule.id}`}
             >
-              {state === "active" || state === "paused"
-                ? "Open associated session"
-                : "Open last scheduled prompt"}
+              {openSessionLabel(schedule, state)}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>

@@ -10,6 +10,7 @@ import { confirmDialog } from "@/utils/confirm-dialog";
 import { resolveScheduleTitle, scheduleProductName } from "@/utils/schedule-format";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
+import { resolveScheduleSessionDestination } from "@/schedules/schedule-session-navigation";
 
 /** A schedule plus the client-derived fields the row renders. */
 export interface ScheduleRowView {
@@ -103,16 +104,12 @@ function SchedulesTableRow({
   }, [onEditSchedule, schedule]);
 
   const handleOpenTarget = useCallback(() => {
-    if (schedule.target.type !== "agent") {
-      return;
-    }
-    const agentId = schedule.target.agentId;
     void (async () => {
       setPending((current) => ({ ...current, openTarget: true }));
       try {
         const isEnded = row.state !== "active" && row.state !== "paused";
-        if (!isEnded) {
-          navigateToAgent({ serverId, agentId });
+        if (schedule.target.type === "agent" && !isEnded) {
+          navigateToAgent({ serverId, agentId: schedule.target.agentId });
           return;
         }
         if (!client) {
@@ -125,29 +122,18 @@ function SchedulesTableRow({
         if (!payload.schedule) {
           throw new Error(`Schedule ${id} was not found`);
         }
-        const promptCandidates = payload.schedule.runs
-          .toReversed()
-          .filter((run) => run.status !== "running")
-          .map((run) =>
-            run.promptMessageId
-              ? { scheduleRunId: run.id, messageId: run.promptMessageId }
-              : { scheduleRunId: run.id },
-          );
+        const destination = resolveScheduleSessionDestination(payload.schedule);
+        if (!destination) {
+          throw new Error("This schedule did not create a session");
+        }
         navigateToAgent({
           serverId,
-          agentId,
-          ...(promptCandidates.length > 0
-            ? {
-                timelinePrompt: {
-                  scheduleId: id,
-                  candidates: promptCandidates,
-                },
-              }
-            : {}),
+          agentId: destination.agentId,
+          ...(destination.timelinePrompt ? { timelinePrompt: destination.timelinePrompt } : {}),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unable to open the session";
-        Alert.alert("Couldn’t open associated session", message);
+        Alert.alert("Couldn’t open scheduled session", message);
       } finally {
         setPending((current) => {
           const next = { ...current };

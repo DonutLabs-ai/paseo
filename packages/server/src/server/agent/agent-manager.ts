@@ -339,6 +339,19 @@ export type ActiveTurnSteerDispatchResult =
   | { status: "inactive" | "steered" }
   | { status: "replaced"; iterator: AsyncGenerator<AgentStreamEvent> };
 
+export interface AgentManagerRunOptions extends AgentRunOptions {
+  timelineMetadata?: {
+    scheduleId: string;
+    scheduleRunId: string;
+  };
+}
+
+function stripManagerRunOptions(options?: AgentManagerRunOptions): AgentRunOptions | undefined {
+  if (!options) return undefined;
+  const { timelineMetadata: _, ...runOptions } = options;
+  return runOptions;
+}
+
 function stripSteerOptions(options?: AgentSteerOptions): AgentRunOptions | undefined {
   if (!options) return undefined;
   const { clearPendingPermissions: _, ...runOptions } = options;
@@ -2101,7 +2114,7 @@ export class AgentManager {
   async runAgent(
     agentId: string,
     prompt: AgentPromptInput,
-    options?: AgentRunOptions,
+    options?: AgentManagerRunOptions,
   ): Promise<AgentRunResult> {
     const events = this.streamAgent(agentId, prompt, options);
     const timeline: AgentTimelineItem[] = [];
@@ -2254,7 +2267,7 @@ export class AgentManager {
   streamAgent(
     agentId: string,
     prompt: AgentPromptInput,
-    options?: AgentRunOptions,
+    options?: AgentManagerRunOptions,
   ): AsyncGenerator<AgentStreamEvent> {
     const existingAgent = this.requireSessionAgent(agentId);
     this.cancelModelCapacityRetry(agentId);
@@ -2301,7 +2314,7 @@ export class AgentManager {
         agentId,
         pendingRun,
         prompt,
-        options,
+        options: stripManagerRunOptions(options),
       });
 
       if (isReplacement) {
@@ -2337,6 +2350,7 @@ export class AgentManager {
             stagedSubmittedPromptEcho?.item.type === "user_message"
               ? stagedSubmittedPromptEcho.item.messageId
               : undefined,
+          ...options.timelineMetadata,
         });
       }
       for (const stagedEvent of pendingRun.stagedEvents.splice(0)) {

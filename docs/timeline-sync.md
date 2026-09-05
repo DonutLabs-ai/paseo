@@ -190,11 +190,14 @@ remain a separate pre-turn registry and retire on canonical acknowledgement.
 
 Canonical turns and visible responses are different boundaries. Most system-injected prompts are absent
 from the Paseo timeline, so one visible response can span several canonical turns without a user message
-between them. A schedule sent to an existing agent is the deliberate exception: its user-facing prompt
-body is projected as a canonical user row with `scheduleId` and `scheduleRunId`, while the provider still
-receives the system envelope. The schedule run also persists the accepted prompt's client message ID.
-This stable identity lets the Schedules screen open the associated session and jump to the exact run;
-legacy runs resolve through `scheduleRunId` recovered from provider history. Layout and copy group other
+between them. A schedule prompt is the deliberate exception: whether it resumes an existing agent or
+creates a new one, its user-facing body is projected as a canonical user row with `scheduleId` and
+`scheduleRunId`. Existing-agent runs carry that identity in a system envelope; new-agent runs preserve
+the original provider prompt (including slash-command semantics) and attach the identity at the
+AgentManager timeline boundary. The schedule run also persists the accepted prompt's client message ID
+and created agent ID. This stable identity lets the Schedules screen open the associated session and
+jump to the exact run; legacy existing-agent runs resolve through `scheduleRunId` recovered from
+provider history. Layout and copy group other
 system-triggered responses together; lifecycle, timing, tool sequences, and exact fork positions retain
 the canonical `turnId` boundaries.
 
