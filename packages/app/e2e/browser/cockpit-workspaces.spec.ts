@@ -60,6 +60,40 @@ test("shows the latest agent activity in the sidebar and cockpit cards", async (
   }
 });
 
+test("dims a snoozed workspace in the sidebar until it is woken", async ({ page }) => {
+  const workspace = await seedMockAgentWorkspace({
+    repoPrefix: "cockpit-sidebar-snooze-",
+    title: "Snoozed sidebar workspace",
+    initialPrompt: "Verify snoozed sidebar presentation",
+  });
+
+  try {
+    await openAgentRoute(page, workspace);
+    await page.getByTestId("cockpit-mode-toggle").click();
+    await expect(page).toHaveURL(/\/cockpit$/);
+
+    const workspaceKey = `${getServerId()}:${workspace.workspaceId}`;
+    const card = page.getByTestId(`cockpit-workspace-card-${workspaceKey}`);
+    const snoozeButton = card.locator(`[data-testid^="cockpit-pane-snooze-"]`);
+    const sidebarContent = page.getByTestId(`sidebar-workspace-content-${workspaceKey}`).first();
+
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await expect(sidebarContent).toHaveCSS("opacity", "1");
+
+    await snoozeButton.click();
+    await expect(
+      page.getByTestId(`sidebar-workspace-snoozed-${workspaceKey}`).first(),
+    ).toBeVisible();
+    await expect(sidebarContent).toHaveCSS("opacity", "0.5");
+
+    await snoozeButton.click();
+    await expect(page.getByTestId(`sidebar-workspace-snoozed-${workspaceKey}`)).toHaveCount(0);
+    await expect(sidebarContent).toHaveCSS("opacity", "1");
+  } finally {
+    await workspace.cleanup();
+  }
+});
+
 test("opens a workspace script in the global utility tray across workspace and cockpit routes", async ({
   page,
 }) => {
