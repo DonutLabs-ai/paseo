@@ -109,6 +109,11 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useStreamHistoryWindow } from "./use-stream-history-window";
 import { PluginTimelineItemView, useInstalledTimelineTransform } from "@/plugins/timeline";
 import { projectPluginTimelineItems } from "@/plugins/timeline/projection";
+import {
+  shouldLoadTimelinePromptIndex,
+  useScheduledPromptNavigation,
+  useScheduledPromptNavigationRequest,
+} from "@/agent-stream/chat-outline/scheduled-prompt-navigation";
 
 function renderLiveAuxiliaryNode(input: {
   pendingPermissions: ReactNode;
@@ -396,6 +401,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const timelineEpoch = useSessionStore(
       (state) => state.sessions[resolvedServerId]?.agentTimelineCursor.get(agentId)?.epoch ?? null,
     );
+    const scheduledPromptNavigationRequest = useScheduledPromptNavigationRequest(
+      resolvedServerId,
+      agentId,
+    );
     const isTimelineDetached = useSessionStore(
       (state) => state.sessions[resolvedServerId]?.agentTimelineHasNewer.get(agentId) === true,
     );
@@ -632,11 +641,21 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       timelineEpoch,
       tail: effectiveStreamItems,
       head: effectiveStreamHead,
-      enabled: supportsChatOutline && chatOutlineEnabled,
+      enabled: shouldLoadTimelinePromptIndex(
+        supportsChatOutline,
+        chatOutlineEnabled,
+        scheduledPromptNavigationRequest,
+      ),
       viewportRef,
       onJumpError: handleTimelineHistoryLoadError,
       visibleItemIds: visibleHistoryItemIds,
       revealLoadedItem: revealLoadedHistory,
+    });
+
+    useScheduledPromptNavigation({
+      request: scheduledPromptNavigationRequest,
+      chatOutline,
+      onPromptUnavailable: handleTimelineHistoryLoadError,
     });
 
     useImperativeHandle(
@@ -1123,7 +1142,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             })}
           </MessageOuterSpacingProvider>
           <ChatOutlineRail
-            prompts={chatOutline.prompts}
+            prompts={chatOutlineEnabled ? chatOutline.prompts : []}
             activePrompt={chatOutline.activePrompt}
             onJumpToPrompt={chatOutline.jumpToPrompt}
           />

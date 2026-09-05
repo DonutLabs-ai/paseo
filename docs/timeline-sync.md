@@ -188,10 +188,18 @@ foreground control ownership remains a separate daemon concern. Cancellation req
 with that record rather than in a React component, so an old request cannot clear a newer one. Submissions
 remain a separate pre-turn registry and retire on canonical acknowledgement.
 
-Canonical turns and visible responses are different boundaries. System-injected prompts are absent from
-the Paseo timeline, so one visible response can span several canonical turns without a user message
-between them. Layout and copy group that response together; lifecycle, timing, tool sequences, and exact
-fork positions retain the canonical `turnId` boundaries.
+Canonical turns and visible responses are different boundaries. Most system-injected prompts are absent
+from the Paseo timeline, so one visible response can span several canonical turns without a user message
+between them. A schedule prompt is the deliberate exception: whether it resumes an existing agent or
+creates a new one, its user-facing body is projected as a canonical user row with `scheduleId` and
+`scheduleRunId`. Existing-agent runs carry that identity in a system envelope; new-agent runs preserve
+the original provider prompt (including slash-command semantics) and attach the identity at the
+AgentManager timeline boundary. The schedule run also persists the accepted prompt's client message ID
+and created agent ID. This stable identity lets the Schedules screen open the associated session and
+jump to the exact run; legacy existing-agent runs resolve through `scheduleRunId` recovered from
+provider history. Layout and copy group other
+system-triggered responses together; lifecycle, timing, tool sequences, and exact fork positions retain
+the canonical `turnId` boundaries.
 
 The compatibility boundary for older daemons is snapshot normalization: running/idle status becomes an
 anonymous active turn or idle state once, and downstream code consumes the same activity shape. The app

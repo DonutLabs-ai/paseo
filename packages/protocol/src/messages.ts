@@ -705,6 +705,8 @@ export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknow
     text: z.string(),
     messageId: z.string().optional(),
     clientMessageId: z.string().optional(),
+    scheduleId: z.string().optional(),
+    scheduleRunId: z.string().optional(),
   }),
   z.object({
     type: z.literal("assistant_message"),
@@ -4514,6 +4516,9 @@ export const AgentTimelineListPromptsResponseMessageSchema = z.object({
         seq: z.number().int().nonnegative(),
         timestamp: z.string(),
         preview: z.string(),
+        messageId: z.string().optional(),
+        scheduleId: z.string().optional(),
+        scheduleRunId: z.string().optional(),
       }),
     ),
     error: z.string().nullable(),

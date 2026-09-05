@@ -452,6 +452,7 @@ describe("ScheduleService", () => {
           provider: "claude",
           model: "test-model",
           cwd: tempDir,
+          archiveOnFinish: false,
         },
       },
       maxRuns: 1,
@@ -466,6 +467,26 @@ describe("ScheduleService", () => {
     expect(inspected.runs[0]?.agentId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
+    expect(inspected.runs[0]?.promptMessageId).toMatch(/^[0-9a-f-]{36}$/);
+    const agentId = inspected.runs[0]?.agentId;
+    const runId = inspected.runs[0]?.id;
+    expect(agentId).toBeTypeOf("string");
+    expect(runId).toBeTypeOf("string");
+    if (!agentId || !runId) {
+      throw new Error("Expected the schedule run to persist its agent and run IDs");
+    }
+    expect(
+      manager
+        .getTimeline(agentId)
+        .filter((item) => item.type === "user_message" && item.scheduleRunId === runId),
+    ).toEqual([
+      expect.objectContaining({
+        text: "Respond with exactly hello",
+        clientMessageId: inspected.runs[0]?.promptMessageId,
+        scheduleId: created.id,
+        scheduleRunId: runId,
+      }),
+    ]);
   });
 
   test("delivers agent-target schedules through the steer-or-interrupt path", async () => {
@@ -495,14 +516,28 @@ describe("ScheduleService", () => {
     await service.runOnce(schedule.id);
 
     expect(steerOrReplace).toHaveBeenCalledTimes(1);
-    expect(steerOrReplace.mock.calls[0]).toEqual([
-      agent.id,
-      expect.stringContaining(`Schedule fired (id=${schedule.id}, run=`),
-      undefined,
-    ]);
     const completed = await service.inspect(schedule.id);
     const runId = completed.runs[0]?.id;
+    const promptMessageId = completed.runs[0]?.promptMessageId;
     expect(runId).toBeTypeOf("string");
+    expect(promptMessageId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(steerOrReplace.mock.calls[0]).toEqual([
+      agent.id,
+      expect.stringContaining(`Schedule fired (id=${schedule.id}, run=${runId})`),
+      { clientMessageId: promptMessageId },
+    ]);
+    expect(
+      manager
+        .getTimeline(agent.id)
+        .filter((item) => item.type === "user_message" && item.scheduleRunId === runId),
+    ).toEqual([
+      expect.objectContaining({
+        text: "Check scheduled work",
+        clientMessageId: promptMessageId,
+        scheduleId: schedule.id,
+        scheduleRunId: runId,
+      }),
+    ]);
     expect(manager.getAgent(agent.id)?.labels).toMatchObject({
       [SCHEDULE_ID_LABEL]: schedule.id,
       [SCHEDULE_RUN_ID_LABEL]: runId,
@@ -1206,7 +1241,10 @@ describe("ScheduleService", () => {
         };
       }
 
-      async startTurn(prompt: AgentPromptInput): Promise<{ turnId: string }> {
+      async startTurn(
+        prompt: AgentPromptInput,
+        options?: AgentRunOptions,
+      ): Promise<{ turnId: string }> {
         const turnId = `turn-${++this.turnCount}`;
         const textPrompt = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
         setImmediate(() => {
@@ -1215,7 +1253,11 @@ describe("ScheduleService", () => {
             type: "timeline",
             provider: this.provider,
             turnId,
-            item: { type: "user_message", text: textPrompt },
+            item: {
+              type: "user_message",
+              text: textPrompt,
+              ...(options?.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
+            },
           });
           this.emit({
             type: "timeline",
@@ -1322,13 +1364,13 @@ describe("ScheduleService", () => {
       providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
       now: () => now,
     });
-    const observedUserMessages: string[] = [];
+    const observedUserMessages: Extract<AgentStreamEvent, { type: "timeline" }>["item"][] = [];
     const unsubscribe = manager.subscribe((event) => {
       if (event.type !== "agent_stream" || event.event.type !== "timeline") {
         return;
       }
       if (event.event.item.type === "user_message") {
-        observedUserMessages.push(event.event.item.text);
+        observedUserMessages.push(event.event.item);
       }
     });
 
@@ -1353,8 +1395,24 @@ describe("ScheduleService", () => {
       unsubscribe();
     }
 
-    expect(observedUserMessages).toEqual(["Audit nightly run"]);
-    expect((await service.inspect(created.id)).runs[0]?.status).toBe("succeeded");
+    const inspected = await service.inspect(created.id);
+    expect(inspected.runs[0]?.status).toBe("succeeded");
+    expect(inspected.runs[0]?.promptMessageId).toMatch(/^[0-9a-f-]{36}$/);
+    const agentId = inspected.runs[0]?.agentId;
+    const runId = inspected.runs[0]?.id;
+    expect(agentId).toBeTypeOf("string");
+    expect(runId).toBeTypeOf("string");
+    if (!agentId || !runId) {
+      throw new Error("Expected the schedule run to persist its agent and run IDs");
+    }
+    expect(observedUserMessages).toEqual([
+      expect.objectContaining({
+        text: "Audit nightly run",
+        clientMessageId: inspected.runs[0]?.promptMessageId,
+        scheduleId: created.id,
+        scheduleRunId: runId,
+      }),
+    ]);
   });
 
   test("archives new-agent schedule sessions after the run finishes", async () => {

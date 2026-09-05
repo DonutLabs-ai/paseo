@@ -1,6 +1,7 @@
 import { buildHostAgentDetailRoute } from "@/utils/host-routes";
 import { normalizeWorkspaceOpaqueId } from "@/utils/workspace-identity";
 import type { NavigateToWorkspaceInput } from "@/stores/navigation-active-workspace-store";
+import type { AgentTimelinePromptTarget } from "@/stores/agent-timeline-navigation-store";
 
 export interface NavigateToAgentInput {
   serverId: string;
@@ -9,6 +10,7 @@ export interface NavigateToAgentInput {
   // (cold deep-links). Otherwise the workspace is read from the store.
   workspaceId?: string | null;
   pin?: boolean;
+  timelinePrompt?: AgentTimelinePromptTarget;
 }
 
 export interface AgentNavTarget {
