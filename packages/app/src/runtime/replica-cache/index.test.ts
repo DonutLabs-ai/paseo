@@ -284,15 +284,63 @@ describe("ReplicaCache", () => {
     expect(await reading).toBeUndefined();
   });
 
-  it("never reads a timeline older than an accepted deferred replacement", async () => {
+  it("retries a timeline read when the same agent changes while it is in flight", async () => {
     const storage = new MemoryStorage();
     const cache = createCache(storage);
     cache.commitTimeline(SERVER_ID, "agent-1", timeline("Old"));
     await cache.flush();
+    const started = deferred();
+    const release = deferred();
+    storage.onRead = started.resolve;
+    storage.readGate = release.promise;
 
+    const reading = cache.readTimeline(SERVER_ID, "agent-1");
+    await started.promise;
     cache.commitTimeline(SERVER_ID, "agent-1", timeline("New"));
+    release.resolve();
 
-    expect((await cache.readTimeline(SERVER_ID, "agent-1"))?.items).toEqual([timelineItem("New")]);
+    expect((await reading)?.items).toEqual([timelineItem("New")]);
+    expect(storage.reads.filter((read) => read.kinds.includes("timeline"))).toHaveLength(2);
+  });
+
+  it("does not restart a timeline read when a different agent changes", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    cache.commitTimeline(SERVER_ID, "agent-1", timeline("Focused"));
+    await cache.flush();
+    const started = deferred();
+    const release = deferred();
+    storage.onRead = started.resolve;
+    storage.readGate = release.promise;
+
+    const reading = cache.readTimeline(SERVER_ID, "agent-1");
+    await started.promise;
+    cache.commitTimeline(SERVER_ID, "agent-2", {
+      ...timeline("Background update"),
+      agentId: "agent-2",
+    });
+    release.resolve();
+
+    expect((await reading)?.items).toEqual([timelineItem("Focused")]);
+    expect(storage.reads.filter((read) => read.kinds.includes("timeline"))).toHaveLength(1);
+  });
+
+  it("discards a timeline read when its host is removed while it is in flight", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    cache.commitTimeline(SERVER_ID, "agent-1", timeline("Removed host"));
+    await cache.flush();
+    const started = deferred();
+    const release = deferred();
+    storage.onRead = started.resolve;
+    storage.readGate = release.promise;
+
+    const reading = cache.readTimeline(SERVER_ID, "agent-1");
+    await started.promise;
+    cache.setHosts([]);
+    release.resolve();
+
+    expect(await reading).toBeUndefined();
   });
 
   it("round-trips plugin timeline items", async () => {
@@ -541,7 +589,7 @@ describe("ReplicaCache", () => {
     ]);
   });
 
-  it("retries a timeline read invalidated by a concurrent directory commit", async () => {
+  it("does not restart a timeline read after a concurrent directory commit", async () => {
     const storage = new MemoryStorage();
     const cache = createCache(storage);
     cache.commitTimeline(SERVER_ID, "agent-1", timeline("Persisted timeline"));
@@ -554,6 +602,7 @@ describe("ReplicaCache", () => {
     expect((await cache.readTimeline(SERVER_ID, "agent-1"))?.items).toEqual([
       timelineItem("Persisted timeline"),
     ]);
+    expect(storage.reads.filter((read) => read.kinds.includes("timeline"))).toHaveLength(1);
   });
 
   it("rebuilds every directory row before restoring its checkpoint after eviction", async () => {

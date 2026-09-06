@@ -822,6 +822,8 @@ function directoryEntityForRow(row: ReplicaRow): keyof DirectoryCheckpoint | und
 export class ReplicaCache {
   private readonly activeServerIds = new Set<string>();
   private readonly hostRevisions = new Map<string, number>();
+  private readonly hostLifecycleRevisions = new Map<string, number>();
+  private readonly timelineRevisions = new Map<string, number>();
   private readonly storedRows = new Map<string, Map<string, ReplicaRow>>();
   private readonly hostBytes = new Map<string, number>();
   private readonly hostWriteOrder = new Map<string, true>();
@@ -916,7 +918,7 @@ export class ReplicaCache {
   }
 
   async readTimeline(serverId: string, agentId: string): Promise<CachedTimeline | undefined> {
-    const rows = await this.readRows(serverId, ["timeline"], [agentId]);
+    const rows = await this.readTimelineRows(serverId, agentId);
     const row = rows[0];
     if (!row) return undefined;
     try {
@@ -926,6 +928,29 @@ export class ReplicaCache {
     } catch {
       await this.deleteInvalidRow(row);
       return undefined;
+    }
+  }
+
+  private async readTimelineRows(serverId: string, agentId: string): Promise<ReplicaRow[]> {
+    if (!this.activeServerIds.has(serverId)) return [];
+    try {
+      await this.prepareStore();
+      while (this.activeServerIds.has(serverId)) {
+        await this.flush();
+        const hostLifecycleRevision = this.hostLifecycleRevisions.get(serverId) ?? 0;
+        const timelineRevision =
+          this.timelineRevisions.get(this.timelineRevisionKey(serverId, agentId)) ?? 0;
+        const rows = await this.rowStore.read(serverId, ["timeline"], [agentId]);
+        if (
+          this.canReadHostLifecycleRevision(serverId, hostLifecycleRevision) &&
+          this.canReadTimelineRevision(serverId, agentId, timelineRevision)
+        ) {
+          return rows;
+        }
+      }
+      return [];
+    } catch {
+      return [];
     }
   }
 
@@ -1058,7 +1083,7 @@ export class ReplicaCache {
   commitTimeline(serverId: string, agentId: string, timeline: CachedTimeline): void {
     if (!this.activeServerIds.has(serverId)) return;
     if (timeline.agentId !== agentId) throw new Error("Timeline cache key does not match payload");
-    this.advanceHostRevision(serverId);
+    this.advanceTimelineRevision(serverId, agentId);
     const stored = serializeTimeline(timeline);
     if (stored) this.queueEntityUpsert(serverId, "timeline", agentId, stored);
     else this.queueEntityDelete(serverId, "timeline", agentId);
@@ -1069,7 +1094,10 @@ export class ReplicaCache {
     const next = new Set(serverIds);
     const removed = [...this.activeServerIds].filter((serverId) => !next.has(serverId));
     const added = [...next].filter((serverId) => !this.activeServerIds.has(serverId));
-    for (const serverId of [...removed, ...added]) this.advanceHostRevision(serverId);
+    for (const serverId of [...removed, ...added]) {
+      this.advanceHostRevision(serverId);
+      this.advanceHostLifecycleRevision(serverId);
+    }
     this.activeServerIds.clear();
     for (const serverId of next) this.activeServerIds.add(serverId);
     for (const serverId of removed) {
@@ -1082,6 +1110,8 @@ export class ReplicaCache {
   reconcileServerId(oldServerId: string, newServerId: string): void {
     this.advanceHostRevision(oldServerId);
     this.advanceHostRevision(newServerId);
+    this.advanceHostLifecycleRevision(oldServerId);
+    this.advanceHostLifecycleRevision(newServerId);
     const rows = this.storedRows.get(oldServerId);
     if (rows) {
       const newRows = this.storedRows.get(newServerId) ?? new Map<string, ReplicaRow>();
@@ -1196,23 +1226,56 @@ export class ReplicaCache {
     return (
       this.activeServerIds.has(serverId) &&
       (this.hostRevisions.get(serverId) ?? 0) === revision &&
-      !this.hasPendingHostChanges(serverId)
+      !this.hasPendingDirectoryChanges(serverId)
     );
   }
 
-  private hasPendingHostChanges(serverId: string): boolean {
+  private hasPendingDirectoryChanges(serverId: string): boolean {
     if (this.pendingDirectoryReplacements.has(serverId)) return true;
     for (const row of this.pendingUpserts.values()) {
-      if (row.serverId === serverId) return true;
+      if (row.serverId === serverId && row.kind !== "timeline") return true;
     }
     for (const row of this.pendingDeletes.values()) {
-      if (row.serverId === serverId) return true;
+      if (row.serverId === serverId && row.kind !== "timeline") return true;
     }
     return false;
   }
 
+  private canReadTimelineRevision(serverId: string, agentId: string, revision: number): boolean {
+    const key = this.timelineRevisionKey(serverId, agentId);
+    return (
+      (this.timelineRevisions.get(key) ?? 0) === revision &&
+      !this.hasPendingTimelineChange(serverId, agentId)
+    );
+  }
+
+  private canReadHostLifecycleRevision(serverId: string, revision: number): boolean {
+    return (
+      this.activeServerIds.has(serverId) &&
+      (this.hostLifecycleRevisions.get(serverId) ?? 0) === revision
+    );
+  }
+
+  private hasPendingTimelineChange(serverId: string, agentId: string): boolean {
+    const key = pendingRowKey({ serverId, kind: "timeline", id: agentId });
+    return this.pendingUpserts.has(key) || this.pendingDeletes.has(key);
+  }
+
+  private timelineRevisionKey(serverId: string, agentId: string): string {
+    return `${serverId}\0${agentId}`;
+  }
+
+  private advanceTimelineRevision(serverId: string, agentId: string): void {
+    const key = this.timelineRevisionKey(serverId, agentId);
+    this.timelineRevisions.set(key, (this.timelineRevisions.get(key) ?? 0) + 1);
+  }
+
   private advanceHostRevision(serverId: string): void {
     this.hostRevisions.set(serverId, (this.hostRevisions.get(serverId) ?? 0) + 1);
+  }
+
+  private advanceHostLifecycleRevision(serverId: string): void {
+    this.hostLifecycleRevisions.set(serverId, (this.hostLifecycleRevisions.get(serverId) ?? 0) + 1);
   }
 
   private drainPendingChanges(): PendingReplicaChanges {
