@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View, type PressableStateCallbackType } from "react-native";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
@@ -30,17 +30,20 @@ export function SidebarGroupToggleRow({
   expanded,
   onPress,
   indented = false,
+  label,
   testID,
 }: {
   expanded: boolean;
   onPress: () => void;
   indented?: boolean;
+  label?: string;
   testID: string;
 }) {
   const { t } = useTranslation();
-  const label = t(
-    expanded ? "sidebar.workspace.actions.showLess" : "sidebar.workspace.actions.showMore",
-  );
+  const resolvedLabel =
+    label ??
+    t(expanded ? "sidebar.workspace.actions.showLess" : "sidebar.workspace.actions.showMore");
+  const accessibilityState = useMemo(() => ({ expanded }), [expanded]);
   const rowStyle = useCallback(
     ({ hovered = false, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.row,
@@ -54,7 +57,8 @@ export function SidebarGroupToggleRow({
   return (
     <Pressable
       accessibilityRole={isWeb ? undefined : "button"}
-      accessibilityLabel={label}
+      accessibilityLabel={resolvedLabel}
+      accessibilityState={accessibilityState}
       onPress={onPress}
       style={rowStyle}
       testID={testID}
@@ -75,7 +79,7 @@ export function SidebarGroupToggleRow({
             )}
           </View>
           <Text style={hovered || pressed ? styles.textHovered : styles.text} numberOfLines={1}>
-            {label}
+            {resolvedLabel}
           </Text>
         </>
       )}
