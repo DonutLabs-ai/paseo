@@ -152,6 +152,8 @@ import { useCockpitSnoozeStore } from "@/stores/cockpit-snooze-store";
 import { useHostBadges } from "@/hosts/use-host-badges";
 import { useSidebarRowItems } from "@/components/sidebar/display-preferences/model";
 import { PullRequestStateIcon } from "@/git/pull-request-state-icon";
+import { SidebarSnoozedSection } from "@/components/sidebar/sidebar-snoozed-section";
+import { splitSnoozedSidebarContent } from "@/components/sidebar/sidebar-snoozed-workspaces";
 
 const workspaceKeyExtractor = (workspace: SidebarWorkspacePlacement) => workspace.workspaceKey;
 
@@ -1895,6 +1897,18 @@ export function SidebarWorkspaceList({
   const pathname = usePathname();
   const hosts = useHosts();
   const rowItems = useSidebarRowItems();
+  const snoozedAtByWorkspace = useCockpitSnoozeStore((state) => state.snoozedAtByWorkspace);
+  const sidebarContent = useMemo(
+    () =>
+      splitSnoozedSidebarContent({
+        projects,
+        pinnedGroups,
+        workspaceGroups,
+        workspaceEntriesByKey,
+        snoozedAtByWorkspace,
+      }),
+    [projects, pinnedGroups, snoozedAtByWorkspace, workspaceEntriesByKey, workspaceGroups],
+  );
   // Host badge visibility is a lattice, not three competing switches: this gate is the global
   // "off", `shouldShowSidebarHostLabels` is the automatic "there is only one host so it says
   // nothing", and each host's own `badgeDisplay` decides name vs icon vs hidden. Turning the
@@ -1954,8 +1968,9 @@ export function SidebarWorkspaceList({
   const content =
     groupMode !== "project" ? (
       <SidebarGroupedModeList
-        workspaceGroups={workspaceGroups}
-        pinnedGroups={pinnedGroups}
+        workspaceGroups={sidebarContent.workspaceGroups}
+        pinnedGroups={sidebarContent.pinnedGroups}
+        snoozedWorkspaces={sidebarContent.snoozedWorkspaces}
         workspaceEntriesByKey={workspaceEntriesByKey}
         projectIconByProjectViewKey={projectIconByProjectViewKey}
         shortcutIndexByWorkspaceKey={shortcutIndexByWorkspaceKey}
@@ -1971,8 +1986,9 @@ export function SidebarWorkspaceList({
       />
     ) : (
       <ProjectModeList
-        projects={projects}
-        pinnedGroups={pinnedGroups}
+        projects={sidebarContent.projects}
+        pinnedGroups={sidebarContent.pinnedGroups}
+        snoozedWorkspaces={sidebarContent.snoozedWorkspaces}
         workspaceEntriesByKey={workspaceEntriesByKey}
         projectIconByProjectViewKey={projectIconByProjectViewKey}
         collapsedProjectKeys={collapsedProjectKeys}
@@ -2008,6 +2024,7 @@ export function SidebarWorkspaceList({
 function SidebarGroupedModeList({
   workspaceGroups,
   pinnedGroups,
+  snoozedWorkspaces,
   workspaceEntriesByKey,
   projectIconByProjectViewKey,
   shortcutIndexByWorkspaceKey: _projectShortcutIndex,
@@ -2023,6 +2040,7 @@ function SidebarGroupedModeList({
 }: {
   workspaceGroups: SidebarWorkspaceGroup[];
   pinnedGroups: PinnedSidebarGroups;
+  snoozedWorkspaces: SidebarWorkspaceEntry[];
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   projectIconByProjectViewKey: ReadonlyMap<string, string | null>;
   shortcutIndexByWorkspaceKey: Map<string, number>;
@@ -2050,6 +2068,7 @@ function SidebarGroupedModeList({
     <SidebarStatusWorkspaceList
       groups={workspaceGroups}
       pinnedWorkspaces={pinnedWorkspaces}
+      snoozedWorkspaces={snoozedWorkspaces}
       projectIconByProjectViewKey={projectIconByProjectViewKey}
       shortcutIndexByWorkspaceKey={_projectShortcutIndex}
       showShortcutBadges={showShortcutBadges}
@@ -2069,6 +2088,7 @@ function SidebarGroupedModeList({
 function ProjectModeList({
   projects,
   pinnedGroups,
+  snoozedWorkspaces,
   workspaceEntriesByKey,
   projectIconByProjectViewKey,
   collapsedProjectKeys,
@@ -2107,6 +2127,7 @@ function ProjectModeList({
   supportsPinningByServerId: ReadonlyMap<string, boolean>;
   onToggleWorkspacePin: ToggleSidebarWorkspacePin;
   onPinnedWorkspaceReorder: (workspaces: SidebarWorkspacePlacement[]) => void;
+  snoozedWorkspaces: SidebarWorkspaceEntry[];
 }) {
   const hasActiveHostFilter = useSidebarViewStore((state) => state.hostFilters.length > 0);
   const [creatingWorkspaceIds, setCreatingWorkspaceIds] = useState<Set<string>>(() => new Set());
@@ -2383,6 +2404,42 @@ function ProjectModeList({
     ],
   );
 
+  const renderSnoozedWorkspace = useCallback(
+    (workspace: SidebarWorkspaceEntry) => (
+      <MemoWorkspaceRowItem
+        key={workspace.workspaceKey}
+        workspace={workspace}
+        workspaceEntry={workspace}
+        hostBadge={hostBadgeByServerId.get(workspace.serverId) ?? null}
+        leadingProjectName={workspace.projectName}
+        leadingProjectIconDataUri={
+          projectIconByProjectViewKey.get(workspace.projectViewKey) ?? null
+        }
+        shortcutNumber={shortcutIndexByWorkspaceKey.get(workspace.workspaceKey) ?? null}
+        showShortcutBadge={showShortcutBadges}
+        canCopyBranchName={workspace.projectKind === "git"}
+        canPin={supportsPinningByServerId.get(workspace.serverId) === true}
+        onToggleWorkspacePin={onToggleWorkspacePin}
+        isCreating={creatingWorkspaceIds.has(workspace.workspaceId)}
+        selectionEnabled={selectionEnabled}
+        activeWorkspaceSelection={activeWorkspaceSelection}
+        onWorkspacePress={onWorkspacePress}
+      />
+    ),
+    [
+      activeWorkspaceSelection,
+      creatingWorkspaceIds,
+      hostBadgeByServerId,
+      onToggleWorkspacePin,
+      onWorkspacePress,
+      projectIconByProjectViewKey,
+      selectionEnabled,
+      shortcutIndexByWorkspaceKey,
+      showShortcutBadges,
+      supportsPinningByServerId,
+    ],
+  );
+
   const projectBody =
     projects.length === 0 ? (
       <SidebarProjectEmptyState onAddProject={onAddProject} onImportSession={onImportSession} />
@@ -2448,6 +2505,9 @@ function ProjectModeList({
         ? listHeaderComponent
         : null}
       {sidebarFilterEmpty ? <SidebarFilterEmptyState /> : projectBody}
+      <SidebarSnoozedSection count={snoozedWorkspaces.length}>
+        {snoozedWorkspaces.map(renderSnoozedWorkspace)}
+      </SidebarSnoozedSection>
       {listFooterComponent}
     </>
   );
