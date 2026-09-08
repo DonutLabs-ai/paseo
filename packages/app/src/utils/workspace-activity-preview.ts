@@ -12,16 +12,16 @@ const previewMarkdownParser = createMarkdownParser({ linkify: true });
 previewMarkdownParser.validateLink = () => true;
 
 export interface WorkspaceActivityPreview {
-  latestPrompt: string | null;
-  latestReply: string | null;
-  recentReplies: WorkspaceReplyPreview[];
-  activityPreview: string | null;
-  activityPreviewKind: "prompt" | "reply" | null;
+  readonly latestPrompt: string | null;
+  readonly latestReply: string | null;
+  readonly recentReplies: readonly WorkspaceReplyPreview[];
+  readonly activityPreview: string | null;
+  readonly activityPreviewKind: "prompt" | "reply" | null;
 }
 
 export interface WorkspaceReplyPreview {
-  id: string;
-  text: string;
+  readonly id: string;
+  readonly text: string;
 }
 
 interface PreviewMessage {
@@ -29,6 +29,14 @@ interface PreviewMessage {
   text: string;
   timestamp: Date;
 }
+
+// Session-store maps are replaced for every live agent update while the arrays for unaffected
+// agents retain their identity. Cache by those immutable stream snapshots so one busy agent does
+// not make every sidebar row reparse Markdown on every streamed token.
+const projectionCache = new WeakMap<
+  readonly StreamItem[],
+  WeakMap<readonly StreamItem[], Map<SidebarStateBucket, WorkspaceActivityPreview>>
+>();
 
 function markdownToPlainText(value: string): string {
   const tokens = previewMarkdownParser.parse(value.replace(INTERNAL_CITATION_BLOCK, ""), {});
@@ -159,6 +167,21 @@ export function selectWorkspaceActivityPreview(input: {
   head: readonly StreamItem[];
   status: SidebarStateBucket;
 }): WorkspaceActivityPreview {
+  let cacheByHead = projectionCache.get(input.tail);
+  if (!cacheByHead) {
+    cacheByHead = new WeakMap();
+    projectionCache.set(input.tail, cacheByHead);
+  }
+  let cacheByStatus = cacheByHead.get(input.head);
+  if (!cacheByStatus) {
+    cacheByStatus = new Map();
+    cacheByHead.set(input.head, cacheByStatus);
+  }
+  const cached = cacheByStatus.get(input.status);
+  if (cached) {
+    return cached;
+  }
+
   const prompt = selectLatestMessage({ ...input, kind: "user_message" });
   const recentReplyMessages = collectRecentMessages({
     ...input,
@@ -176,11 +199,13 @@ export function selectWorkspaceActivityPreview(input: {
   if (activity !== null) {
     activityPreviewKind = activity === prompt ? "prompt" : "reply";
   }
-  return {
+  const projection: WorkspaceActivityPreview = {
     latestPrompt: prompt?.text ?? null,
     latestReply: reply?.text ?? null,
     recentReplies: recentReplyMessages.map(({ id, text }) => ({ id, text })),
     activityPreview: activity?.text ?? null,
     activityPreviewKind,
   };
+  cacheByStatus.set(input.status, projection);
+  return projection;
 }

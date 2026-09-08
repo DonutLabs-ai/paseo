@@ -58,7 +58,7 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   agentId: string | null;
   latestPrompt: string | null;
   latestReply: string | null;
-  recentReplies: WorkspaceReplyPreview[];
+  recentReplies: readonly WorkspaceReplyPreview[];
   activityPreview: string | null;
   activityPreviewKind: "prompt" | "reply" | null;
 }

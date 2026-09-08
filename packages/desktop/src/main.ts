@@ -43,6 +43,7 @@ import {
   buildStandardContextMenuItems,
 } from "./window/window-manager.js";
 import { setupDarwinCompositorWatchdog } from "./window/compositor-watchdog/index.js";
+import { shouldReloadRendererAfterExit } from "./window/renderer-crash-recovery.js";
 import { resolveDesktopWindowChromeMode, windowChromeModeArgument } from "./window/chrome.js";
 import { registerDialogHandlers } from "./features/dialogs.js";
 import {
@@ -709,11 +710,29 @@ async function createWindow(
   applyDesktopWindowChromeMode({ win: mainWindow, mode: DESKTOP_WINDOW_CHROME_MODE });
 
   const webContentsId = mainWindow.webContents.id;
+  let rendererRecoveryAttempted = false;
   options.onCreated?.(webContentsId);
   mainWindow.webContents.on("did-start-navigation", (_event, _url, isSameDocument, isMainFrame) => {
     if (isMainFrame && !isSameDocument) {
       agentNavigationInbox.windowLoading(webContentsId);
     }
+  });
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    const shouldReload = shouldReloadRendererAfterExit({
+      reason: details.reason,
+      recoveryAlreadyAttempted: rendererRecoveryAttempted,
+    });
+    log.error("[window] renderer process gone", {
+      webContentsId,
+      reason: details.reason,
+      exitCode: details.exitCode,
+      recovery: shouldReload ? "reload-once" : "not-reloaded",
+    });
+    if (!shouldReload) {
+      return;
+    }
+    rendererRecoveryAttempted = true;
+    mainWindow.webContents.reload();
   });
   mainWindow.on("closed", () => {
     options.onClosed?.(webContentsId);

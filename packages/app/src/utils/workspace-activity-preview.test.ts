@@ -16,6 +16,24 @@ function message(
 }
 
 describe("selectWorkspaceActivityPreview", () => {
+  it("reuses a projection while the stream snapshots and status are unchanged", () => {
+    const tail = [message("assistant_message", "Stable reply", 1)];
+    const head: StreamItem[] = [];
+
+    const first = selectWorkspaceActivityPreview({ tail, head, status: "running" });
+    const second = selectWorkspaceActivityPreview({ tail, head, status: "running" });
+
+    expect(second).toBe(first);
+    expect(selectWorkspaceActivityPreview({ tail, head, status: "done" })).not.toBe(first);
+    expect(
+      selectWorkspaceActivityPreview({
+        tail: [...tail, message("assistant_message", "New reply", 2)],
+        head,
+        status: "running",
+      }),
+    ).not.toBe(first);
+  });
+
   it("uses a newer live reply ahead of the authoritative tail", () => {
     const result = selectWorkspaceActivityPreview({
       tail: [
