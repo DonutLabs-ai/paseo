@@ -1127,8 +1127,8 @@ function CockpitQuickReply({
 
     const activeTurnId =
       quickReplyAction.activeTurnBehavior === "steer"
-        ? (useSessionStore.getState().sessions[serverId]?.agents.get(agentId)?.activeTurn?.turnId ??
-          undefined)
+        ? (selectAgentTurnPresentation(useSessionStore.getState().sessions[serverId], agentId)
+            .turnId ?? undefined)
         : undefined;
     setIsSubmitting(true);
     try {

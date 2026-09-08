@@ -1,3 +1,4 @@
+import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import {
   View,
@@ -1567,8 +1568,10 @@ function ComposerContentImpl({
         activeTurnBehavior,
         activeTurnId:
           activeTurnBehavior === "steer"
-            ? (useSessionStore.getState().sessions[serverId]?.agents.get(targetAgentId)?.activeTurn
-                ?.turnId ?? undefined)
+            ? (selectAgentTurnPresentation(
+                useSessionStore.getState().sessions[serverId],
+                targetAgentId,
+              ).turnId ?? undefined)
             : undefined,
       });
       onAttentionPromptSend?.();
@@ -1585,8 +1588,6 @@ function ComposerContentImpl({
   const isCancellingAgent = useSessionStore(
     (state) => selectAgentTurnPresentation(state.sessions[serverId], agentId).isCancelling,
   );
-  const beginAgentCancellation = useSessionStore((state) => state.beginAgentCancellation);
-  const settleAgentCancellation = useSessionStore((state) => state.settleAgentCancellation);
   const isAgentRunning = hasActiveTurn;
   // Queueing behind a permission prompt would strand the message: the turn is
   // parked until the request is answered.
@@ -1892,7 +1893,7 @@ function ComposerContentImpl({
       isConnected,
     });
     if (!cancellation) return;
-    const requestId = beginAgentCancellation(serverId, targetAgentId);
+    const requestId = getHostRuntimeStore().beginAgentCancellation(serverId, targetAgentId);
     void cancellation
       .catch((error) => {
         const message = resolveErrorMessage(error);
@@ -1901,18 +1902,10 @@ function ComposerContentImpl({
         }
       })
       .finally(() => {
-        settleAgentCancellation(serverId, targetAgentId, requestId);
+        getHostRuntimeStore().settleAgentCancellation(serverId, targetAgentId, requestId);
       });
     messageInputRef.current?.focus();
-  }, [
-    beginAgentCancellation,
-    client,
-    isAgentRunning,
-    isCancellingAgent,
-    isConnected,
-    serverId,
-    settleAgentCancellation,
-  ]);
+  }, [client, isAgentRunning, isCancellingAgent, isConnected, serverId]);
 
   const focusMessageInputForKeyboardAction = useCallback(() => {
     focusMessageInputWithPlatformStrategy(messageInputRef);
