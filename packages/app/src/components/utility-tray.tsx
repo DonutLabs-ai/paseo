@@ -8,7 +8,7 @@ import {
   View,
   type PressableStateCallbackType,
 } from "react-native";
-import { List, Plus, Square, SquareTerminal, Trash2, X } from "lucide-react-native";
+import { CircleAlert, List, Plus, Square, SquareTerminal, Trash2, X } from "lucide-react-native";
 import {
   useCallback,
   useEffect,
@@ -26,15 +26,24 @@ import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout"
 import { useHostRuntimeClient, useHosts } from "@/runtime/host-runtime";
 import { useUtilityTrayStore, type UtilityTrayTarget } from "@/stores/utility-tray-store";
 import { WindowChromeRegion, WindowChromeSafeArea } from "@/utils/desktop-window";
+import {
+  getUtilityTerminalFailureIds,
+  utilityTerminalNeedsAttention,
+} from "@/utils/utility-terminal-health";
 import type { Theme } from "@/styles/theme";
 
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
+const ThemedCircleAlert = withUnistyles(CircleAlert);
 const ThemedList = withUnistyles(List);
 const ThemedPlus = withUnistyles(Plus);
 const ThemedSquare = withUnistyles(Square);
 const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedX = withUnistyles(X);
 const mutedIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const dangerIconMapping = (theme: Theme) => ({
+  color: theme.colors.statusDanger,
+  fill: theme.colors.surface0,
+});
 const UTILITY_TRAY_PANEL_NATIVE_ID = "utility-tray-panel";
 const UTILITY_TRAY_TRIGGER_NATIVE_ID = "utility-tray-trigger";
 
@@ -94,18 +103,34 @@ function removeUtilityTerminal(
 
 export function UtilityTrayTrigger() {
   const isCompact = useIsCompactFormFactor();
+  const hosts = useHosts();
   const isOpen = useUtilityTrayStore((state) => state.isOpen);
+  const failureIdsByServer = useUtilityTrayStore((state) => state.failureIdsByServer);
   const toggle = useUtilityTrayStore((state) => state.toggle);
+  const failureCount = useMemo(
+    () =>
+      hosts.reduce((count, host) => count + (failureIdsByServer[host.serverId]?.length ?? 0), 0),
+    [failureIdsByServer, hosts],
+  );
   if (isCompact) return null;
+  const label =
+    failureCount === 0 ? "Utility terminals" : `Utility terminals, ${failureCount} need attention`;
   return (
     <ToolbarButton
-      label="Utility terminals"
+      label={label}
       nativeID={UTILITY_TRAY_TRIGGER_NATIVE_ID}
       selected={isOpen}
       testID="utility-tray-trigger"
       onPress={toggle}
     >
-      <ThemedSquareTerminal size={15} uniProps={mutedIconMapping} />
+      <View style={styles.triggerIcon}>
+        <ThemedSquareTerminal size={15} uniProps={mutedIconMapping} />
+        {failureCount > 0 ? (
+          <View style={styles.triggerAlert} testID="utility-tray-alert">
+            <ThemedCircleAlert size={10} strokeWidth={2.4} uniProps={dangerIconMapping} />
+          </View>
+        ) : null}
+      </View>
     </ToolbarButton>
   );
 }
@@ -132,6 +157,7 @@ export function UtilityTrayHost() {
   const target = useUtilityTrayStore((state) => state.target);
   const close = useUtilityTrayStore((state) => state.close);
   const selectTarget = useUtilityTrayStore((state) => state.selectTarget);
+  const setHostFailureIds = useUtilityTrayStore((state) => state.setHostFailureIds);
   const [terminalsByServer, setTerminalsByServer] = useState<Record<string, UtilityTerminalInfo[]>>(
     {},
   );
@@ -194,10 +220,14 @@ export function UtilityTrayHost() {
     };
   }, [close, isOpen]);
 
-  const handleHostUpdate = useCallback((serverId: string, terminals: UtilityTerminalInfo[]) => {
-    setTerminalsByServer((current) => ({ ...current, [serverId]: terminals }));
-    setHostErrors((current) => ({ ...current, [serverId]: null }));
-  }, []);
+  const handleHostUpdate = useCallback(
+    (serverId: string, terminals: UtilityTerminalInfo[]) => {
+      setTerminalsByServer((current) => ({ ...current, [serverId]: terminals }));
+      setHostErrors((current) => ({ ...current, [serverId]: null }));
+      setHostFailureIds(serverId, getUtilityTerminalFailureIds(terminals));
+    },
+    [setHostFailureIds],
+  );
   const handleHostError = useCallback((serverId: string, error: string) => {
     setHostErrors((current) => ({ ...current, [serverId]: error }));
   }, []);
@@ -263,20 +293,20 @@ export function UtilityTrayHost() {
       if (result.error || !result.removed) {
         throw new Error(result.error ?? "Failed to remove utility terminal");
       }
-      setTerminalsByServer((current) => ({
-        ...current,
-        [selectedEntry.serverId]: removeUtilityTerminal(
-          current[selectedEntry.serverId] ?? [],
+      handleHostUpdate(
+        selectedEntry.serverId,
+        removeUtilityTerminal(
+          terminalsByServer[selectedEntry.serverId] ?? [],
           selectedEntry.terminal.id,
         ),
-      }));
+      );
       setShowPicker(true);
     } catch (error) {
       setMutationError(error instanceof Error ? error.message : String(error));
     } finally {
       setIsMutating(false);
     }
-  }, [isMutating, selectedClient, selectedEntry]);
+  }, [handleHostUpdate, isMutating, selectedClient, selectedEntry, terminalsByServer]);
   const handleRemove = useCallback(() => {
     if (!selectedEntry || !selectedClient || isMutating) return;
     Alert.alert(
@@ -295,7 +325,16 @@ export function UtilityTrayHost() {
     );
   }, [handleConfirmedRemove, isMutating, selectedClient, selectedEntry]);
 
-  if (isCompact || !isOpen) return null;
+  if (isCompact) return null;
+
+  const hostSync = hosts.map((host) => (
+    <UtilityTerminalHostSync
+      key={host.serverId}
+      serverId={host.serverId}
+      onUpdate={handleHostUpdate}
+      onError={handleHostError}
+    />
+  ));
 
   const panelFrame = {
     width: Math.min(820, Math.max(460, viewportWidth - 32)),
@@ -304,88 +343,84 @@ export function UtilityTrayHost() {
   const selectedTitle = selectedEntry?.terminal.name ?? "Utility terminals";
 
   return (
-    <View pointerEvents="box-none" style={styles.overlay} testID="utility-tray-overlay">
-      {hosts.map((host) => (
-        <UtilityTerminalHostSync
-          key={host.serverId}
-          serverId={host.serverId}
-          active={isOpen}
-          onUpdate={handleHostUpdate}
-          onError={handleHostError}
-        />
-      ))}
-      <View
-        nativeID={UTILITY_TRAY_PANEL_NATIVE_ID}
-        style={[styles.panel, panelFrame]}
-        testID="utility-tray-panel"
-      >
-        <View style={styles.header}>
-          <ThemedSquareTerminal size={15} uniProps={mutedIconMapping} />
-          <Text style={styles.title} numberOfLines={1}>
-            {showCreate ? "New utility terminal" : selectedTitle}
-          </Text>
-          {!showCreate ? (
-            <ToolbarButton
-              label="New utility terminal"
-              testID="utility-tray-create"
-              onPress={handleShowCreate}
-            >
-              <ThemedPlus size={15} uniProps={mutedIconMapping} />
-            </ToolbarButton>
-          ) : null}
-          {selectedEntry && !showCreate ? (
-            <ToolbarButton
-              label="Utility terminals"
-              selected={showPicker}
-              testID="utility-tray-picker-toggle"
-              onPress={handleTogglePicker}
-            >
-              <ThemedList size={15} uniProps={mutedIconMapping} />
-            </ToolbarButton>
-          ) : null}
-          {selectedEntry && !showPicker && !showCreate ? (
-            <>
-              {selectedEntry.terminal.status === "running" ? (
+    <>
+      {hostSync}
+      {isOpen ? (
+        <View pointerEvents="box-none" style={styles.overlay} testID="utility-tray-overlay">
+          <View
+            nativeID={UTILITY_TRAY_PANEL_NATIVE_ID}
+            style={[styles.panel, panelFrame]}
+            testID="utility-tray-panel"
+          >
+            <View style={styles.header}>
+              <ThemedSquareTerminal size={15} uniProps={mutedIconMapping} />
+              <Text style={styles.title} numberOfLines={1}>
+                {showCreate ? "New utility terminal" : selectedTitle}
+              </Text>
+              {!showCreate ? (
                 <ToolbarButton
-                  label="Stop utility terminal"
-                  testID="utility-tray-stop"
-                  onPress={handleStop}
+                  label="New utility terminal"
+                  testID="utility-tray-create"
+                  onPress={handleShowCreate}
                 >
-                  <ThemedSquare size={14} uniProps={mutedIconMapping} />
+                  <ThemedPlus size={15} uniProps={mutedIconMapping} />
                 </ToolbarButton>
               ) : null}
-              <ToolbarButton
-                label="Remove utility terminal"
-                testID="utility-tray-remove"
-                onPress={handleRemove}
-              >
-                <ThemedTrash2 size={14} uniProps={mutedIconMapping} />
+              {selectedEntry && !showCreate ? (
+                <ToolbarButton
+                  label="Utility terminals"
+                  selected={showPicker}
+                  testID="utility-tray-picker-toggle"
+                  onPress={handleTogglePicker}
+                >
+                  <ThemedList size={15} uniProps={mutedIconMapping} />
+                </ToolbarButton>
+              ) : null}
+              {selectedEntry && !showPicker && !showCreate ? (
+                <>
+                  {selectedEntry.terminal.status === "running" ? (
+                    <ToolbarButton
+                      label="Stop utility terminal"
+                      testID="utility-tray-stop"
+                      onPress={handleStop}
+                    >
+                      <ThemedSquare size={14} uniProps={mutedIconMapping} />
+                    </ToolbarButton>
+                  ) : null}
+                  <ToolbarButton
+                    label="Remove utility terminal"
+                    testID="utility-tray-remove"
+                    onPress={handleRemove}
+                  >
+                    <ThemedTrash2 size={14} uniProps={mutedIconMapping} />
+                  </ToolbarButton>
+                </>
+              ) : null}
+              <ToolbarButton label="Close" testID="utility-tray-close" onPress={close}>
+                <ThemedX size={15} uniProps={mutedIconMapping} />
               </ToolbarButton>
-            </>
-          ) : null}
-          <ToolbarButton label="Close" testID="utility-tray-close" onPress={close}>
-            <ThemedX size={15} uniProps={mutedIconMapping} />
-          </ToolbarButton>
+            </View>
+            <View style={styles.content}>
+              <UtilityTrayContent
+                entries={entries}
+                hostErrors={hostErrors}
+                hosts={hosts}
+                isMutating={isMutating}
+                mutationError={mutationError}
+                selectedEntry={selectedEntry}
+                showCreate={showCreate}
+                showPicker={showPicker}
+                onCancelCreate={handleTogglePicker}
+                onCreate={handleShowCreate}
+                onCreated={handleSelect}
+                onSelect={handleSelect}
+                onStart={handleStart}
+              />
+            </View>
+          </View>
         </View>
-        <View style={styles.content}>
-          <UtilityTrayContent
-            entries={entries}
-            hostErrors={hostErrors}
-            hosts={hosts}
-            isMutating={isMutating}
-            mutationError={mutationError}
-            selectedEntry={selectedEntry}
-            showCreate={showCreate}
-            showPicker={showPicker}
-            onCancelCreate={handleTogglePicker}
-            onCreate={handleShowCreate}
-            onCreated={handleSelect}
-            onSelect={handleSelect}
-            onStart={handleStart}
-          />
-        </View>
-      </View>
-    </View>
+      ) : null}
+    </>
   );
 }
 
@@ -468,18 +503,16 @@ function UtilityTrayContent({
 
 function UtilityTerminalHostSync({
   serverId,
-  active,
   onUpdate,
   onError,
 }: {
   serverId: string;
-  active: boolean;
   onUpdate: (serverId: string, terminals: UtilityTerminalInfo[]) => void;
   onError: (serverId: string, error: string) => void;
 }) {
   const client = useHostRuntimeClient(serverId);
   useEffect(() => {
-    if (!active || !client) return;
+    if (!client) return;
     let cancelled = false;
     const unsubscribe = client.on("utility_terminals.changed", (message) => {
       if (!cancelled) onUpdate(serverId, message.payload.terminals);
@@ -501,7 +534,7 @@ function UtilityTerminalHostSync({
       cancelled = true;
       unsubscribe();
     };
-  }, [active, client, onError, onUpdate, serverId]);
+  }, [client, onError, onUpdate, serverId]);
   return null;
 }
 
@@ -560,14 +593,34 @@ function UtilityTerminalPickerRow({
   onSelect: (entry: HostUtilityTerminal) => void;
 }) {
   const handlePress = useCallback(() => onSelect(entry), [entry, onSelect]);
+  const needsAttention = utilityTerminalNeedsAttention(entry.terminal);
+  const accessibilityLabel = needsAttention
+    ? `${entry.terminal.name}, needs attention`
+    : entry.terminal.name;
   return (
-    <Pressable accessibilityRole="button" onPress={handlePress} style={terminalRowStyle}>
-      <View
-        style={[
-          styles.statusDot,
-          entry.terminal.status === "running" ? styles.statusDotRunning : styles.statusDotStopped,
-        ]}
-      />
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      testID={`utility-terminal-row-${entry.terminal.id}`}
+      onPress={handlePress}
+      style={terminalRowStyle}
+    >
+      <View style={styles.statusSlot}>
+        {needsAttention ? (
+          <View testID={`utility-terminal-alert-${entry.terminal.id}`}>
+            <ThemedCircleAlert size={12} strokeWidth={2.2} uniProps={dangerIconMapping} />
+          </View>
+        ) : (
+          <View
+            style={[
+              styles.statusDot,
+              entry.terminal.status === "running"
+                ? styles.statusDotRunning
+                : styles.statusDotStopped,
+            ]}
+          />
+        )}
+      </View>
       <View style={styles.terminalLabels}>
         <Text style={styles.terminalName} numberOfLines={1}>
           {entry.terminal.name}
@@ -767,6 +820,18 @@ const styles = StyleSheet.create((theme) => ({
   triggerPadding: {
     paddingRight: theme.spacing[3],
   },
+  triggerIcon: {
+    position: "relative",
+    width: 15,
+    height: 15,
+  },
+  triggerAlert: {
+    position: "absolute",
+    right: -5,
+    bottom: -5,
+    width: 10,
+    height: 10,
+  },
   overlay: {
     position: "absolute",
     inset: 0,
@@ -855,6 +920,12 @@ const styles = StyleSheet.create((theme) => ({
     width: 8,
     height: 8,
     borderRadius: theme.borderRadius.full,
+  },
+  statusSlot: {
+    width: 12,
+    height: 12,
+    alignItems: "center",
+    justifyContent: "center",
   },
   statusDotRunning: {
     backgroundColor: theme.colors.statusDotSuccess,

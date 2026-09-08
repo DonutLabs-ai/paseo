@@ -51,4 +51,16 @@ describe("utility tray store", () => {
     await store.persist.rehydrate();
     expect(store.getState().target).toBeNull();
   });
+
+  it("keeps terminal failure state live instead of persisting stale alerts", async () => {
+    const first = createUtilityTrayStore(storage);
+    first.getState().setHostFailureIds("server-1", ["utility-1"]);
+    expect(first.getState().failureIdsByServer).toEqual({
+      "server-1": ["utility-1"],
+    });
+
+    const second = createUtilityTrayStore(storage);
+    await second.persist.rehydrate();
+    expect(second.getState().failureIdsByServer).toEqual({});
+  });
 });
