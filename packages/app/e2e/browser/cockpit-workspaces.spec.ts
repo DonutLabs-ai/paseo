@@ -60,7 +60,7 @@ test("shows the latest agent activity in the sidebar and cockpit cards", async (
   }
 });
 
-test("dims a snoozed workspace in the sidebar until it is woken", async ({ page }) => {
+test("groups and dims a snoozed workspace in the sidebar", async ({ page }) => {
   const workspace = await seedMockAgentWorkspace({
     repoPrefix: "cockpit-sidebar-snooze-",
     title: "Snoozed sidebar workspace",
@@ -81,14 +81,12 @@ test("dims a snoozed workspace in the sidebar until it is woken", async ({ page 
     await expect(sidebarContent).toHaveCSS("opacity", "1");
 
     await snoozeButton.click();
+    await expect(page.getByTestId(`sidebar-workspace-snoozed-${workspaceKey}`)).toHaveCount(0);
+    await page.getByTestId("sidebar-snoozed-toggle").click();
     await expect(
       page.getByTestId(`sidebar-workspace-snoozed-${workspaceKey}`).first(),
     ).toBeVisible();
     await expect(sidebarContent).toHaveCSS("opacity", "0.5");
-
-    await snoozeButton.click();
-    await expect(page.getByTestId(`sidebar-workspace-snoozed-${workspaceKey}`)).toHaveCount(0);
-    await expect(sidebarContent).toHaveCSS("opacity", "1");
   } finally {
     await workspace.cleanup();
   }
