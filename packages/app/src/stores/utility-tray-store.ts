@@ -12,8 +12,10 @@ export interface UtilityTrayTarget {
 interface UtilityTrayState {
   isOpen: boolean;
   target: UtilityTrayTarget | null;
+  failureIdsByServer: Record<string, string[]>;
   close: () => void;
   selectTarget: (target: UtilityTrayTarget) => void;
+  setHostFailureIds: (serverId: string, terminalIds: string[]) => void;
   toggle: () => void;
 }
 
@@ -32,8 +34,16 @@ export function createUtilityTrayStore(storage: StateStorage) {
       (set) => ({
         isOpen: false,
         target: null,
+        failureIdsByServer: {},
         close: () => set({ isOpen: false }),
         selectTarget: (target) => set({ isOpen: true, target }),
+        setHostFailureIds: (serverId, terminalIds) =>
+          set((state) => ({
+            failureIdsByServer: {
+              ...state.failureIdsByServer,
+              [serverId]: terminalIds,
+            },
+          })),
         toggle: () => set((state) => ({ isOpen: !state.isOpen })),
       }),
       {

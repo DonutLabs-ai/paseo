@@ -151,6 +151,50 @@ test("opens a global utility terminal across workspace and cockpit routes", asyn
   }
 });
 
+test("surfaces a failed utility terminal while the tray is closed", async ({ page }) => {
+  const workspace = await seedMockAgentWorkspace({
+    repoPrefix: "utility-tray-failure-",
+    title: "Utility tray failure",
+    initialPrompt: "Verify utility terminal failure visibility",
+  });
+  let utilityTerminalId: string | null = null;
+
+  try {
+    const created = await workspace.client.createUtilityTerminal({
+      name: "Failed watcher",
+      cwd: workspace.cwd,
+      command: process.execPath,
+      args: ["-e", "process.stderr.write('watcher failed\\n'); process.exit(7)"],
+    });
+    if (!created.terminal) {
+      throw new Error(created.error ?? "Failed to create the utility terminal");
+    }
+    utilityTerminalId = created.terminal.id;
+
+    await openAgentRoute(page, workspace);
+    await expect(page.getByTestId("utility-tray-overlay")).toHaveCount(0);
+    await expect(page.getByTestId("utility-tray-alert")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByTestId("utility-tray-trigger").click();
+    const row = page.getByTestId(`utility-terminal-row-${utilityTerminalId}`);
+    await expect(row).toBeVisible();
+    await expect(page.getByTestId(`utility-terminal-alert-${utilityTerminalId}`)).toBeVisible();
+    await row.click();
+    await expect(page.getByText("Exited with code 7", { exact: true })).toBeVisible();
+    await expect(page.getByTestId("utility-tray-start")).toBeVisible();
+  } finally {
+    try {
+      if (utilityTerminalId) {
+        const removed = await workspace.client.removeUtilityTerminal(utilityTerminalId);
+        expect.soft(removed.error).toBeNull();
+        expect.soft(removed.removed).toBe(true);
+      }
+    } finally {
+      await workspace.cleanup();
+    }
+  }
+});
+
 test("dismisses the utility tray after an outside press", async ({ page }) => {
   await gotoAppShell(page);
 
