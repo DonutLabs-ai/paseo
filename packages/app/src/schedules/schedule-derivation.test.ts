@@ -99,7 +99,11 @@ describe("resolveSchedule target line", () => {
     const result = resolve(schedule, {
       agents: [[`host-1:${AGENT_ID}`, { title: "Fix build", provider: "claude" }]],
     });
-    expect(result.target).toEqual({ label: "Fix build", provider: "claude" });
+    expect(result.target).toEqual({
+      label: "Fix build",
+      provider: "claude",
+      sessionMode: "existing-session",
+    });
     expect(result.state).toBe("active");
   });
 
@@ -113,7 +117,11 @@ describe("resolveSchedule target line", () => {
 
   it("labels a gone agent target as unavailable with no glyph", () => {
     const schedule = makeSchedule({ target: { type: "agent", agentId: AGENT_ID } });
-    expect(resolve(schedule).target).toEqual({ label: "Agent unavailable", provider: null });
+    expect(resolve(schedule).target).toEqual({
+      label: "Agent unavailable",
+      provider: null,
+      sessionMode: "existing-session",
+    });
   });
 
   it("names a new-agent cwd by matched project, else the shortened path", () => {
@@ -123,11 +131,16 @@ describe("resolveSchedule target line", () => {
     expect(resolve(matched, { projects: [["host-1:/tmp/project", "My Project"]] }).target).toEqual({
       label: "My Project",
       provider: "codex",
+      sessionMode: "new-session",
     });
 
     const unmatched = makeSchedule({
       target: { type: "new-agent", config: { provider: "codex", cwd: "/Users/alex/work/api" } },
     });
-    expect(resolve(unmatched).target).toEqual({ label: "~/work/api", provider: "codex" });
+    expect(resolve(unmatched).target).toEqual({
+      label: "~/work/api",
+      provider: "codex",
+      sessionMode: "new-session",
+    });
   });
 });

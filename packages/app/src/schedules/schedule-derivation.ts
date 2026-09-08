@@ -18,6 +18,8 @@ export interface ScheduleTargetResolution {
   label: string;
   /** Provider glyph for the row, when known. */
   provider: string | null;
+  /** Whether each run continues one session or creates a new session. */
+  sessionMode: "existing-session" | "new-session";
 }
 
 export interface ResolvedSchedule {
@@ -66,13 +68,18 @@ function resolveTarget(input: ResolveScheduleInput): ScheduleTargetResolution {
   if (schedule.target.type === "agent") {
     const agent = agentsByKey.get(agentKey(serverId, schedule.target.agentId));
     if (agent) {
-      return { label: agent.title?.trim() || "Untitled agent", provider: agent.provider };
+      return {
+        label: agent.title?.trim() || "Untitled agent",
+        provider: agent.provider,
+        sessionMode: "existing-session",
+      };
     }
-    return { label: "Agent unavailable", provider: null };
+    return { label: "Agent unavailable", provider: null, sessionMode: "existing-session" };
   }
   return {
     label: describeScheduleCwd({ serverId, cwd: schedule.target.config.cwd, projectNameByCwd }),
     provider: schedule.target.config.provider,
+    sessionMode: "new-session",
   };
 }
 

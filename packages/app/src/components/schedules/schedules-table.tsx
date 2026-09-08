@@ -4,7 +4,10 @@ import { StyleSheet } from "react-native-unistyles";
 import { ScheduleRow, type ScheduleRowPending } from "@/components/schedules/schedule-row";
 import { useScheduleMutations } from "@/hooks/use-schedule-mutations";
 import type { AggregatedSchedule } from "@/hooks/use-schedules";
-import type { ScheduleDerivedState } from "@/schedules/schedule-derivation";
+import type {
+  ScheduleDerivedState,
+  ScheduleTargetResolution,
+} from "@/schedules/schedule-derivation";
 import { settingsStyles } from "@/styles/settings";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { resolveScheduleTitle, scheduleProductName } from "@/utils/schedule-format";
@@ -18,6 +21,7 @@ export interface ScheduleRowView {
   schedule: AggregatedSchedule;
   targetLabel: string;
   provider: string | null;
+  sessionMode: ScheduleTargetResolution["sessionMode"];
   state: ScheduleDerivedState;
   serverName: string;
   /** True when only one host exists, so the host name is redundant in rows. */
@@ -182,6 +186,7 @@ function SchedulesTableRow({
       schedule={schedule}
       targetLabel={row.targetLabel}
       provider={row.provider}
+      sessionMode={row.sessionMode}
       state={row.state}
       serverName={row.serverName}
       singleHost={row.singleHost}

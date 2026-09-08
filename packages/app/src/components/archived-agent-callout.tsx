@@ -9,13 +9,19 @@ import { KeyboardTranslateView } from "@/components/keyboard-translate-view";
 import { Button } from "@/components/ui/button";
 import type { Theme } from "@/styles/theme";
 import { toErrorMessage } from "@/utils/error-messages";
+import { useCockpitSnoozeStore } from "@/stores/cockpit-snooze-store";
 
 interface ArchivedAgentCalloutProps {
   serverId: string;
   agentId: string;
+  workspaceId: string;
 }
 
-export function ArchivedAgentCallout({ serverId, agentId }: ArchivedAgentCalloutProps) {
+export function ArchivedAgentCallout({
+  serverId,
+  agentId,
+  workspaceId,
+}: ArchivedAgentCalloutProps) {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const client = useHostRuntimeClient(serverId);
@@ -34,11 +40,12 @@ export function ArchivedAgentCallout({ serverId, agentId }: ArchivedAgentCallout
     setUnarchiveError(null);
     try {
       await client.refreshAgent(agentId);
+      useCockpitSnoozeStore.getState().setSnoozed(`${serverId}:${workspaceId}`, false);
     } catch (error) {
       setUnarchiveError(toErrorMessage(error));
       setIsUnarchiving(false);
     }
-  }, [client, isConnected, isUnarchiving, agentId]);
+  }, [client, isConnected, isUnarchiving, agentId, serverId, workspaceId]);
 
   return (
     <KeyboardTranslateView style={containerStyle}>

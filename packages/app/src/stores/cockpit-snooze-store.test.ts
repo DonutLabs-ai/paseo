@@ -91,6 +91,34 @@ describe("cockpit snooze store", () => {
     expect(shouldWakeForScheduleRun("invalid", "2026-09-03T09:00:01.000Z")).toBe(false);
   });
 
+  it("reconciles stale snooze state only for the authoritative server", async () => {
+    const store = createCockpitSnoozeStore(storage);
+    await store.persist.rehydrate();
+    store.setState({
+      snoozedAtByWorkspace: {
+        "host-a:kept": "2026-09-03T09:00:00.000Z",
+        "host-a:removed": "2026-09-03T09:00:00.000Z",
+        "host-b:offline": "2026-09-03T09:00:00.000Z",
+      },
+      latestScheduleRunStartedAtByWorkspace: {
+        "host-a:kept": "2026-09-03T08:00:00.000Z",
+        "host-a:removed": "2026-09-03T08:00:00.000Z",
+        "host-b:offline": "2026-09-03T08:00:00.000Z",
+      },
+    });
+
+    store.getState().reconcileServerWorkspaces("host-a", ["kept"]);
+
+    expect(store.getState().snoozedAtByWorkspace).toEqual({
+      "host-a:kept": "2026-09-03T09:00:00.000Z",
+      "host-b:offline": "2026-09-03T09:00:00.000Z",
+    });
+    expect(store.getState().latestScheduleRunStartedAtByWorkspace).toEqual({
+      "host-a:kept": "2026-09-03T08:00:00.000Z",
+      "host-b:offline": "2026-09-03T08:00:00.000Z",
+    });
+  });
+
   it("does not restore stale snooze state when the agent directory loaded first", async () => {
     const persisted = createCockpitSnoozeStore(storage);
     await persisted.persist.rehydrate();

@@ -46,7 +46,7 @@ type FormState =
   | { mode: "edit"; serverId: string; schedule: ScheduleSummary };
 
 const STATUS_FILTER_OPTIONS: { value: ScheduleBucket; label: string; testID: string }[] = [
-  { value: "runnable", label: "Active", testID: "schedules-filter-active" },
+  { value: "runnable", label: "Open", testID: "schedules-filter-active" },
   { value: "ended", label: "Ended", testID: "schedules-filter-ended" },
 ];
 
@@ -154,6 +154,7 @@ function SchedulesScreenContent(): ReactElement {
         schedule,
         targetLabel: resolved.target.label,
         provider: resolved.target.provider,
+        sessionMode: resolved.target.sessionMode,
         state: resolved.state,
         serverName: schedule.serverName,
         singleHost,
@@ -319,7 +320,7 @@ function SchedulesEmptyState({
     <View style={styles.emptyState} testID={testID}>
       <CalendarClock size={styles.emptyIcon.width} color={styles.emptyIcon.color} />
       <View style={styles.emptyTextStack}>
-        <Text style={styles.emptyTitle}>No active schedules</Text>
+        <Text style={styles.emptyTitle}>No open schedules</Text>
         <Text style={styles.emptyDescription}>Schedules run agents on a cadence.</Text>
         <ExternalLink href="https://paseo.sh/docs/schedules" label="See docs" />
       </View>

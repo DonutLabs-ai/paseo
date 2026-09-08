@@ -1340,6 +1340,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
         isPaneFocused={isPaneFocused}
         isArchivingCurrentAgent={isArchivingCurrentAgent}
         archivedAt={agentState.archivedAt}
+        workspaceId={workspaceId}
         cwd={cwd}
         isSubmitLoading={false}
         agentInputDraft={agentInputDraft}
@@ -1556,6 +1557,7 @@ const AgentComposerSection = memo(function AgentComposerSection({
   isPaneFocused,
   isArchivingCurrentAgent,
   archivedAt,
+  workspaceId,
   cwd,
   isSubmitLoading,
   agentInputDraft,
@@ -1569,6 +1571,7 @@ const AgentComposerSection = memo(function AgentComposerSection({
   isPaneFocused: boolean;
   isArchivingCurrentAgent: boolean;
   archivedAt: Date | null;
+  workspaceId: string;
   cwd: string;
   isSubmitLoading: boolean;
   agentInputDraft: AgentInputDraft;
@@ -1581,7 +1584,7 @@ const AgentComposerSection = memo(function AgentComposerSection({
     return null;
   }
   if (archivedAt) {
-    return <ArchivedAgentCallout serverId={serverId} agentId={agentId} />;
+    return <ArchivedAgentCallout serverId={serverId} agentId={agentId} workspaceId={workspaceId} />;
   }
   if (isArchivingCurrentAgent) {
     return null;

@@ -23,7 +23,10 @@ import { isNative } from "@/constants/platform";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { settingsStyles } from "@/styles/settings";
 import type { Theme } from "@/styles/theme";
-import type { ScheduleDerivedState } from "@/schedules/schedule-derivation";
+import type {
+  ScheduleDerivedState,
+  ScheduleTargetResolution,
+} from "@/schedules/schedule-derivation";
 import {
   formatCadence,
   formatNextRun,
@@ -76,6 +79,8 @@ interface ScheduleRowProps extends ScheduleRowActions {
   targetLabel: string;
   /** Provider glyph, resolved from the schedule config or the target agent. */
   provider: string | null;
+  /** Whether each run continues the target or creates a separate session. */
+  sessionMode: ScheduleTargetResolution["sessionMode"];
   /** Client-derived state — the single source for the badge and next-run copy. */
   state: ScheduleDerivedState;
   /** Host name, rendered when the list spans more than one host. */
@@ -160,6 +165,7 @@ export function ScheduleRow({
   schedule,
   targetLabel,
   provider,
+  sessionMode,
   state,
   serverName,
   singleHost,
@@ -216,7 +222,7 @@ export function ScheduleRow({
               {title}
             </Text>
             <Text style={styles.target} numberOfLines={1}>
-              {targetLabel}
+              {`${sessionMode === "existing-session" ? "Continues session" : "Creates new session"} · ${targetLabel}`}
             </Text>
             <Text style={settingsStyles.rowHint} numberOfLines={1}>
               {meta}

@@ -1,4 +1,19 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+
+vi.mock("@react-native-async-storage/async-storage", () => {
+  const values = new Map<string, string>();
+  return {
+    default: {
+      getItem: async (key: string) => values.get(key) ?? null,
+      setItem: async (key: string, value: string) => {
+        values.set(key, value);
+      },
+      removeItem: async (key: string) => {
+        values.delete(key);
+      },
+    },
+  };
+});
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { WorkspaceDescriptorPayload } from "@getpaseo/protocol/messages";
 import {
@@ -11,6 +26,7 @@ import {
   markWorkspaceArchivePending,
 } from "@/contexts/session-workspace-upserts";
 import { WorkspaceDirectoryReplica } from "./workspace-replica";
+import { useCockpitSnoozeStore } from "@/stores/cockpit-snooze-store";
 
 function workspace(id: string, projectId = "project"): WorkspaceDescriptorPayload {
   return {
@@ -229,4 +245,66 @@ it("does not restore a targeted cached workspace while its archive is pending", 
     clearWorkspaceArchivePending({ serverId, workspaceId });
     store.clearSession(serverId);
   }
+});
+
+it("clears removed and orphaned snooze state from an authoritative workspace snapshot", () => {
+  const serverId = "workspace-snooze-reconciliation";
+  const otherServerId = "offline-workspace-host";
+  const store = useSessionStore.getState();
+  store.initializeSession(serverId, null as unknown as DaemonClient);
+  const replica = new WorkspaceDirectoryReplica(serverId);
+  useCockpitSnoozeStore.setState({
+    snoozedAtByWorkspace: {
+      [`${serverId}:kept`]: "2026-09-03T09:00:00.000Z",
+      [`${serverId}:orphaned`]: "2026-09-03T09:00:00.000Z",
+      [`${otherServerId}:unknown`]: "2026-09-03T09:00:00.000Z",
+    },
+  });
+
+  replica.commitSnapshot(
+    {
+      workspaces: new Map([["kept", normalizeWorkspaceDescriptor(workspace("kept"))]]),
+      projects: new Map(),
+    },
+    [],
+  );
+
+  expect(useCockpitSnoozeStore.getState().snoozedAtByWorkspace).toEqual({
+    [`${serverId}:kept`]: "2026-09-03T09:00:00.000Z",
+    [`${otherServerId}:unknown`]: "2026-09-03T09:00:00.000Z",
+  });
+  store.clearSession(serverId);
+});
+
+it("clears snooze state immediately when workspace and project removals arrive", () => {
+  const serverId = "workspace-snooze-removal";
+  const workspaceId = "removed";
+  const workspaceKey = `${serverId}:${workspaceId}`;
+  const projectWorkspaceId = "removed-with-project";
+  const projectWorkspaceKey = `${serverId}:${projectWorkspaceId}`;
+  const store = useSessionStore.getState();
+  store.initializeSession(serverId, null as unknown as DaemonClient);
+  store.setWorkspaces(
+    serverId,
+    new Map([
+      [workspaceId, normalizeWorkspaceDescriptor(workspace(workspaceId))],
+      [
+        projectWorkspaceId,
+        normalizeWorkspaceDescriptor(workspace(projectWorkspaceId, "removed-project")),
+      ],
+    ]),
+  );
+  useCockpitSnoozeStore.setState({
+    snoozedAtByWorkspace: {
+      [workspaceKey]: "2026-09-03T09:00:00.000Z",
+      [projectWorkspaceKey]: "2026-09-03T09:00:00.000Z",
+    },
+  });
+
+  const replica = new WorkspaceDirectoryReplica(serverId);
+  replica.applyDelta({ kind: "remove", id: workspaceId });
+  replica.applyDelta({ kind: "remove", projectId: "removed-project" });
+
+  expect(useCockpitSnoozeStore.getState().snoozedAtByWorkspace).toEqual({});
+  store.clearSession(serverId);
 });

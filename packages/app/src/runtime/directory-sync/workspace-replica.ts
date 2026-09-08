@@ -16,6 +16,7 @@ import {
   shouldSuppressWorkspaceForLocalArchive,
 } from "@/contexts/session-workspace-upserts";
 import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
+import { useCockpitSnoozeStore } from "@/stores/cockpit-snooze-store";
 
 export type WorkspaceDirectoryDelta =
   | Extract<SessionOutboundMessage, { type: "workspace_update" | "project.update" }>["payload"]
@@ -80,8 +81,12 @@ export class WorkspaceDirectoryReplica {
   constructor(private readonly serverId: string) {}
 
   applyDelta(delta: WorkspaceDirectoryDelta): void {
-    const state = this.reconcile(this.read(), [delta]);
-    this.commit(state, delta.kind === "remove" && "id" in delta ? [delta.id] : []);
+    const previous = this.read();
+    const state = this.reconcile(previous, [delta]);
+    const removedWorkspaceIds = Array.from(previous.workspaces.keys()).filter(
+      (workspaceId) => !state.workspaces.has(workspaceId),
+    );
+    this.commit(state, removedWorkspaceIds);
   }
 
   commitCached(input: {
@@ -110,7 +115,11 @@ export class WorkspaceDirectoryReplica {
     const removedWorkspaceIds = deltas.flatMap((delta) =>
       delta.kind === "remove" && "id" in delta ? [delta.id] : [],
     );
-    this.commit(this.reconcile(snapshot, deltas), removedWorkspaceIds);
+    const reconciled = this.reconcile(snapshot, deltas);
+    this.commit(reconciled, removedWorkspaceIds);
+    useCockpitSnoozeStore
+      .getState()
+      .reconcileServerWorkspaces(this.serverId, Array.from(reconciled.workspaces.keys()));
     useSessionStore.getState().setHasHydratedWorkspaces(this.serverId, true);
   }
 
@@ -170,6 +179,7 @@ export class WorkspaceDirectoryReplica {
     for (const workspaceId of removedWorkspaceIds) {
       clearWorkspaceArchivePending({ serverId: this.serverId, workspaceId });
       useWorkspaceSetupStore.getState().removeWorkspace({ serverId: this.serverId, workspaceId });
+      useCockpitSnoozeStore.getState().forgetWorkspace(`${this.serverId}:${workspaceId}`);
     }
   }
 }

@@ -9,6 +9,8 @@ interface CockpitSnoozeState {
   snoozedAtByWorkspace: Record<string, string>;
   latestScheduleRunStartedAtByWorkspace: Record<string, string>;
   setSnoozed: (workspaceKey: string, snoozed: boolean) => void;
+  forgetWorkspace: (workspaceKey: string) => void;
+  reconcileServerWorkspaces: (serverId: string, workspaceIds: readonly string[]) => void;
   wakeForAttention: (workspaceKey: string, reason: AgentAttentionReason) => void;
   wakeForScheduleRun: (workspaceKey: string, scheduleRunStartedAt: string) => void;
 }
@@ -48,6 +50,23 @@ function withoutWorkspace(
 ): Record<string, string> {
   return Object.fromEntries(
     Object.entries(snoozedAtByWorkspace).filter(([key]) => key !== workspaceKey),
+  );
+}
+
+function withoutServerWorkspaceOrphans(
+  valuesByWorkspace: Readonly<Record<string, string>>,
+  serverId: string,
+  workspaceIds: readonly string[],
+): Record<string, string> {
+  const serverPrefix = `${serverId}:`;
+  const authoritativeKeys = new Set(
+    workspaceIds.map((workspaceId) => `${serverPrefix}${workspaceId}`),
+  );
+  return Object.fromEntries(
+    Object.entries(valuesByWorkspace).filter(
+      ([workspaceKey]) =>
+        !workspaceKey.startsWith(serverPrefix) || authoritativeKeys.has(workspaceKey),
+    ),
   );
 }
 
@@ -95,6 +114,44 @@ export function createCockpitSnoozeStore(storage: StateStorage) {
             return {
               snoozedAtByWorkspace: withoutWorkspace(state.snoozedAtByWorkspace, workspaceKey),
             };
+          }),
+        forgetWorkspace: (workspaceKey) =>
+          set((state) => {
+            const isSnoozed = Boolean(state.snoozedAtByWorkspace[workspaceKey]);
+            const hasScheduleRun = Boolean(
+              state.latestScheduleRunStartedAtByWorkspace[workspaceKey],
+            );
+            if (!isSnoozed && !hasScheduleRun) return state;
+            return {
+              snoozedAtByWorkspace: isSnoozed
+                ? withoutWorkspace(state.snoozedAtByWorkspace, workspaceKey)
+                : state.snoozedAtByWorkspace,
+              latestScheduleRunStartedAtByWorkspace: hasScheduleRun
+                ? withoutWorkspace(state.latestScheduleRunStartedAtByWorkspace, workspaceKey)
+                : state.latestScheduleRunStartedAtByWorkspace,
+            };
+          }),
+        reconcileServerWorkspaces: (serverId, workspaceIds) =>
+          set((state) => {
+            const snoozedAtByWorkspace = withoutServerWorkspaceOrphans(
+              state.snoozedAtByWorkspace,
+              serverId,
+              workspaceIds,
+            );
+            const latestScheduleRunStartedAtByWorkspace = withoutServerWorkspaceOrphans(
+              state.latestScheduleRunStartedAtByWorkspace,
+              serverId,
+              workspaceIds,
+            );
+            if (
+              Object.keys(snoozedAtByWorkspace).length ===
+                Object.keys(state.snoozedAtByWorkspace).length &&
+              Object.keys(latestScheduleRunStartedAtByWorkspace).length ===
+                Object.keys(state.latestScheduleRunStartedAtByWorkspace).length
+            ) {
+              return state;
+            }
+            return { snoozedAtByWorkspace, latestScheduleRunStartedAtByWorkspace };
           }),
         wakeForAttention: (workspaceKey, reason) =>
           set((state) => {
