@@ -1071,6 +1071,13 @@ export const ru: TranslationResources = {
       moveDown: "Переместить карточку вниз",
       snooze: "Отложить",
       wake: "Вернуть",
+      continueUsageLimited: "Продолжить сессии с исчерпанным лимитом ({{count}})",
+    },
+    notifications: {
+      usageLimitRecoverySuccess:
+        "Команда продолжения отправлена в {{count}} сессий с исчерпанным лимитом.",
+      usageLimitRecoveryPartial:
+        "Отправлено: {{sent}}; пропущено: {{skipped}}; ошибок: {{failed}}.",
     },
     status: {
       needsInput: "Требуется ввод",

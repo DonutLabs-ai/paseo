@@ -20,6 +20,8 @@ import {
 
 const PROMPT = "Build the cockpit workspace overview";
 const REPLY = "Cockpit summary Implemented workspace cards and live progress summaries.";
+const USAGE_LIMIT_ERROR =
+  "[System Error] You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 16th, 2026 3:58 PM.";
 
 test("shows the latest agent activity in the sidebar and cockpit cards", async ({ page }) => {
   const workspace = await seedMockAgentWorkspace({
@@ -57,6 +59,60 @@ test("shows the latest agent activity in the sidebar and cockpit cards", async (
     });
   } finally {
     await workspace.cleanup();
+  }
+});
+
+test("continues every session whose last message is a Codex usage-limit error", async ({
+  page,
+}) => {
+  const first = await seedMockAgentWorkspace({
+    repoPrefix: "cockpit-usage-limit-first-",
+    title: "First usage-limited workspace",
+    initialPrompt: "Run the first task",
+    featureValues: {
+      mockStreamingAssistantResponse: USAGE_LIMIT_ERROR,
+      mockStreamingAssistantIntervalMs: 250,
+    },
+  });
+  const second = await seedMockAgentWorkspace({
+    repoPrefix: "cockpit-usage-limit-second-",
+    title: "Second usage-limited workspace",
+    initialPrompt: "Run the second task",
+    featureValues: {
+      mockStreamingAssistantResponse: USAGE_LIMIT_ERROR,
+      mockStreamingAssistantIntervalMs: 250,
+    },
+  });
+
+  try {
+    await Promise.all([
+      first.client.waitForFinish(first.agentId, 30_000),
+      second.client.waitForFinish(second.agentId, 30_000),
+    ]);
+    await openAgentRoute(page, first);
+    await page.getByTestId("cockpit-mode-toggle").click();
+
+    const button = page.getByTestId("cockpit-continue-usage-limited");
+    await expect(button).toBeEnabled({ timeout: 30_000 });
+    await expect(button).toHaveAccessibleName("Continue usage-limited sessions (2)");
+
+    const firstRunning = first.client.waitForAgentUpsert(
+      first.agentId,
+      (snapshot) => snapshot.status === "running",
+      15_000,
+    );
+    const secondRunning = second.client.waitForAgentUpsert(
+      second.agentId,
+      (snapshot) => snapshot.status === "running",
+      15_000,
+    );
+    await button.click();
+
+    await Promise.all([firstRunning, secondRunning]);
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveAccessibleName("Continue usage-limited sessions (0)");
+  } finally {
+    await Promise.all([first.cleanup(), second.cleanup()]);
   }
 });
 

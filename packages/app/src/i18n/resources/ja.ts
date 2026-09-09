@@ -1068,6 +1068,11 @@ export const ja: TranslationResources = {
       moveDown: "カードを下に移動",
       snooze: "スヌーズ",
       wake: "再表示",
+      continueUsageLimited: "使用上限に達したセッションを続行（{{count}}）",
+    },
+    notifications: {
+      usageLimitRecoverySuccess: "使用上限に達した {{count}} 件のセッションに続行を送信しました。",
+      usageLimitRecoveryPartial: "送信: {{sent}}、スキップ: {{skipped}}、失敗: {{failed}}。",
     },
     status: {
       needsInput: "入力待ち",

@@ -1081,6 +1081,11 @@ export const ptBR: TranslationResources = {
       moveDown: "Mover cartão para baixo",
       snooze: "Adiar",
       wake: "Reativar",
+      continueUsageLimited: "Continuar sessões com limite de uso ({{count}})",
+    },
+    notifications: {
+      usageLimitRecoverySuccess: "Continuar foi enviado para {{count}} sessões com limite de uso.",
+      usageLimitRecoveryPartial: "Enviadas: {{sent}}; ignoradas: {{skipped}}; falhas: {{failed}}.",
     },
     status: {
       needsInput: "Precisa de atenção",

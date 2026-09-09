@@ -30,6 +30,12 @@ interface PreviewMessage {
   timestamp: Date;
 }
 
+export interface WorkspaceConversationMessage {
+  kind: "prompt" | "reply";
+  text: string;
+  timestamp: Date;
+}
+
 function markdownToPlainText(value: string): string {
   const tokens = previewMarkdownParser.parse(value.replace(INTERNAL_CITATION_BLOCK, ""), {});
   const blocks: string[] = [];
@@ -143,6 +149,25 @@ function selectLatestMessage(input: {
     return headMessage;
   }
   return tailMessage;
+}
+
+/**
+ * Returns the last user/assistant conversation message across the authoritative tail and live head.
+ * This is deliberately distinct from `activityPreview`: completed workspaces keep showing their
+ * latest reply even when a newer user prompt exists, while recovery actions must never act on a
+ * stale reply after the user has already sent another prompt.
+ */
+export function selectLatestWorkspaceConversationMessage(input: {
+  tail: readonly StreamItem[];
+  head: readonly StreamItem[];
+}): WorkspaceConversationMessage | null {
+  const prompt = selectLatestMessage({ ...input, kind: "user_message" });
+  const reply = selectLatestMessage({ ...input, kind: "assistant_message" });
+  if (prompt === null && reply === null) return null;
+  if (reply === null || (prompt !== null && prompt.timestamp > reply.timestamp)) {
+    return prompt ? { kind: "prompt", text: prompt.text, timestamp: prompt.timestamp } : null;
+  }
+  return { kind: "reply", text: reply.text, timestamp: reply.timestamp };
 }
 
 /**

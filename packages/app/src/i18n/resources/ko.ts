@@ -1063,6 +1063,11 @@ export const ko: TranslationResources = {
       moveDown: "카드를 아래로 이동",
       snooze: "잠시 미루기",
       wake: "다시 보기",
+      continueUsageLimited: "사용량 제한 세션 계속하기 ({{count}})",
+    },
+    notifications: {
+      usageLimitRecoverySuccess: "사용량 제한 세션 {{count}}개에 계속하기를 보냈습니다.",
+      usageLimitRecoveryPartial: "전송 {{sent}}개, 건너뜀 {{skipped}}개, 실패 {{failed}}개.",
     },
     status: {
       needsInput: "입력 필요",

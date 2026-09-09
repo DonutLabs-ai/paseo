@@ -1065,6 +1065,11 @@ export const en = {
       moveDown: "Move card down",
       snooze: "Snooze",
       wake: "Wake",
+      continueUsageLimited: "Continue usage-limited sessions ({{count}})",
+    },
+    notifications: {
+      usageLimitRecoverySuccess: "Continue sent to {{count}} usage-limited sessions.",
+      usageLimitRecoveryPartial: "Sent {{sent}}; skipped {{skipped}}; failed {{failed}}.",
     },
     status: {
       needsInput: "Needs input",

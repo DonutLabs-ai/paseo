@@ -1090,6 +1090,13 @@ export const fr: TranslationResources = {
       moveDown: "Déplacer la carte vers le bas",
       snooze: "Mettre en veille",
       wake: "Réactiver",
+      continueUsageLimited: "Continuer les sessions limitées par le quota ({{count}})",
+    },
+    notifications: {
+      usageLimitRecoverySuccess:
+        "Continuer a été envoyé à {{count}} sessions limitées par le quota.",
+      usageLimitRecoveryPartial:
+        "Envoyées : {{sent}} ; ignorées : {{skipped}} ; échouées : {{failed}}.",
     },
     status: {
       needsInput: "Entrée requise",
