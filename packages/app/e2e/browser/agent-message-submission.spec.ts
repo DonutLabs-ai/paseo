@@ -37,7 +37,7 @@ import { installDaemonWebSocketGate } from "../support/helpers/daemon-websocket-
 import { gotoAppShell, openSettings, selectModel } from "../support/helpers/app";
 import { observeTimelineSubscriptions } from "../support/helpers/timeline-delivery";
 import {
-  expectResumeOverflowFallsBackToOneTail,
+  expectOneResumeCheckWithoutTail,
   rememberTimelineRequestCounts,
 } from "../support/helpers/timeline-resume";
 import {
@@ -484,7 +484,7 @@ async function expectHiddenStreamingSubmissionOrderAfterWorkspaceEviction(
     await expect(promptRow).toBeVisible();
     await expect(response).toBeVisible();
     await expectRenderedBefore(promptRow, response);
-    expectResumeOverflowFallsBackToOneTail(gate, requestsBeforeReturn);
+    expectOneResumeCheckWithoutTail(gate, requestsBeforeReturn);
   } finally {
     gate.setAgentStreamSuppressed(false);
     gate.restore();
