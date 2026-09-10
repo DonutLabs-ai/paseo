@@ -10,7 +10,7 @@ interface MountedBadge {
 
 const mountedBadges: MountedBadge[] = [];
 
-function mountBadge(variant: "success" | "warning" | "error" | "muted"): HTMLElement {
+function mountBadge(variant: "success" | "warning" | "error" | "info" | "muted"): HTMLElement {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe("StatusBadge", () => {
-  it.each(["success", "warning", "error", "muted"] as const)(
+  it.each(["success", "warning", "error", "info", "muted"] as const)(
     "uses the semantic badge shell for the %s variant",
     (variant) => {
       const badge = mountBadge(variant);
@@ -48,6 +48,7 @@ describe("StatusBadge", () => {
     ["success", "rgb(21, 128, 61)"],
     ["warning", "rgb(217, 119, 6)"],
     ["error", "rgb(185, 28, 28)"],
+    ["info", "rgb(38, 138, 224)"],
     ["muted", "rgb(102, 102, 102)"],
   ] as const)("uses the semantic %s signal for its text", (variant, expectedColor) => {
     const badge = mountBadge(variant);
