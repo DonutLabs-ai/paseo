@@ -112,6 +112,8 @@ The harness launches the unpacked packaged app with isolated user data and daemo
 - the `paseo://app/` renderer mounts into `#root`;
 - the sandboxed preload exposes the desktop bridge;
 - the renderer starts a fresh desktop-managed daemon through the normal startup bootstrap;
+- the daemon survives a normal GUI exit without retaining GUI profile files, and the same profile
+  can relaunch against that same daemon process;
 - the bundled CLI can query that daemon and run a terminal command.
 
 Pull-request CI runs the Linux x64 smoke under Xvfb when the cumulative PR diff changes `packages/desktop/**`. The desktop release matrix runs the harness against each host-native packaged app before publishing. All smoke jobs upload renderer, desktop, and daemon diagnostics on failure.

@@ -49,6 +49,25 @@ const DAEMON_LOG_FILENAME = "daemon.log";
 const STARTUP_POLL_INTERVAL_MS = 200;
 const STARTUP_POLL_MAX_ATTEMPTS = 150;
 const DETACHED_STARTUP_GRACE_MS = 1200;
+const BASH_CLOSE_INHERITED_FILE_DESCRIPTORS = `
+if [ -d /proc/self/fd ]; then
+  fd_root=/proc/self/fd
+elif [ -d /dev/fd ]; then
+  fd_root=/dev/fd
+else
+  exit 78
+fi
+for fd_path in "$fd_root"/*; do
+  fd=\${fd_path##*/}
+  case "$fd" in
+    0|1|2|*[!0-9]*) continue ;;
+  esac
+  if ! eval "exec \${fd}>&-"; then
+    exit 78
+  fi
+done
+exec "$@"
+`.trim();
 
 type DesktopDaemonState = "starting" | "running" | "stopped" | "errored";
 const DESKTOP_DAEMON_STOP_REASON_VALUES = [
@@ -328,6 +347,27 @@ function buildStartupFailureError(result: {
   return new Error(parts.join("\n\n"));
 }
 
+export function isolateDetachedDaemonInvocation(
+  command: string,
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } {
+  if (platform === "win32") {
+    return { command, args: [...args] };
+  }
+
+  return {
+    command: "bash",
+    args: [
+      "-c",
+      BASH_CLOSE_INHERITED_FILE_DESCRIPTORS,
+      "paseo-daemon-fd-boundary",
+      command,
+      ...args,
+    ],
+  };
+}
+
 async function pollForRunningDaemon(): Promise<DesktopDaemonStatus> {
   async function poll(attempt: number): Promise<DesktopDaemonStatus> {
     if (attempt >= STARTUP_POLL_MAX_ATTEMPTS) return resolveDesktopDaemonStatus();
@@ -381,6 +421,7 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
     args: reclaimStalePidLock ? ["--reclaim-stale-pid-lock"] : [],
     baseEnv: process.env,
   });
+  const isolatedInvocation = isolateDetachedDaemonInvocation(invocation.command, invocation.args);
 
   logDesktopDaemonLifecycle("starting detached daemon", {
     appIsPackaged: app.isPackaged,
@@ -388,6 +429,8 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
     daemonRunnerExecArgv: daemonRunner.execArgv,
     command: invocation.command,
     args: invocation.args,
+    spawnCommand: isolatedInvocation.command,
+    spawnArgs: isolatedInvocation.args,
     electronRunAsNode: invocation.env.ELECTRON_RUN_AS_NODE ?? null,
     parentExecPath: process.execPath,
     parentElectronRunAsNode: process.env.ELECTRON_RUN_AS_NODE ?? null,
@@ -397,7 +440,7 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
     arch: process.arch,
   });
 
-  const child: ChildProcess = spawnProcess(invocation.command, invocation.args, {
+  const child: ChildProcess = spawnProcess(isolatedInvocation.command, isolatedInvocation.args, {
     detached: true,
     envMode: "internal",
     env: invocation.env,
