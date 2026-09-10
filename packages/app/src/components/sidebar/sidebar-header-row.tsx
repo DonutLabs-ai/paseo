@@ -6,10 +6,13 @@ import { HEADER_INNER_HEIGHT, HEADER_INNER_HEIGHT_MOBILE } from "@/constants/lay
 import { ICON_SIZE } from "@/styles/theme";
 import type { Theme } from "@/styles/theme";
 import { Shortcut } from "@/components/ui/shortcut";
+import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const loadingSpinnerColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 
 type SidebarHeaderRowVariant = "header" | "compact";
 
@@ -21,6 +24,8 @@ interface SidebarHeaderRowProps {
   testID?: string;
   nativeID?: string;
   accessibilityLabel?: string;
+  disabled?: boolean;
+  loading?: boolean;
   /**
    * "header" (default): a sidebar-height row with its own bottom separator —
    * the lone header at the top of a sidebar (settings "Back to workspace").
@@ -39,6 +44,8 @@ export function SidebarHeaderRow({
   testID,
   nativeID,
   accessibilityLabel,
+  disabled = false,
+  loading = false,
   variant = "header",
   shortcutKeys = null,
 }: SidebarHeaderRowProps) {
@@ -48,14 +55,16 @@ export function SidebarHeaderRow({
     () => (variant === "compact" ? styles.containerCompact : styles.container),
     [variant],
   );
+  const accessibilityState = useMemo(() => ({ disabled, busy: loading }), [disabled, loading]);
 
   const buttonStyle = useCallback(
     ({ hovered }: PressableStateCallbackType & { hovered?: boolean }) => [
       styles.button,
       variant === "compact" && styles.buttonCompact,
       (Boolean(hovered) || isActive) && styles.buttonHovered,
+      disabled && styles.buttonDisabled,
     ],
-    [isActive, variant],
+    [disabled, isActive, variant],
   );
 
   const renderChildren = useCallback(
@@ -63,10 +72,14 @@ export function SidebarHeaderRow({
       const isHighlighted = Boolean(state.hovered) || isActive;
       return (
         <>
-          <ThemedIcon
-            size={ICON_SIZE.sm}
-            uniProps={isHighlighted ? foregroundColorMapping : foregroundMutedColorMapping}
-          />
+          {loading ? (
+            <ThemedLoadingSpinner size={ICON_SIZE.sm} uniProps={loadingSpinnerColorMapping} />
+          ) : (
+            <ThemedIcon
+              size={ICON_SIZE.sm}
+              uniProps={isHighlighted ? foregroundColorMapping : foregroundMutedColorMapping}
+            />
+          )}
           <SidebarHeaderRowLabel label={label} isHighlighted={isHighlighted} />
           {shortcutKeys && Boolean(state.hovered) ? (
             <Shortcut chord={shortcutKeys} style={styles.shortcut} />
@@ -74,7 +87,7 @@ export function SidebarHeaderRow({
         </>
       );
     },
-    [ThemedIcon, isActive, label, shortcutKeys],
+    [ThemedIcon, isActive, label, loading, shortcutKeys],
   );
 
   return (
@@ -86,6 +99,8 @@ export function SidebarHeaderRow({
         accessible
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityState={accessibilityState}
+        disabled={disabled}
         style={buttonStyle}
       >
         {renderChildren}
@@ -105,7 +120,11 @@ function SidebarHeaderRowLabel({
     () => [styles.label, isHighlighted && styles.labelHighlighted],
     [isHighlighted],
   );
-  return <Text style={labelStyle}>{label}</Text>;
+  return (
+    <Text style={labelStyle} numberOfLines={1}>
+      {label}
+    </Text>
+  );
 }
 
 const styles = StyleSheet.create((theme) => ({
@@ -148,7 +167,11 @@ const styles = StyleSheet.create((theme) => ({
   buttonHovered: {
     backgroundColor: theme.colors.surfaceSidebarHover,
   },
+  buttonDisabled: {
+    opacity: theme.opacity[50],
+  },
   label: {
+    flexShrink: 1,
     fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.normal,
     color: theme.colors.foregroundMuted,

@@ -62,9 +62,7 @@ test("shows the latest agent activity in the sidebar and cockpit cards", async (
   }
 });
 
-test("continues every session whose last message is a Codex usage-limit error", async ({
-  page,
-}) => {
+test("continues every usage-limited session from the fixed sidebar action", async ({ page }) => {
   const first = await seedMockAgentWorkspace({
     repoPrefix: "cockpit-usage-limit-first-",
     title: "First usage-limited workspace",
@@ -90,9 +88,8 @@ test("continues every session whose last message is a Codex usage-limit error", 
       second.client.waitForFinish(second.agentId, 30_000),
     ]);
     await openAgentRoute(page, first);
-    await page.getByTestId("cockpit-mode-toggle").click();
 
-    const button = page.getByTestId("cockpit-continue-usage-limited");
+    const button = page.getByTestId("sidebar-continue-usage-limited");
     await expect(button).toBeEnabled({ timeout: 30_000 });
     await expect(button).toHaveAccessibleName("Continue usage-limited sessions (2)");
 
@@ -109,8 +106,12 @@ test("continues every session whose last message is a Codex usage-limit error", 
     await button.click();
 
     await Promise.all([firstRunning, secondRunning]);
-    await expect(button).toBeDisabled();
-    await expect(button).toHaveAccessibleName("Continue usage-limited sessions (0)");
+    await expect(button).toHaveCount(0);
+
+    await page.getByTestId("cockpit-mode-toggle").click();
+    const cockpitButton = page.getByTestId("cockpit-continue-usage-limited");
+    await expect(cockpitButton).toBeDisabled();
+    await expect(cockpitButton).toHaveAccessibleName("Continue usage-limited sessions (0)");
   } finally {
     await Promise.all([first.cleanup(), second.cleanup()]);
   }
