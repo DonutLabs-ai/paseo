@@ -3,7 +3,7 @@ import type { StreamItem } from "@/types/stream";
 import {
   isCodexUsageLimitError,
   isLatestConversationMessageCodexUsageLimit,
-} from "./cockpit-usage-limit-recovery";
+} from "./codex-usage-limit-recovery";
 
 const usageLimitError =
   "[System Error] You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 16th, 2026 3:58 PM.";

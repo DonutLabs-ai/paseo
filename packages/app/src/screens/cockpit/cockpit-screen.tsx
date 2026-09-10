@@ -71,18 +71,10 @@ import {
   type QueueWriter,
 } from "@/composer/actions";
 import { createMessageSubmissionWriter } from "@/composer/submission/writer";
-import {
-  getHostRuntimeStore,
-  isHostRuntimeConnected,
-  useHostRuntimeClient,
-  useHostRuntimeIsConnected,
-} from "@/runtime/host-runtime";
-import {
-  selectAgentTurnPresentation,
-  useSessionStore,
-  type SessionState,
-} from "@/stores/session-store";
+import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
+import { selectAgentTurnPresentation, useSessionStore } from "@/stores/session-store";
 import { useToast } from "@/contexts/toast-context";
+import { useUsageLimitRecovery } from "@/hooks/use-usage-limit-recovery";
 import { CockpitToggleButton } from "./cockpit-toggle-button";
 import { CockpitAttentionMenu } from "./cockpit-attention-menu";
 import { CockpitTelemetryBar } from "./cockpit-telemetry-bar";
@@ -95,7 +87,6 @@ import {
   shouldStackCockpitCardHeader,
 } from "./cockpit-card-presentation";
 import { resolveCockpitQuickReplyAction } from "./cockpit-quick-reply";
-import { isLatestConversationMessageCodexUsageLimit } from "./cockpit-usage-limit-recovery";
 import { buildCockpitProjectScopes, resolveActiveCockpitProject } from "./cockpit-project-scope";
 import { useCockpitAgentUsage, type CockpitAgentUsage } from "./use-cockpit-agent-usage";
 import {
@@ -168,24 +159,6 @@ function navigateToCockpitWorkspace(workspace: SidebarWorkspaceEntry): void {
   });
 }
 
-function isUsageLimitRecoveryCandidate(
-  workspace: SidebarWorkspaceEntry,
-  session: SessionState | undefined,
-): boolean {
-  if (!workspace.agentId || !session) return false;
-  return isLatestConversationMessageCodexUsageLimit({
-    tail: session.agentStreamTail.get(workspace.agentId) ?? [],
-    head: session.agentStreamHead.get(workspace.agentId) ?? [],
-  });
-}
-
-function hasAgentPendingPermission(session: SessionState, agentId: string): boolean {
-  for (const permission of session.pendingPermissions.values()) {
-    if (permission.agentId === agentId) return true;
-  }
-  return false;
-}
-
 function resolveCockpitPaneWorkspace(
   layout: CockpitLayout | null,
   paneId: string | null,
@@ -216,8 +189,6 @@ export function CockpitScreen() {
 
 function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   const { t } = useTranslation();
-  const toast = useToast();
-  const [isRecoveringUsageLimitedSessions, setIsRecoveringUsageLimitedSessions] = useState(false);
   const { allProjects, allWorkspaceEntriesByKey, workspaceEntriesByKey, isInitialLoad } =
     useSidebarModel();
   const {
@@ -278,13 +249,11 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
     () => [...allWorkspaceEntriesByKey.values()],
     [allWorkspaceEntriesByKey],
   );
-  const usageLimitRecoveryCount = useSessionStore((state) => {
-    let count = 0;
-    for (const workspace of allWorkspaceEntries) {
-      if (isUsageLimitRecoveryCandidate(workspace, state.sessions[workspace.serverId])) count += 1;
-    }
-    return count;
-  });
+  const {
+    continueUsageLimitedSessions: handleContinueUsageLimitedSessions,
+    isRecovering: isRecoveringUsageLimitedSessions,
+    usageLimitRecoveryCount,
+  } = useUsageLimitRecovery(allWorkspaceEntries);
   const activeAllWorkspaceEntries = useMemo(() => {
     const entries: SidebarWorkspaceEntry[] = [];
     for (const workspaceKey of activeWorkspaceKeys) {
@@ -375,84 +344,6 @@ function CockpitScreenContent({ isRouteFocused }: { isRouteFocused: boolean }) {
   const handleAddPane = useCallback(() => {
     if (activeProjectViewKey) addEmptyPane(activeProjectViewKey);
   }, [activeProjectViewKey, addEmptyPane]);
-  const handleContinueUsageLimitedSessions = useCallback(() => {
-    if (isRecoveringUsageLimitedSessions) return;
-
-    const storeState = useSessionStore.getState();
-    const seenAgents = new Set<string>();
-    const targets = allWorkspaceEntries.flatMap((workspace) => {
-      const agentId = workspace.agentId;
-      if (!agentId) return [];
-      const targetKey = `${workspace.serverId}:${agentId}`;
-      if (seenAgents.has(targetKey)) return [];
-      if (!isUsageLimitRecoveryCandidate(workspace, storeState.sessions[workspace.serverId])) {
-        return [];
-      }
-      seenAgents.add(targetKey);
-      return [{ serverId: workspace.serverId, agentId }];
-    });
-    if (targets.length === 0) return;
-
-    setIsRecoveringUsageLimitedSessions(true);
-    void Promise.all(
-      targets.map(async ({ serverId, agentId }): Promise<"sent" | "skipped" | "failed"> => {
-        const currentSession = useSessionStore.getState().sessions[serverId];
-        if (!currentSession) return "skipped";
-        const currentWorkspace = allWorkspaceEntries.find(
-          (workspace) => workspace.serverId === serverId && workspace.agentId === agentId,
-        );
-        if (
-          !currentWorkspace ||
-          !isUsageLimitRecoveryCandidate(currentWorkspace, currentSession) ||
-          selectAgentTurnPresentation(currentSession, agentId).isActive ||
-          hasAgentPendingPermission(currentSession, agentId)
-        ) {
-          return "skipped";
-        }
-
-        const runtimeSnapshot = getHostRuntimeStore().getSnapshot(serverId);
-        if (!runtimeSnapshot?.client || !isHostRuntimeConnected(runtimeSnapshot)) return "skipped";
-
-        try {
-          await dispatchComposerAgentMessage({
-            client: runtimeSnapshot.client,
-            agentId,
-            text: AGENT_CONTINUE_PROMPT,
-            attachments: [],
-            encodeImages: encodeNoQuickReplyImages,
-            submission: createMessageSubmissionWriter(serverId),
-          });
-          return "sent";
-        } catch (error: unknown) {
-          console.error("Failed to continue usage-limited Codex session", {
-            serverId,
-            agentId,
-            error,
-          });
-          return "failed";
-        }
-      }),
-    )
-      .then((results) => {
-        const sent = results.filter((result) => result === "sent").length;
-        const skipped = results.filter((result) => result === "skipped").length;
-        const failed = results.filter((result) => result === "failed").length;
-        if (skipped === 0 && failed === 0) {
-          toast.show(t("cockpit.notifications.usageLimitRecoverySuccess", { count: sent }), {
-            variant: "success",
-          });
-          return;
-        }
-        toast.show(
-          t("cockpit.notifications.usageLimitRecoveryPartial", { sent, skipped, failed }),
-          { variant: failed > 0 ? "error" : "warning", durationMs: 4_000 },
-        );
-        return;
-      })
-      .finally(() => {
-        setIsRecoveringUsageLimitedSessions(false);
-      });
-  }, [allWorkspaceEntries, isRecoveringUsageLimitedSessions, t, toast]);
   const handleSetSnoozed = useCallback(
     (workspaceKey: string, snoozed: boolean) => setSnoozed(workspaceKey, snoozed),
     [setSnoozed],
