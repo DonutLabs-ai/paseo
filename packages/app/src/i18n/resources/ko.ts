@@ -2241,6 +2241,7 @@ export const ko: TranslationResources = {
         newWorkspace: "새 워크스페이스",
         newWorktree: "새 워크트리",
         archiveWorkspace: "워크스페이스 보관",
+        snoozeWorkspace: "워크스페이스 미루기 또는 다시 보기",
         newTab: "새 탭",
         closeCurrentTab: "현재 탭 닫기",
         jumpToWorkspace: "워크스페이스로 이동",

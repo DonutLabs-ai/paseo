@@ -508,7 +508,7 @@ function StatusGroupLeadingVisual({
   return <ThemedChevronDown size={14} uniProps={foregroundMutedColorMapping} />;
 }
 
-function StatusGroupIcon({ bucket }: { bucket: StatusBucket }) {
+export function StatusGroupIcon({ bucket }: { bucket: StatusBucket }) {
   switch (bucket) {
     case "needs_input":
       return <ThemedCircleAlert size={14} uniProps={needsInputColorMapping} />;
@@ -676,6 +676,14 @@ function StatusWorkspaceRowWithMenu({
   const onTogglePin = canPin ? handleTogglePin : undefined;
 
   const archiveShortcutKeys = useShortcutKeys("archive-workspace");
+  const snoozeShortcutKeys = useShortcutKeys("snooze-workspace");
+  const isSnoozed = useCockpitSnoozeStore((state) =>
+    Boolean(state.snoozedAtByWorkspace[workspace.workspaceKey]),
+  );
+  const setSnoozed = useCockpitSnoozeStore((state) => state.setSnoozed);
+  const handleToggleSnooze = useCallback(() => {
+    setSnoozed(workspace.workspaceKey, !isSnoozed);
+  }, [isSnoozed, setSnoozed, workspace.workspaceKey]);
   const { hasClearableAttention, clearAttention } = useClearWorkspaceAttention({
     serverId: workspace.serverId,
     workspaceId: workspace.workspaceId,
@@ -693,6 +701,17 @@ function StatusWorkspaceRowWithMenu({
     priority: 0,
     handle: () => {
       handleArchive();
+      return true;
+    },
+  });
+
+  useKeyboardActionHandler({
+    handlerId: `workspace-snooze-${workspace.workspaceKey}`,
+    actions: ["workspace.snooze"],
+    enabled: selected && !isArchiving,
+    priority: 0,
+    handle: () => {
+      handleToggleSnooze();
       return true;
     },
   });
@@ -720,6 +739,9 @@ function StatusWorkspaceRowWithMenu({
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
         isPinned={isPinned}
         onTogglePin={onTogglePin}
+        isSnoozed={isSnoozed}
+        onToggleSnooze={handleToggleSnooze}
+        snoozeShortcutKeys={selected ? snoozeShortcutKeys : null}
         reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
         inStatusGroup={inStatusGroup}
         drag={drag}
@@ -757,6 +779,9 @@ interface StatusWorkspaceRowInnerProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isSnoozed: boolean;
+  onToggleSnooze: () => void;
+  snoozeShortcutKeys?: ShortcutKey[][] | null;
   reserveIdleStatusIndicatorSpace?: boolean;
   /** Pinned rows are flat under their own header; status-group rows indent from theirs. */
   inStatusGroup?: boolean;
@@ -803,6 +828,9 @@ function StatusWorkspaceRowInnerContent({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isSnoozed,
+  onToggleSnooze,
+  snoozeShortcutKeys,
   reserveIdleStatusIndicatorSpace = true,
   inStatusGroup = true,
   isDragging = false,
@@ -814,9 +842,6 @@ function StatusWorkspaceRowInnerContent({
   const isCompact = useIsCompactFormFactor();
   const isTouchPlatform = platformIsNative || isCompact;
   const [isPressed, setIsPressed] = useState(false);
-  const isSnoozed = useCockpitSnoozeStore((state) =>
-    Boolean(state.snoozedAtByWorkspace[workspace.workspaceKey]),
-  );
   const trailing = useSidebarWorkspaceTrailing();
   const {
     role: _dragRole,
@@ -906,6 +931,9 @@ function StatusWorkspaceRowInnerContent({
               archiveShortcutKeys={archiveShortcutKeys}
               isPinned={isPinned}
               onTogglePin={onTogglePin}
+              isSnoozed={isSnoozed}
+              onToggleSnooze={onToggleSnooze}
+              snoozeShortcutKeys={snoozeShortcutKeys}
               openInFileManagerPath={workspace.workspaceDirectory}
               disabled={isArchiving}
               accessibilityRole="button"
@@ -943,6 +971,9 @@ function StatusWorkspaceRowInnerContent({
                     reserveSlotWidth={reserveSlotWidth}
                     isPinned={isPinned}
                     onTogglePin={onTogglePin}
+                    isSnoozed={isSnoozed}
+                    onToggleSnooze={onToggleSnooze}
+                    snoozeShortcutKeys={snoozeShortcutKeys}
                     onCopyPath={onCopyPath}
                     onCopyBranchName={onCopyBranchName}
                     onRename={onRename}
@@ -973,6 +1004,9 @@ function StatusWorkspaceActionSlot({
   reserveSlotWidth,
   isPinned,
   onTogglePin,
+  isSnoozed,
+  onToggleSnooze,
+  snoozeShortcutKeys,
   onCopyPath,
   onCopyBranchName,
   onRename,
@@ -992,6 +1026,9 @@ function StatusWorkspaceActionSlot({
   reserveSlotWidth: boolean;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isSnoozed: boolean;
+  onToggleSnooze: () => void;
+  snoozeShortcutKeys?: ShortcutKey[][] | null;
   onCopyPath?: () => void;
   onCopyBranchName?: () => void;
   onRename?: () => void;
@@ -1030,6 +1067,9 @@ function StatusWorkspaceActionSlot({
             archiveShortcutKeys={archiveShortcutKeys}
             isPinned={isPinned}
             onTogglePin={onTogglePin}
+            isSnoozed={isSnoozed}
+            onToggleSnooze={onToggleSnooze}
+            snoozeShortcutKeys={snoozeShortcutKeys}
           />
         ) : null}
       </SidebarWorkspaceTrailingActionOverlay>

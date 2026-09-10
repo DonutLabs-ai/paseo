@@ -167,6 +167,7 @@ export const SHORTCUT_HELP_ROW_ORDER: Record<ShortcutSectionId, readonly string[
     "workspace-prev",
     "workspace-next",
     "pin-workspace",
+    "snooze-workspace",
     "archive-workspace",
   ],
   "tabs-panes": [
@@ -215,6 +216,7 @@ const SHORTCUT_HELP_LABEL_KEYS: Record<string, string> = {
   "new-workspace": "settings.shortcuts.help.newWorkspace",
   "switch-project": "settings.shortcuts.help.switchProject",
   "archive-workspace": "settings.shortcuts.help.archiveWorkspace",
+  "snooze-workspace": "settings.shortcuts.help.snoozeWorkspace",
   "workspace-tab-new": "settings.shortcuts.help.newTab",
   "workspace-tab-target-agent": "workspace.tabs.actions.newAgent",
   "workspace-tab-target-browser": "workspace.tabs.actions.newBrowser",
@@ -390,6 +392,30 @@ const SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
       id: "pin-workspace",
       section: "workspaces",
       label: "Pin chat",
+    },
+  },
+
+  // --- Snooze workspace ---
+  {
+    id: "workspace-snooze-cmd-shift-s-mac",
+    action: "workspace.snooze",
+    combo: "Cmd+Shift+S",
+    when: { mac: true, commandCenter: false },
+    help: {
+      id: "snooze-workspace",
+      section: "workspaces",
+      label: "Snooze or wake workspace",
+    },
+  },
+  {
+    id: "workspace-snooze-ctrl-shift-s-non-mac",
+    action: "workspace.snooze",
+    combo: "Ctrl+Shift+S",
+    when: { mac: false, commandCenter: false, terminal: false },
+    help: {
+      id: "snooze-workspace",
+      section: "workspaces",
+      label: "Snooze or wake workspace",
     },
   },
 

@@ -7,10 +7,12 @@ import {
   CircleCheck,
   Copy,
   MoreVertical,
+  Moon,
   Pencil,
   Pin,
   PinOff,
   Tag,
+  Sun,
 } from "lucide-react-native";
 import { isWeb } from "@/constants/platform";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
@@ -57,6 +59,8 @@ const ThemedCircleCheck = withUnistyles(CircleCheck);
 const ThemedPin = withUnistyles(Pin);
 const ThemedPinOff = withUnistyles(PinOff);
 const ThemedTag = withUnistyles(Tag);
+const ThemedMoon = withUnistyles(Moon);
+const ThemedSun = withUnistyles(Sun);
 
 const copyLeadingIcon = <ThemedCopy size={14} uniProps={foregroundMutedColorMapping} />;
 const renameLeadingIcon = <ThemedPencil size={14} uniProps={foregroundMutedColorMapping} />;
@@ -66,6 +70,8 @@ const markAsReadLeadingIcon = (
 const archiveLeadingIcon = <ThemedArchive size={14} uniProps={foregroundMutedColorMapping} />;
 const pinLeadingIcon = <ThemedPin size={14} uniProps={foregroundMutedColorMapping} />;
 const unpinLeadingIcon = <ThemedPinOff size={14} uniProps={foregroundMutedColorMapping} />;
+const snoozeLeadingIcon = <ThemedMoon size={14} uniProps={foregroundMutedColorMapping} />;
+const wakeLeadingIcon = <ThemedSun size={14} uniProps={foregroundMutedColorMapping} />;
 
 function renderTriggerIcon({ hovered }: { hovered?: boolean }) {
   return (
@@ -92,6 +98,9 @@ export interface SidebarWorkspaceMenuProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isSnoozed?: boolean;
+  onToggleSnooze?: () => void;
+  snoozeShortcutKeys?: ShortcutKey[][] | null;
   openInFileManagerPath?: string | null;
   /**
    * Lifted so the row that reveals the kebab can keep it mounted while its menu is up. See
@@ -139,12 +148,19 @@ function SidebarWorkspaceMenuItems({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isSnoozed,
+  onToggleSnooze,
+  snoozeShortcutKeys,
   openInFileManagerPath,
 }: SidebarWorkspaceMenuItemsProps & { surface: MenuSurface }): ReactNode {
   const { t } = useTranslation();
   const archiveTrailing = useMemo(
     () => (archiveShortcutKeys ? <Shortcut chord={archiveShortcutKeys} /> : null),
     [archiveShortcutKeys],
+  );
+  const snoozeTrailing = useMemo(
+    () => (snoozeShortcutKeys ? <Shortcut chord={snoozeShortcutKeys} /> : null),
+    [snoozeShortcutKeys],
   );
   const labelLeading = useMemo(
     () => <ThemedTag size={14} uniProps={foregroundMutedColorMapping} />,
@@ -203,6 +219,17 @@ function SidebarWorkspaceMenuItems({
           {isPinned ? t("sidebar.workspace.actions.unpin") : t("sidebar.workspace.actions.pin")}
         </WorkspaceMenuItem>
       ) : null}
+      {onToggleSnooze ? (
+        <WorkspaceMenuItem
+          surface={surface}
+          testID={`sidebar-workspace-menu-snooze-${workspaceKey}`}
+          leading={isSnoozed ? wakeLeadingIcon : snoozeLeadingIcon}
+          trailing={snoozeTrailing}
+          onSelect={onToggleSnooze}
+        >
+          {isSnoozed ? t("cockpit.actions.wake") : t("cockpit.actions.snooze")}
+        </WorkspaceMenuItem>
+      ) : null}
       {serverId && workspaceId ? (
         <DropdownMenuSubTrigger
           id={WORKSPACE_LABEL_PAGE_ID}
@@ -250,6 +277,9 @@ export function SidebarWorkspaceMenu({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isSnoozed,
+  onToggleSnooze,
+  snoozeShortcutKeys,
   openInFileManagerPath,
   open,
   onOpenChange,
@@ -295,6 +325,9 @@ export function SidebarWorkspaceMenu({
           archiveShortcutKeys={archiveShortcutKeys}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
+          isSnoozed={isSnoozed}
+          onToggleSnooze={onToggleSnooze}
+          snoozeShortcutKeys={snoozeShortcutKeys}
           openInFileManagerPath={openInFileManagerPath}
         />
       </DropdownMenuContent>
@@ -328,6 +361,9 @@ export function SidebarWorkspaceContextMenu({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isSnoozed,
+  onToggleSnooze,
+  snoozeShortcutKeys,
   openInFileManagerPath,
   accessibilityLabel,
   highlightStyle,
@@ -409,6 +445,9 @@ export function SidebarWorkspaceContextMenu({
           archiveShortcutKeys={archiveShortcutKeys}
           isPinned={isPinned}
           onTogglePin={onTogglePin}
+          isSnoozed={isSnoozed}
+          onToggleSnooze={onToggleSnooze}
+          snoozeShortcutKeys={snoozeShortcutKeys}
           openInFileManagerPath={openInFileManagerPath}
         />
       </ContextMenuContent>

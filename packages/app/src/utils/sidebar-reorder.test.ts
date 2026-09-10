@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { hasVisibleOrderChanged, mergeWithRemainder } from "./sidebar-reorder";
+import {
+  hasVisibleOrderChanged,
+  mergeReorderedSubset,
+  mergeWithRemainder,
+} from "./sidebar-reorder";
 
 describe("hasVisibleOrderChanged", () => {
   it("returns false when visible order is unchanged", () => {
@@ -48,5 +52,25 @@ describe("mergeWithRemainder", () => {
         reorderedVisibleKeys: [],
       }),
     ).toEqual(["stale", "hidden"]);
+  });
+});
+
+describe("mergeReorderedSubset", () => {
+  it("reorders one status subgroup without moving other status rows", () => {
+    expect(
+      mergeReorderedSubset({
+        currentOrder: ["ready-a", "working-a", "ready-b", "done-a"],
+        reorderedSubset: ["ready-b", "ready-a"],
+      }),
+    ).toEqual(["ready-b", "working-a", "ready-a", "done-a"]);
+  });
+
+  it("leaves the current order unchanged for an empty subgroup", () => {
+    expect(
+      mergeReorderedSubset({
+        currentOrder: ["ready-a", "working-a"],
+        reorderedSubset: [],
+      }),
+    ).toEqual(["ready-a", "working-a"]);
   });
 });
