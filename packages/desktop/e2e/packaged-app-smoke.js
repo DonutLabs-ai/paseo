@@ -116,6 +116,24 @@ function getLaunchCommand(executablePath) {
   };
 }
 
+function launchPackagedGui({ executablePath, env }) {
+  const stdout = [];
+  const stderr = [];
+  const launch = getLaunchCommand(executablePath);
+  console.log(`Packaged desktop smoke: launching ${launch.command} ${launch.args.join(" ")}`);
+  const child = spawn(launch.command, launch.args, {
+    detached: process.platform !== "win32",
+    env,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.on("data", (chunk) => stdout.push(chunk.toString()));
+  child.stderr.on("data", (chunk) => stderr.push(chunk.toString()));
+  child.once("error", (error) =>
+    stderr.push(`Packaged app launch error: ${error.stack ?? error}\n`),
+  );
+  return { child, stdout, stderr };
+}
+
 function shellQuote(value) {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -263,6 +281,41 @@ function listChildPids(parentPid) {
     }
   }
   return children;
+}
+
+function assertLinuxDaemonDoesNotHoldDesktopProfile({ supervisorPid, userData }) {
+  if (process.platform !== "linux") {
+    return;
+  }
+
+  const daemonPids = [supervisorPid, ...listChildPids(supervisorPid)];
+  const normalizedUserData = `${path.resolve(userData)}${path.sep}`;
+  const leakedDescriptors = [];
+  for (const pid of daemonPids) {
+    const fdDir = `/proc/${pid}/fd`;
+    for (const fd of fs.readdirSync(fdDir)) {
+      let target;
+      try {
+        target = fs.readlinkSync(path.join(fdDir, fd));
+      } catch (error) {
+        if (error?.code === "ENOENT") {
+          continue;
+        }
+        throw error;
+      }
+      if (path.resolve(target.replace(/ \(deleted\)$/, "")).startsWith(normalizedUserData)) {
+        leakedDescriptors.push(`pid ${pid} fd ${fd}: ${target}`);
+      }
+    }
+  }
+
+  if (leakedDescriptors.length > 0) {
+    throw new Error(
+      `Desktop-managed daemon inherited Electron profile file descriptors:\n${leakedDescriptors.join(
+        "\n",
+      )}`,
+    );
+  }
 }
 
 function listDarwinTextExecutables(pid) {
@@ -542,6 +595,29 @@ async function waitForRendererStartedDaemon({
   );
 }
 
+async function assertPersistedDesktopDaemon({ appPath, env, expectedStatus }) {
+  const status = await runCliShimJsonCommand({
+    appPath,
+    env,
+    args: ["daemon", "status"],
+    label: "Bundled CLI shim persisted daemon status",
+  });
+  if (
+    status?.localDaemon !== "running" ||
+    status.desktopManaged !== true ||
+    status.pid !== expectedStatus.pid ||
+    status.serverId !== expectedStatus.serverId ||
+    status.listen !== expectedStatus.listen
+  ) {
+    throw new Error(
+      `Desktop-managed daemon did not survive GUI exit unchanged. Expected ${JSON.stringify(
+        expectedStatus,
+      )}, received ${JSON.stringify(status)}`,
+    );
+  }
+  return status;
+}
+
 function runShellCommand({ script, env, label }) {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -814,38 +890,26 @@ async function smokePackagedDesktopApp({ appPath }) {
   const userData = createTempDir("paseo-smoke-user-data-");
   const daemonHome = createTempDir("paseo-smoke-daemon-home-");
   const daemonPort = await reserveLocalTcpPort();
-  let cdpPort = await reserveLocalTcpPort();
-  for (let attempt = 0; cdpPort === daemonPort && attempt < 10; attempt += 1) {
-    cdpPort = await reserveLocalTcpPort();
+  let firstCdpPort = await reserveLocalTcpPort();
+  for (let attempt = 0; firstCdpPort === daemonPort && attempt < 10; attempt += 1) {
+    firstCdpPort = await reserveLocalTcpPort();
   }
-  if (cdpPort === daemonPort) {
+  if (firstCdpPort === daemonPort) {
     throw new Error("Failed to reserve distinct TCP ports for the daemon and CDP");
   }
   const listen = `127.0.0.1:${daemonPort}`;
   configureIsolatedDaemonHome(daemonHome, listen);
-  const env = createIsolatedDesktopEnv({
+  const firstEnv = createIsolatedDesktopEnv({
     home: daemonHome,
     listen,
     userData,
-    cdpPort,
+    cdpPort: firstCdpPort,
   });
-
-  const stdout = [];
-  const stderr = [];
-  const launch = getLaunchCommand(executablePath);
-  console.log(`Packaged desktop smoke: launching ${launch.command} ${launch.args.join(" ")}`);
-  const child = spawn(launch.command, launch.args, {
-    detached: process.platform !== "win32",
-    env,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  child.stdout.on("data", (chunk) => stdout.push(chunk.toString()));
-  child.stderr.on("data", (chunk) => stderr.push(chunk.toString()));
-  child.once("error", (error) =>
-    stderr.push(`Packaged app launch error: ${error.stack ?? error}\n`),
-  );
   const deadline = Date.now() + SMOKE_TIMEOUT_MS;
 
+  const launches = [];
+  let currentLaunch = launchPackagedGui({ executablePath, env: firstEnv });
+  launches.push(currentLaunch);
   let browser = null;
   let page = null;
   let daemonStopped = false;
@@ -855,16 +919,16 @@ async function smokePackagedDesktopApp({ appPath }) {
       return;
     }
 
-    await stopCliDaemon({ appPath, env });
+    await stopCliDaemon({ appPath, env: firstEnv });
     daemonStopped = true;
   };
 
   try {
     browser = await connectToPackagedApp({
-      child,
-      cdpPort,
-      stdout,
-      stderr,
+      child: currentLaunch.child,
+      cdpPort: firstCdpPort,
+      stdout: currentLaunch.stdout,
+      stderr: currentLaunch.stderr,
       userData,
       daemonHome,
       deadline,
@@ -876,24 +940,93 @@ async function smokePackagedDesktopApp({ appPath }) {
       page,
       daemonHome,
       listen,
-      stdout,
-      stderr,
+      stdout: currentLaunch.stdout,
+      stderr: currentLaunch.stderr,
       userData,
       deadline,
     });
     console.log("Packaged desktop smoke: renderer-started desktop daemon reported running");
-    await smokeCliShim({ appPath, env });
-    await smokeCliTerminal({ appPath, env });
+    assertLinuxDaemonDoesNotHoldDesktopProfile({ supervisorPid: status.pid, userData });
+    await smokeCliShim({ appPath, env: firstEnv });
+    await smokeCliTerminal({ appPath, env: firstEnv });
+
+    terminateChild(currentLaunch.child);
+    if (!(await waitForChildExit(currentLaunch.child))) {
+      throw new Error("First packaged GUI did not exit after SIGTERM");
+    }
+    await browser.close().catch(() => undefined);
+    releaseChildHandles(currentLaunch.child);
+    browser = null;
+    page = null;
+
+    await assertPersistedDesktopDaemon({ appPath, env: firstEnv, expectedStatus: status });
+    console.log("Packaged desktop smoke: desktop-managed daemon survived GUI exit");
+
+    let secondCdpPort = await reserveLocalTcpPort();
+    for (
+      let attempt = 0;
+      (secondCdpPort === daemonPort || secondCdpPort === firstCdpPort) && attempt < 10;
+      attempt += 1
+    ) {
+      secondCdpPort = await reserveLocalTcpPort();
+    }
+    if (secondCdpPort === daemonPort || secondCdpPort === firstCdpPort) {
+      throw new Error("Failed to reserve a distinct CDP port for packaged GUI relaunch");
+    }
+
+    const secondEnv = createIsolatedDesktopEnv({
+      home: daemonHome,
+      listen,
+      userData,
+      cdpPort: secondCdpPort,
+    });
+    currentLaunch = launchPackagedGui({ executablePath, env: secondEnv });
+    launches.push(currentLaunch);
+    const relaunchDeadline = Date.now() + SMOKE_TIMEOUT_MS;
+    browser = await connectToPackagedApp({
+      child: currentLaunch.child,
+      cdpPort: secondCdpPort,
+      stdout: currentLaunch.stdout,
+      stderr: currentLaunch.stderr,
+      userData,
+      daemonHome,
+      deadline: relaunchDeadline,
+    });
+    page = await waitForPackagedAppPage(browser, relaunchDeadline);
+    await assertPackagedRendererLoaded(page, relaunchDeadline);
+    const relaunchedStatus = await waitForRendererStartedDaemon({
+      page,
+      daemonHome,
+      listen,
+      stdout: currentLaunch.stdout,
+      stderr: currentLaunch.stderr,
+      userData,
+      deadline: relaunchDeadline,
+    });
+    if (relaunchedStatus.pid !== status.pid || relaunchedStatus.serverId !== status.serverId) {
+      throw new Error(
+        `GUI relaunch replaced the persistent daemon. Expected ${JSON.stringify(
+          status,
+        )}, received ${JSON.stringify(relaunchedStatus)}`,
+      );
+    }
+    console.log("Packaged desktop smoke: GUI relaunched against the persistent daemon");
+
     await stopDaemonForCleanup();
     console.log(
-      `Packaged desktop smoke passed: real renderer and preload loaded; renderer-started desktop daemon pid ${status.pid}, listen ${status.listen}; CLI shim daemon status and terminal smoke succeeded`,
+      `Packaged desktop smoke passed: real renderer and preload loaded; desktop-managed daemon pid ${status.pid}, listen ${status.listen} survived GUI exit and relaunch; CLI shim daemon status and terminal smoke succeeded`,
     );
   } catch (error) {
-    await writeFailureArtifacts({ page, stdout, stderr, userData, daemonHome, error }).catch(
-      (artifactError) => {
-        console.warn(`Packaged desktop smoke: failed to write failure artifacts: ${artifactError}`);
-      },
-    );
+    await writeFailureArtifacts({
+      page,
+      stdout: currentLaunch.stdout,
+      stderr: currentLaunch.stderr,
+      userData,
+      daemonHome,
+      error,
+    }).catch((artifactError) => {
+      console.warn(`Packaged desktop smoke: failed to write failure artifacts: ${artifactError}`);
+    });
     if (!daemonStopped) {
       try {
         await stopDaemonForCleanup();
@@ -902,14 +1035,16 @@ async function smokePackagedDesktopApp({ appPath }) {
     throw error;
   } finally {
     await browser?.close().catch(() => undefined);
-    if (isRunning(child)) {
-      terminateChild(child);
-      if (!(await waitForChildExit(child))) {
-        terminateChild(child, "SIGKILL");
-        await waitForChildExit(child);
+    for (const launch of launches) {
+      if (isRunning(launch.child)) {
+        terminateChild(launch.child);
+        if (!(await waitForChildExit(launch.child))) {
+          terminateChild(launch.child, "SIGKILL");
+          await waitForChildExit(launch.child);
+        }
       }
+      releaseChildHandles(launch.child);
     }
-    releaseChildHandles(child);
     await removeTempDir(userData);
     await removeTempDir(daemonHome);
   }

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_DESKTOP_SETTINGS } from "../settings/desktop-settings";
 import { getBundledCliShimPath } from "../integrations/cli-install";
-import { createDaemonCommandHandlers } from "./daemon-manager";
+import { createDaemonCommandHandlers, isolateDetachedDaemonInvocation } from "./daemon-manager";
 
 const mocks = vi.hoisted(() => ({
   paseoHome: "/tmp/paseo-desktop-daemon-manager-test-home",
@@ -128,6 +128,31 @@ describe("daemon-manager commands", () => {
   afterEach(() => {
     rmSync(mocks.paseoHome, { recursive: true, force: true });
     rmSync(mocks.appLogPath, { force: true });
+  });
+
+  it("launches the daemon through a POSIX file-descriptor isolation boundary", () => {
+    const isolated = isolateDetachedDaemonInvocation(
+      "/opt/Donut Paseo/donut-paseo",
+      ["daemon runner.js", "--flag=$(touch /tmp/not-executed)"],
+      "linux",
+    );
+
+    expect(isolated.command).toBe("/bin/sh");
+    expect(isolated.args[0]).toBe("-c");
+    expect(isolated.args[1]).toContain('exec "$@"');
+    expect(isolated.args.slice(2)).toEqual([
+      "paseo-daemon-fd-boundary",
+      "/opt/Donut Paseo/donut-paseo",
+      "daemon runner.js",
+      "--flag=$(touch /tmp/not-executed)",
+    ]);
+  });
+
+  it("keeps the direct daemon invocation on Windows", () => {
+    expect(isolateDetachedDaemonInvocation("node.exe", ["daemon.js"], "win32")).toEqual({
+      command: "node.exe",
+      args: ["daemon.js"],
+    });
   });
 
   it("refuses start and restart while built-in daemon management is disabled", async () => {
@@ -447,8 +472,8 @@ describe("daemon-manager commands", () => {
       expect.objectContaining({ args: [] }),
     );
     expect(mocks.spawnProcess).toHaveBeenCalledWith(
-      "node",
-      [],
+      "/bin/sh",
+      expect.arrayContaining(["paseo-daemon-fd-boundary", "node"]),
       expect.objectContaining({
         detached: true,
         stdio: ["ignore", "ignore", "ignore"],
