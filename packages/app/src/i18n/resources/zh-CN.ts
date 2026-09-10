@@ -1048,6 +1048,11 @@ export const zhCN: TranslationResources = {
       moveDown: "向下移动卡片",
       snooze: "暂时搁置",
       wake: "恢复关注",
+      continueUsageLimited: "继续额度受限的会话（{{count}}）",
+    },
+    notifications: {
+      usageLimitRecoverySuccess: "已向 {{count}} 个额度受限会话发送继续指令。",
+      usageLimitRecoveryPartial: "已发送 {{sent}} 个；跳过 {{skipped}} 个；失败 {{failed}} 个。",
     },
     status: {
       needsInput: "等待输入",

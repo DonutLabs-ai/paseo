@@ -1090,6 +1090,11 @@ export const es: TranslationResources = {
       moveDown: "Mover tarjeta hacia abajo",
       snooze: "Posponer",
       wake: "Reactivar",
+      continueUsageLimited: "Continuar sesiones con límite de uso ({{count}})",
+    },
+    notifications: {
+      usageLimitRecoverySuccess: "Se envió Continuar a {{count}} sesiones con límite de uso.",
+      usageLimitRecoveryPartial: "Enviadas: {{sent}}; omitidas: {{skipped}}; fallidas: {{failed}}.",
     },
     status: {
       needsInput: "Requiere atención",

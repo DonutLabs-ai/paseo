@@ -1056,6 +1056,11 @@ export const ar: TranslationResources = {
       moveDown: "نقل البطاقة إلى الأسفل",
       snooze: "تأجيل",
       wake: "إعادة التنشيط",
+      continueUsageLimited: "متابعة الجلسات التي بلغت حد الاستخدام ({{count}})",
+    },
+    notifications: {
+      usageLimitRecoverySuccess: "تم إرسال المتابعة إلى {{count}} جلسة بلغت حد الاستخدام.",
+      usageLimitRecoveryPartial: "تم الإرسال: {{sent}}؛ تم التخطي: {{skipped}}؛ فشل: {{failed}}.",
     },
     status: {
       needsInput: "بحاجة إلى إدخال",
