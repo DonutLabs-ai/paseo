@@ -94,6 +94,23 @@ function projectionInput(options?: {
   };
 }
 
+function projectStatusSubgroupInput() {
+  const done = makeWorkspace("done", "done");
+  const working = makeWorkspace("working", "running");
+  const ready = makeWorkspace("ready", "attention");
+  const failed = makeWorkspace("failed", "failed");
+  const needsInput = makeWorkspace("needs-input", "needs_input");
+  const all = [done, working, ready, failed, needsInput];
+  return {
+    ...projectionInput({ groupMode: "project" }),
+    projects: [makeProject(all.map((workspace) => workspace.placement))],
+    pinnedKeys: { pinnedWorkspaceKeys: [], pinnedAtByKey: {} },
+    workspaceEntriesByKey: new Map(
+      all.map((workspace) => [workspace.entry.workspaceKey, workspace.entry]),
+    ),
+  };
+}
+
 /**
  * Two projects, one workspace each, both labelled — so every grouping mode puts rows from more
  * than one project on screen, and a mode that asked for fewer icons than it renders would show it.
@@ -117,6 +134,26 @@ function twoProjectInput(groupMode: "project" | "status") {
 }
 
 describe("buildSidebarProjection", () => {
+  it("orders each project's status subgroups before building shortcut targets", () => {
+    const projection = buildSidebarProjection(projectStatusSubgroupInput());
+    const project = projection.pinnedGroups.unpinnedProjects[0];
+
+    expect(project?.workspaces.map((workspace) => workspace.workspaceId)).toEqual([
+      "needs-input",
+      "failed",
+      "ready",
+      "working",
+      "done",
+    ]);
+    expect(projection.shortcutModel.shortcutTargets).toEqual([
+      { serverId: "srv", workspaceId: "needs-input" },
+      { serverId: "srv", workspaceId: "failed" },
+      { serverId: "srv", workspaceId: "ready" },
+      { serverId: "srv", workspaceId: "working" },
+      { serverId: "srv", workspaceId: "done" },
+    ]);
+  });
+
   // The rule that outlived the bug it was written for: a project icon is fetched per project, so
   // whatever a mode groups by, the rows it produces can only reference projects already covered.
   for (const groupMode of ["project", "status"] as const) {

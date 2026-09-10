@@ -86,10 +86,18 @@ import { ProjectLeadingVisual } from "@/components/sidebar/project-leading-visua
 import { useToast } from "@/contexts/toast-context";
 import { getForgePresentation, normalizeForge } from "@/git/forge";
 import { toWorktreeArchiveRisk } from "@/git/worktree-archive-warning";
-import { hasVisibleOrderChanged, mergeWithRemainder } from "@/utils/sidebar-reorder";
+import {
+  hasVisibleOrderChanged,
+  mergeReorderedSubset,
+  mergeWithRemainder,
+} from "@/utils/sidebar-reorder";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import type { SidebarStateBucket } from "@/utils/sidebar-agent-state";
-import { SidebarStatusWorkspaceList } from "@/components/sidebar/sidebar-status-list";
+import {
+  SidebarStatusWorkspaceList,
+  StatusGroupIcon,
+} from "@/components/sidebar/sidebar-status-list";
+import type { StatusBucket } from "@/hooks/sidebar-status-view-model";
 import type { SidebarWorkspaceGroup } from "@/components/sidebar/sidebar-labels";
 import {
   SidebarWorkspaceContextMenu,
@@ -154,12 +162,23 @@ import { useSidebarRowItems } from "@/components/sidebar/display-preferences/mod
 import { PullRequestStateIcon } from "@/git/pull-request-state-icon";
 import { SidebarSnoozedSection } from "@/components/sidebar/sidebar-snoozed-section";
 import { splitSnoozedSidebarContent } from "@/components/sidebar/sidebar-snoozed-workspaces";
+import {
+  buildProjectStatusSubgroups,
+  type ProjectStatusSubgroup,
+} from "@/components/sidebar/project-status-subgroups";
 
 const workspaceKeyExtractor = (workspace: SidebarWorkspacePlacement) => workspace.workspaceKey;
 
 const projectViewKeyExtractor = (project: SidebarProjectEntry) => project.viewKey;
 
 const WORKSPACE_STATUS_DOT_WIDTH = 14;
+const PROJECT_STATUS_LABEL_KEYS = {
+  needs_input: "cockpit.status.needsInput",
+  failed: "cockpit.status.failed",
+  attention: "cockpit.status.attention",
+  running: "cockpit.status.running",
+  done: "cockpit.status.done",
+} as const satisfies Record<StatusBucket, string>;
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 const ThemedPlus = withUnistyles(Plus);
@@ -290,6 +309,9 @@ interface WorkspaceRowInnerProps {
   archiveShortcutKeys?: ShortcutKey[][] | null;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isSnoozed: boolean;
+  onToggleSnooze: () => void;
+  snoozeShortcutKeys?: ShortcutKey[][] | null;
   reserveIdleStatusIndicatorSpace?: boolean;
 }
 
@@ -620,6 +642,9 @@ function WorkspaceRowRightGroup({
   onRename,
   isPinned,
   onTogglePin,
+  isSnoozed,
+  onToggleSnooze,
+  snoozeShortcutKeys,
 }: {
   workspace: SidebarWorkspaceEntry;
   backdrop: SidebarSurfaceBackdrop;
@@ -639,6 +664,9 @@ function WorkspaceRowRightGroup({
   onRename?: () => void;
   isPinned?: boolean;
   onTogglePin?: () => void;
+  isSnoozed: boolean;
+  onToggleSnooze: () => void;
+  snoozeShortcutKeys?: ShortcutKey[][] | null;
 }) {
   const workspacePath = workspace.workspaceDirectory ?? workspace.projectRootPath;
   const { t } = useTranslation();
@@ -692,6 +720,9 @@ function WorkspaceRowRightGroup({
                 archiveShortcutKeys={archiveShortcutKeys}
                 isPinned={isPinned}
                 onTogglePin={onTogglePin}
+                isSnoozed={isSnoozed}
+                onToggleSnooze={onToggleSnooze}
+                snoozeShortcutKeys={snoozeShortcutKeys}
                 openInFileManagerPath={workspacePath}
               />
             ) : null}
@@ -1071,14 +1102,14 @@ function WorkspaceRowInner({
   archiveShortcutKeys,
   isPinned,
   onTogglePin,
+  isSnoozed,
+  onToggleSnooze,
+  snoozeShortcutKeys,
   reserveIdleStatusIndicatorSpace = true,
 }: WorkspaceRowInnerProps) {
   const isCompact = useIsCompactFormFactor();
   const [isPressed, setIsPressed] = useState(false);
   const isTouchPlatform = platformIsNative || isCompact;
-  const isSnoozed = useCockpitSnoozeStore((state) =>
-    Boolean(state.snoozedAtByWorkspace[workspace.workspaceKey]),
-  );
   const interaction = useLongPressDragInteraction({
     drag,
     menuController,
@@ -1149,6 +1180,9 @@ function WorkspaceRowInner({
               archiveShortcutKeys={archiveShortcutKeys}
               isPinned={isPinned}
               onTogglePin={onTogglePin}
+              isSnoozed={isSnoozed}
+              onToggleSnooze={onToggleSnooze}
+              snoozeShortcutKeys={snoozeShortcutKeys}
               openInFileManagerPath={workspace.workspaceDirectory}
               disabled={isArchiving}
               aria-selected={selected}
@@ -1195,6 +1229,9 @@ function WorkspaceRowInner({
                   onRename={onRename}
                   isPinned={isPinned}
                   onTogglePin={onTogglePin}
+                  isSnoozed={isSnoozed}
+                  onToggleSnooze={onToggleSnooze}
+                  snoozeShortcutKeys={snoozeShortcutKeys}
                 />
               </SidebarWorkspaceRowContent>
             </SidebarWorkspaceContextMenu>
@@ -1294,6 +1331,14 @@ function WorkspaceRowWithMenu({
   const onTogglePin = canPin ? handleTogglePin : undefined;
 
   const archiveShortcutKeys = useShortcutKeys("archive-workspace");
+  const snoozeShortcutKeys = useShortcutKeys("snooze-workspace");
+  const isSnoozed = useCockpitSnoozeStore((state) =>
+    Boolean(state.snoozedAtByWorkspace[workspace.workspaceKey]),
+  );
+  const setSnoozed = useCockpitSnoozeStore((state) => state.setSnoozed);
+  const handleToggleSnooze = useCallback(() => {
+    setSnoozed(workspace.workspaceKey, !isSnoozed);
+  }, [isSnoozed, setSnoozed, workspace.workspaceKey]);
   const { hasClearableAttention, clearAttention } = useClearWorkspaceAttention({
     serverId: workspace.serverId,
     workspaceId: workspace.workspaceId,
@@ -1311,6 +1356,17 @@ function WorkspaceRowWithMenu({
     priority: 0,
     handle: () => {
       handleArchive();
+      return true;
+    },
+  });
+
+  useKeyboardActionHandler({
+    handlerId: `workspace-snooze-${workspace.workspaceKey}`,
+    actions: ["workspace.snooze"],
+    enabled: selected && !isArchiving,
+    priority: 0,
+    handle: () => {
+      handleToggleSnooze();
       return true;
     },
   });
@@ -1343,6 +1399,9 @@ function WorkspaceRowWithMenu({
         archiveShortcutKeys={selected ? archiveShortcutKeys : null}
         isPinned={isPinned}
         onTogglePin={onTogglePin}
+        isSnoozed={isSnoozed}
+        onToggleSnooze={handleToggleSnooze}
+        snoozeShortcutKeys={selected ? snoozeShortcutKeys : null}
         reserveIdleStatusIndicatorSpace={reserveIdleStatusIndicatorSpace}
       />
       <WorkspaceRenameModal
@@ -1531,6 +1590,103 @@ function WorkspaceRow({
   );
 }
 
+type RenderProjectWorkspaceRow = (
+  item: SidebarWorkspacePlacement,
+  input?: {
+    drag?: () => void;
+    isDragging?: boolean;
+    dragHandleProps?: DraggableListDragHandleProps;
+  },
+) => ReactElement;
+
+function ProjectStatusSubgroupRows({
+  projectViewKey,
+  projectWorkspaces,
+  group,
+  renderWorkspaceRow,
+  onWorkspaceReorder,
+  activeWorkspaceSelection,
+  parentGestureRef,
+  useNestable,
+  dragGestureHostActive,
+}: {
+  projectViewKey: string;
+  projectWorkspaces: SidebarWorkspacePlacement[];
+  group: ProjectStatusSubgroup<SidebarWorkspacePlacement>;
+  renderWorkspaceRow: RenderProjectWorkspaceRow;
+  onWorkspaceReorder: (projectViewKey: string, workspaces: SidebarWorkspacePlacement[]) => void;
+  activeWorkspaceSelection: ActiveWorkspaceSelection | null;
+  parentGestureRef?: MutableRefObject<GestureType | undefined>;
+  useNestable: boolean;
+  dragGestureHostActive?: boolean;
+}) {
+  const { t } = useTranslation();
+  const renderWorkspace = useCallback(
+    ({
+      item,
+      drag,
+      isActive,
+      dragHandleProps,
+    }: DraggableRenderItemInfo<SidebarWorkspacePlacement>) =>
+      renderWorkspaceRow(item, {
+        drag,
+        isDragging: isActive,
+        dragHandleProps,
+      }),
+    [renderWorkspaceRow],
+  );
+  const handleWorkspaceDragEnd = useCallback(
+    (reorderedWorkspaces: SidebarWorkspacePlacement[]) => {
+      const reorderedKeys = mergeReorderedSubset({
+        currentOrder: projectWorkspaces.map((workspace) => workspace.workspaceKey),
+        reorderedSubset: reorderedWorkspaces.map((workspace) => workspace.workspaceKey),
+      });
+      const workspaceByKey = new Map(
+        projectWorkspaces.map((workspace) => [workspace.workspaceKey, workspace]),
+      );
+      const mergedWorkspaces = reorderedKeys.map((workspaceKey) => {
+        const workspace = workspaceByKey.get(workspaceKey);
+        if (!workspace) {
+          throw new Error(`Missing workspace placement for reordered key ${workspaceKey}`);
+        }
+        return workspace;
+      });
+      onWorkspaceReorder(projectViewKey, mergedWorkspaces);
+    },
+    [onWorkspaceReorder, projectViewKey, projectWorkspaces],
+  );
+
+  return (
+    <View
+      style={styles.projectStatusSubgroup}
+      testID={`sidebar-project-status-group-${projectViewKey}-${group.bucket}`}
+    >
+      <View accessibilityRole="header" style={styles.projectStatusSubgroupHeader}>
+        <View style={styles.projectStatusSubgroupIconSlot}>
+          <StatusGroupIcon bucket={group.bucket} />
+        </View>
+        <Text style={styles.projectStatusSubgroupLabel} numberOfLines={1}>
+          {t(PROJECT_STATUS_LABEL_KEYS[group.bucket])}
+        </Text>
+      </View>
+      <DraggableList
+        testID={`sidebar-project-status-list-${projectViewKey}-${group.bucket}`}
+        data={group.rows}
+        keyExtractor={workspaceKeyExtractor}
+        renderItem={renderWorkspace}
+        onDragEnd={handleWorkspaceDragEnd}
+        extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
+        scrollEnabled={false}
+        useDragHandle
+        nestable={useNestable}
+        simultaneousGestureRef={parentGestureRef}
+        gestureHostPresented={dragGestureHostActive}
+        containerStyle={styles.workspaceListContainer}
+      />
+    </View>
+  );
+}
+
 function ProjectBlock({
   project,
   workspaceEntriesByKey,
@@ -1588,6 +1744,14 @@ function ProjectBlock({
     canToggle: canToggleWorkspaces,
     toggleExpanded: toggleWorkspacesExpanded,
   } = useLimitedSidebarGroup(project.workspaces);
+  const statusSubgroups = useMemo(
+    () =>
+      buildProjectStatusSubgroups({
+        workspaces: visibleWorkspaces,
+        workspaceEntriesByKey,
+      }),
+    [visibleWorkspaces, workspaceEntriesByKey],
+  );
   const rowModel = useMemo(
     () =>
       buildSidebarProjectRowModel({
@@ -1655,29 +1819,6 @@ function ProjectBlock({
     ],
   );
 
-  const renderWorkspace = useCallback(
-    ({
-      item,
-      drag: workspaceDrag,
-      isActive,
-      dragHandleProps: workspaceDragHandleProps,
-    }: DraggableRenderItemInfo<SidebarWorkspacePlacement>) => {
-      return renderWorkspaceRow(item, {
-        drag: workspaceDrag,
-        isDragging: isActive,
-        dragHandleProps: workspaceDragHandleProps,
-      });
-    },
-    [renderWorkspaceRow],
-  );
-
-  const handleWorkspaceDragEnd = useCallback(
-    (workspaces: SidebarWorkspacePlacement[]) => {
-      onWorkspaceReorder(project.viewKey, workspaces);
-    },
-    [onWorkspaceReorder, project.viewKey],
-  );
-
   const toast = useToast();
   const { t } = useTranslation();
   const [isRemovingProject, setIsRemovingProject] = useState(false);
@@ -1743,20 +1884,22 @@ function ProjectBlock({
     if (project.workspaces.length > 0) {
       projectChildren = (
         <>
-          <DraggableList
-            testID={`sidebar-workspace-list-${project.viewKey}`}
-            data={visibleWorkspaces}
-            keyExtractor={workspaceKeyExtractor}
-            renderItem={renderWorkspace}
-            onDragEnd={handleWorkspaceDragEnd}
-            extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
-            scrollEnabled={false}
-            useDragHandle
-            nestable={useNestable}
-            simultaneousGestureRef={parentGestureRef}
-            gestureHostPresented={dragGestureHostActive}
-            containerStyle={styles.workspaceListContainer}
-          />
+          <View testID={`sidebar-workspace-list-${project.viewKey}`}>
+            {statusSubgroups.map((group) => (
+              <ProjectStatusSubgroupRows
+                key={group.bucket}
+                projectViewKey={project.viewKey}
+                projectWorkspaces={project.workspaces}
+                group={group}
+                renderWorkspaceRow={renderWorkspaceRow}
+                onWorkspaceReorder={onWorkspaceReorder}
+                activeWorkspaceSelection={activeWorkspaceSelection}
+                parentGestureRef={parentGestureRef}
+                useNestable={useNestable}
+                dragGestureHostActive={dragGestureHostActive}
+              />
+            ))}
+          </View>
           {canToggleWorkspaces ? (
             <SidebarGroupToggleRow
               expanded={workspacesExpanded}
@@ -2567,6 +2710,33 @@ const styles = StyleSheet.create((theme) => ({
   // headers closes up to the pitch of a list instead of staying spaced for content that is gone.
   projectBlockExpanded: {
     paddingBottom: theme.spacing[3],
+  },
+  projectStatusSubgroup: {
+    paddingBottom: theme.spacing[1],
+  },
+  projectStatusSubgroupHeader: {
+    minHeight: 28,
+    paddingVertical: theme.spacing[1],
+    paddingLeft: theme.spacing[4],
+    paddingRight: theme.spacing[3],
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing[2],
+    userSelect: "none",
+  },
+  projectStatusSubgroupIconSlot: {
+    width: theme.iconSize.md,
+    height: theme.iconSize.md,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  projectStatusSubgroupLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    fontWeight: theme.fontWeight.medium,
+    minWidth: 0,
+    flexShrink: 1,
   },
   workspaceListContainer: {},
   // Kept in step with `workspaceRow` above. It stands in a project's list where a workspace row

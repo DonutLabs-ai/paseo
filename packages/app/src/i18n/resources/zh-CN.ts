@@ -2205,6 +2205,7 @@ export const zhCN: TranslationResources = {
         newWorkspace: "新建 workspace",
         newWorktree: "新建 worktree",
         archiveWorkspace: "归档工作区",
+        snoozeWorkspace: "搁置或恢复工作区",
         newTab: "新建标签",
         closeCurrentTab: "关闭当前标签",
         jumpToWorkspace: "跳转到 workspace",

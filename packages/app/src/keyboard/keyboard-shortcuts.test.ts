@@ -277,6 +277,18 @@ describe("keyboard-shortcuts", () => {
       action: "agent.continue",
     },
     {
+      name: "matches Cmd+Shift+S to snooze or wake the selected workspace on macOS",
+      event: { key: "S", code: "KeyS", metaKey: true, shiftKey: true },
+      context: { isMac: true, commandCenterOpen: false },
+      action: "workspace.snooze",
+    },
+    {
+      name: "matches Ctrl+Shift+S to snooze or wake the selected workspace on non-mac",
+      event: { key: "S", code: "KeyS", ctrlKey: true, shiftKey: true },
+      context: { isMac: false, commandCenterOpen: false, focusScope: "other" },
+      action: "workspace.snooze",
+    },
+    {
       name: "matches Cmd+Backslash to split pane right on macOS",
       event: { key: "\\", code: "Backslash", metaKey: true },
       context: { isMac: true },
@@ -469,6 +481,11 @@ describe("keyboard-shortcuts", () => {
     {
       name: "does not switch project with Ctrl+P on non-mac while terminal is focused",
       event: { key: "p", code: "KeyP", ctrlKey: true },
+      context: { isMac: false, focusScope: "terminal" },
+    },
+    {
+      name: "does not snooze a workspace from a focused terminal on non-mac",
+      event: { key: "S", code: "KeyS", ctrlKey: true, shiftKey: true },
       context: { isMac: false, focusScope: "terminal" },
     },
     {
@@ -671,6 +688,7 @@ describe("keyboard-shortcut help sections", () => {
         "workspace-jump-index": ["alt", "1-9"],
         "workspace-tab-jump-index": ["alt", "shift", "1-9"],
         "workspace-tab-close-current": ["alt", "shift", "W"],
+        "snooze-workspace": ["mod", "shift", "S"],
         "workspace-pane-split-right": ["mod", "\\"],
         "toggle-cockpit": ["mod", "alt", "C"],
         "workspace-pane-close": ["mod", "shift", "W"],
@@ -692,6 +710,7 @@ describe("keyboard-shortcut help sections", () => {
         // `formatShortcut` renders both as ⌘, so the badge is unchanged — see
         // the render assertion below.
         "workspace-tab-close-current": ["mod", "W"],
+        "snooze-workspace": ["mod", "shift", "S"],
         "workspace-pane-split-right": ["mod", "\\"],
         "toggle-cockpit": ["mod", "alt", "C"],
         "workspace-pane-close": ["mod", "shift", "W"],
@@ -705,6 +724,7 @@ describe("keyboard-shortcut help sections", () => {
         "workspace-pane-split-right": ["ctrl", "\\"],
         "workspace-tab-jump-index": ["alt", "1-9"],
         "workspace-tab-close-current": ["ctrl", "W"],
+        "snooze-workspace": ["ctrl", "shift", "S"],
         "toggle-cockpit": ["F9"],
       },
     },
@@ -831,6 +851,7 @@ describe("keyboard-shortcut help sections", () => {
     const openProject = findRow(sections, "new-agent");
     const cycleAgentMode = findRow(sections, "cycle-agent-mode");
     const showShortcuts = findRow(sections, "show-shortcuts");
+    const snoozeWorkspace = findRow(sections, "snooze-workspace");
 
     expect(workspaces?.titleKey).toBe("settings.shortcuts.sections.workspaces");
     expect(layout?.titleKey).toBe("settings.shortcuts.sections.layout");
@@ -838,6 +859,7 @@ describe("keyboard-shortcut help sections", () => {
     expect(openProject?.label).toBe("Open project");
     expect(cycleAgentMode?.labelKey).toBe("settings.shortcuts.help.cycleAgentMode");
     expect(showShortcuts?.noteKey).toBe("settings.shortcuts.helpNotes.showKeyboardShortcuts");
+    expect(snoozeWorkspace?.labelKey).toBe("settings.shortcuts.help.snoozeWorkspace");
   });
 
   it("gives every help row an explicit place in its section's order", () => {

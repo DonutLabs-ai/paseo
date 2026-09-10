@@ -19,6 +19,7 @@ import {
   type SidebarShortcutSection,
 } from "@/utils/sidebar-shortcuts";
 import { statusWorkspaceGroups, type SidebarWorkspaceGroup } from "./sidebar-labels";
+import { orderProjectWorkspacesByStatus } from "./project-status-subgroups";
 
 export interface SidebarProjection {
   pinnedGroups: PinnedSidebarGroups;
@@ -48,11 +49,24 @@ export interface SidebarProjectionInput {
 }
 
 export function buildSidebarProjection(input: SidebarProjectionInput): SidebarProjection {
-  const pinnedGroups = splitPinnedSidebarGroups({
+  const splitPinnedGroups = splitPinnedSidebarGroups({
     projects: input.projects,
     keys: input.pinnedKeys,
     pinnedWorkspaceOrder: input.pinnedWorkspaceOrder,
   });
+  const pinnedGroups =
+    input.groupMode === "project"
+      ? {
+          ...splitPinnedGroups,
+          unpinnedProjects: splitPinnedGroups.unpinnedProjects.map((project) => ({
+            ...project,
+            workspaces: orderProjectWorkspacesByStatus({
+              workspaces: project.workspaces,
+              workspaceEntriesByKey: input.workspaceEntriesByKey,
+            }),
+          })),
+        }
+      : splitPinnedGroups;
   const pinnedWorkspaceKeys = new Set(input.pinnedKeys.pinnedWorkspaceKeys);
   const unpinnedWorkspaces = Array.from(input.workspaceEntriesByKey.values()).filter(
     (workspace) => !pinnedWorkspaceKeys.has(workspace.workspaceKey),
@@ -90,7 +104,7 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
   };
 }
 
-/** Project mode keeps its project headers and groups nothing; status mode groups the rows. */
+/** Project mode builds its nested status groups in each project block; flat modes use this list. */
 function buildWorkspaceGroups(
   input: SidebarProjectionInput,
   unpinnedWorkspaces: SidebarWorkspaceEntry[],
