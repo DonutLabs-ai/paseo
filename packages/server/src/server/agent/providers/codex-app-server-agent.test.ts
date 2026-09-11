@@ -4878,6 +4878,34 @@ describe("Codex app-server provider", () => {
     }
   });
 
+  test("classifies Codex response endpoint stream disconnections as transient transport failures", () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals(session).handleNotification("turn/started", {
+      turn: { id: "turn-transient-transport" },
+    });
+    asInternals(session).handleNotification("turn/completed", {
+      turn: {
+        status: "failed",
+        error: {
+          message:
+            "stream disconnected before completion: error sending request for url " +
+            "(https://chatgpt.com/backend-api/codex/responses)",
+        },
+      },
+    });
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn_failed",
+      error:
+        "stream disconnected before completion: error sending request for url " +
+        "(https://chatgpt.com/backend-api/codex/responses)",
+      failureReason: "transient_transport",
+    });
+  });
+
   test("emits and dedupes Codex thread/compacted notifications", () => {
     const session = createSession();
     session.activeForegroundTurnId = null;

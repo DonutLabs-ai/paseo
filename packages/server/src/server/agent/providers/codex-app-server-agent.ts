@@ -141,9 +141,15 @@ const INTERRUPT_TIMEOUT_MS = 2_000;
 const CODEX_PROVIDER = "codex" as const;
 const CODEX_MODEL_AT_CAPACITY_MESSAGE =
   "Selected model is at capacity. Please try a different model.";
+const CODEX_RESPONSE_STREAM_DISCONNECTED_MESSAGE =
+  "stream disconnected before completion: error sending request for url " +
+  "(https://chatgpt.com/backend-api/codex/responses)";
 
 function classifyCodexTurnFailure(message: string | null): AgentTurnFailureReason | undefined {
-  return message?.trim() === CODEX_MODEL_AT_CAPACITY_MESSAGE ? "model_at_capacity" : undefined;
+  const normalized = message?.trim();
+  if (normalized === CODEX_MODEL_AT_CAPACITY_MESSAGE) return "model_at_capacity";
+  if (normalized === CODEX_RESPONSE_STREAM_DISCONNECTED_MESSAGE) return "transient_transport";
+  return undefined;
 }
 // Codex treats most app-server client names as the model-request originator.
 // This reserved Codex name is non-originating, so requests keep Codex's default
