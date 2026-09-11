@@ -1,6 +1,6 @@
 import { router, usePathname } from "expo-router";
 import { CalendarClock, History, Plus, Search } from "lucide-react-native";
-import { memo, useCallback, useMemo, type ComponentType, type ReactNode } from "react";
+import { memo, useCallback, useMemo, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 import { View, type StyleProp, type ViewStyle } from "react-native";
 import { SidebarHeaderRow } from "@/components/sidebar/sidebar-header-row";
@@ -30,20 +30,18 @@ interface SidebarNavRowProps {
 interface SidebarNavRowsProps extends SidebarNavRowProps {
   /** Style for the group wrapper, which the sidebar owns. */
   style?: StyleProp<ViewStyle>;
-  /** Contextual actions that share the fixed, non-scrolling sidebar header group. */
-  additionalRow?: ReactNode;
 }
 
 /**
  * Top-level sidebar navigation, ordered and filtered by the user's
  * `sidebarNavItems` preference. Renders nothing — not even the bordered group
- * wrapper — when every item is hidden and no contextual row is present.
+ * wrapper — when every item is hidden.
  */
-export function SidebarNavRows({ style, onBeforeNavigate, additionalRow }: SidebarNavRowsProps) {
+export function SidebarNavRows({ style, onBeforeNavigate }: SidebarNavRowsProps) {
   const { items } = useSidebarNavItems();
   const visibleItems = useMemo(() => items.filter((item) => item.visible), [items]);
 
-  if (visibleItems.length === 0 && !additionalRow) return null;
+  if (visibleItems.length === 0) return null;
 
   return (
     <View style={style}>
@@ -60,7 +58,6 @@ export function SidebarNavRows({ style, onBeforeNavigate, additionalRow }: Sideb
         const Row = BUILTIN_ROWS[item.id];
         return <Row key={item.key} onBeforeNavigate={onBeforeNavigate} />;
       })}
-      {additionalRow}
     </View>
   );
 }

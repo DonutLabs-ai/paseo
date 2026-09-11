@@ -36,7 +36,14 @@ import { getSidebarRowBackdrop } from "@/components/sidebar/sidebar-row-backdrop
 import { type GestureType } from "react-native-gesture-handler";
 import { WorkspaceRenameModal } from "@/components/workspace-rename-modal";
 import { useWorkspaceClipboardActions } from "@/hooks/use-workspace-clipboard-actions";
-import { ExternalLink, Settings, MoreVertical, Plus, Trash2 } from "lucide-react-native";
+import {
+  ExternalLink,
+  Settings,
+  MoreVertical,
+  Plus,
+  StepForward,
+  Trash2,
+} from "lucide-react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { DraggableList, type DraggableRenderItemInfo } from "./draggable-list";
 import type { DraggableListDragHandleProps } from "./draggable-list.types";
@@ -69,6 +76,7 @@ import {
   type SidebarGroupMode,
 } from "@/stores/sidebar-view-store";
 import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
+import { useUsageLimitRecovery } from "@/hooks/use-usage-limit-recovery";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -182,6 +190,7 @@ const PROJECT_STATUS_LABEL_KEYS = {
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 const ThemedPlus = withUnistyles(Plus);
+const ThemedStepForward = withUnistyles(StepForward);
 const ThemedMoreVertical = withUnistyles(MoreVertical);
 const ThemedTrash2 = withUnistyles(Trash2);
 const ThemedSettings = withUnistyles(Settings);
@@ -280,6 +289,9 @@ interface ProjectHeaderRowProps {
   menuController: ReturnType<typeof useContextMenu> | null;
   onRemoveProject?: () => void;
   removeProjectStatus?: "idle" | "pending";
+  usageLimitRecoveryCount: number;
+  isRecoveringUsageLimitedSessions: boolean;
+  onContinueUsageLimitedSessions: () => void;
   dragHandleProps?: DraggableListDragHandleProps;
 }
 
@@ -437,6 +449,9 @@ function ProjectRowTrailingActions({
   onBeginWorkspaceSetup,
   onRemoveProject,
   removeProjectStatus,
+  usageLimitRecoveryCount,
+  isRecoveringUsageLimitedSessions,
+  onContinueUsageLimitedSessions,
 }: {
   projectViewKey: string;
   displayName: string;
@@ -449,10 +464,19 @@ function ProjectRowTrailingActions({
   onBeginWorkspaceSetup: () => void;
   onRemoveProject?: () => void;
   removeProjectStatus: "idle" | "pending" | "success";
+  usageLimitRecoveryCount: number;
+  isRecoveringUsageLimitedSessions: boolean;
+  onContinueUsageLimitedSessions: () => void;
 }) {
   const actionsVisible = isHovered || platformIsNative || isMobileBreakpoint;
   return (
     <View style={styles.projectTrailingActions}>
+      <UsageLimitRecoveryButton
+        projectViewKey={projectViewKey}
+        count={usageLimitRecoveryCount}
+        loading={isRecoveringUsageLimitedSessions}
+        onPress={onContinueUsageLimitedSessions}
+      />
       {worktreeTarget ? (
         <NewWorktreeButton
           displayName={displayName}
@@ -477,6 +501,78 @@ function ProjectRowTrailingActions({
         </View>
       ) : null}
     </View>
+  );
+}
+
+function UsageLimitRecoveryButton({
+  projectViewKey,
+  count,
+  loading,
+  onPress,
+}: {
+  projectViewKey: string;
+  count: number;
+  loading: boolean;
+  onPress: () => void;
+}) {
+  const { t } = useTranslation();
+  const disabled = count === 0 || loading;
+  const label = t("cockpit.actions.continueUsageLimited", { count });
+  const pressableStyle = useCallback(
+    ({ hovered, pressed }: PressableStateCallbackType & { hovered?: boolean }) => [
+      styles.projectActionButton,
+      (Boolean(hovered) || pressed) && !disabled && styles.projectActionButtonHovered,
+      disabled && styles.projectActionButtonDisabled,
+    ],
+    [disabled],
+  );
+  const handlePress = useCallback(
+    (event: GestureResponderEvent) => {
+      event.stopPropagation();
+      onPress();
+    },
+    [onPress],
+  );
+
+  return (
+    <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+      <TooltipTrigger asChild>
+        <Pressable
+          style={pressableStyle}
+          onPress={handlePress}
+          disabled={disabled}
+          accessibilityRole="button"
+          accessibilityLabel={label}
+          testID={`sidebar-project-continue-usage-limited-${projectViewKey}`}
+        >
+          {({ hovered, pressed }) => (
+            <>
+              {loading ? (
+                <ThemedLoadingSpinner size={14} uniProps={foregroundMutedColorMapping} />
+              ) : (
+                <ThemedStepForward
+                  size={14}
+                  uniProps={
+                    hovered || pressed ? foregroundColorMapping : foregroundMutedColorMapping
+                  }
+                />
+              )}
+              <Text
+                style={[
+                  styles.projectActionButtonText,
+                  (hovered || pressed) && !disabled && styles.projectActionButtonTextHovered,
+                ]}
+              >
+                {count}
+              </Text>
+            </>
+          )}
+        </Pressable>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" align="center" offset={8}>
+        <Text style={styles.projectActionTooltipText}>{label}</Text>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -897,6 +993,9 @@ function ProjectHeaderRow({
   menuController,
   onRemoveProject,
   removeProjectStatus = "idle",
+  usageLimitRecoveryCount,
+  isRecoveringUsageLimitedSessions,
+  onContinueUsageLimitedSessions,
   dragHandleProps,
 }: ProjectHeaderRowProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -1002,6 +1101,9 @@ function ProjectHeaderRow({
         onBeginWorkspaceSetup={handleBeginWorkspaceSetup}
         onRemoveProject={onRemoveProject}
         removeProjectStatus={removeProjectStatus}
+        usageLimitRecoveryCount={usageLimitRecoveryCount}
+        isRecoveringUsageLimitedSessions={isRecoveringUsageLimitedSessions}
+        onContinueUsageLimitedSessions={onContinueUsageLimitedSessions}
       />
       {showShortcutBadge && shortcutNumber !== null ? (
         <View style={styles.projectShortcutBadgeOverlay} pointerEvents="none">
@@ -1774,6 +1876,19 @@ function ProjectBlock({
     project,
     enabled: selectionEnabled,
   });
+  const usageLimitRecoveryWorkspaces = useMemo(
+    () =>
+      project.workspaces.flatMap((workspace) => {
+        const entry = workspaceEntriesByKey.get(workspace.workspaceKey);
+        return entry ? [entry] : [];
+      }),
+    [project.workspaces, workspaceEntriesByKey],
+  );
+  const {
+    continueUsageLimitedSessions,
+    isRecovering: isRecoveringUsageLimitedSessions,
+    usageLimitRecoveryCount,
+  } = useUsageLimitRecovery(usageLimitRecoveryWorkspaces);
 
   const renderWorkspaceRow = useCallback(
     (
@@ -1947,6 +2062,9 @@ function ProjectBlock({
         menuController={null}
         onRemoveProject={handleRemoveProject}
         removeProjectStatus={isRemovingProject ? "pending" : "idle"}
+        usageLimitRecoveryCount={usageLimitRecoveryCount}
+        isRecoveringUsageLimitedSessions={isRecoveringUsageLimitedSessions}
+        onContinueUsageLimitedSessions={continueUsageLimitedSessions}
         dragHandleProps={dragHandleProps}
       />
 
@@ -2840,6 +2958,7 @@ const styles = StyleSheet.create((theme) => ({
     paddingVertical: theme.spacing[1],
     borderRadius: theme.borderRadius.md,
     flexShrink: 0,
+    height: 24,
   },
   projectActionButtonHovered: {
     backgroundColor: theme.colors.surfaceSidebarHover,
@@ -2847,6 +2966,13 @@ const styles = StyleSheet.create((theme) => ({
   projectActionButtonText: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
+    fontVariant: ["tabular-nums"],
+  },
+  projectActionButtonTextHovered: {
+    color: theme.colors.foreground,
+  },
+  projectActionButtonDisabled: {
+    opacity: 0.45,
   },
   projectIconActionButton: {
     width: 24,

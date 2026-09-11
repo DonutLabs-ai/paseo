@@ -62,7 +62,7 @@ test("shows the latest agent activity in the sidebar and cockpit cards", async (
   }
 });
 
-test("continues every usage-limited session from the fixed sidebar action", async ({ page }) => {
+test("continues every usage-limited session from its project header action", async ({ page }) => {
   const first = await seedMockAgentWorkspace({
     repoPrefix: "cockpit-usage-limit-first-",
     title: "First usage-limited workspace",
@@ -72,24 +72,48 @@ test("continues every usage-limited session from the fixed sidebar action", asyn
       mockStreamingAssistantIntervalMs: 250,
     },
   });
-  const second = await seedMockAgentWorkspace({
-    repoPrefix: "cockpit-usage-limit-second-",
-    title: "Second usage-limited workspace",
-    initialPrompt: "Run the second task",
-    featureValues: {
-      mockStreamingAssistantResponse: USAGE_LIMIT_ERROR,
-      mockStreamingAssistantIntervalMs: 250,
-    },
-  });
-
   try {
+    const firstWorkspace = (await first.client.fetchWorkspaces()).entries.find(
+      (workspace) => workspace.id === first.workspaceId,
+    );
+    if (!firstWorkspace) {
+      throw new Error("Failed to find the first usage-limit workspace");
+    }
+    const createdSecondWorkspace = await first.client.createWorkspace({
+      source: {
+        kind: "worktree",
+        cwd: first.cwd,
+        projectId: firstWorkspace.projectId,
+        worktreeSlug: "usage-limit-second",
+      },
+      title: "Second usage-limited workspace",
+    });
+    if (!createdSecondWorkspace.workspace) {
+      throw new Error(createdSecondWorkspace.error ?? "Failed to create the second workspace");
+    }
+    const second = await first.client.createAgent({
+      provider: "mock",
+      cwd: createdSecondWorkspace.workspace.workspaceDirectory,
+      workspaceId: createdSecondWorkspace.workspace.id,
+      title: "Second usage-limited workspace",
+      modeId: "load-test",
+      model: "e2e-fast-stream",
+      initialPrompt: "Run the second task",
+      featureValues: {
+        mockStreamingAssistantResponse: USAGE_LIMIT_ERROR,
+        mockStreamingAssistantIntervalMs: 250,
+      },
+    });
+
     await Promise.all([
       first.client.waitForFinish(first.agentId, 30_000),
-      second.client.waitForFinish(second.agentId, 30_000),
+      first.client.waitForFinish(second.id, 30_000),
     ]);
     await openAgentRoute(page, first);
 
-    const button = page.getByTestId("sidebar-continue-usage-limited");
+    await expect(page.getByTestId("sidebar-continue-usage-limited")).toHaveCount(0);
+    const button = page.getByTestId(/^sidebar-project-continue-usage-limited-/);
+    await expect(button).toHaveCount(1);
     await expect(button).toBeEnabled({ timeout: 30_000 });
     await expect(button).toHaveAccessibleName("Continue usage-limited sessions (2)");
 
@@ -98,8 +122,8 @@ test("continues every usage-limited session from the fixed sidebar action", asyn
       (snapshot) => snapshot.status === "running",
       15_000,
     );
-    const secondRunning = second.client.waitForAgentUpsert(
-      second.agentId,
+    const secondRunning = first.client.waitForAgentUpsert(
+      second.id,
       (snapshot) => snapshot.status === "running",
       15_000,
     );
@@ -114,7 +138,7 @@ test("continues every usage-limited session from the fixed sidebar action", asyn
     await expect(cockpitButton).toBeDisabled();
     await expect(cockpitButton).toHaveAccessibleName("Continue usage-limited sessions (0)");
   } finally {
-    await Promise.all([first.cleanup(), second.cleanup()]);
+    await first.cleanup();
   }
 });
 

@@ -1,24 +1,7 @@
 import { router } from "expo-router";
-import {
-  FolderPlus,
-  GitBranch,
-  Import,
-  Server,
-  Settings,
-  StepForward,
-  X,
-} from "lucide-react-native";
+import { FolderPlus, GitBranch, Import, Server, Settings, X } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactElement,
-  type RefObject,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   Pressable,
   StyleSheet as RNStyleSheet,
@@ -41,7 +24,6 @@ import {
 import { HostPicker } from "@/components/hosts/host-picker";
 import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-preferences/menu";
 import { SidebarNavRows } from "@/components/sidebar/sidebar-nav-rows";
-import { SidebarHeaderRow } from "@/components/sidebar/sidebar-header-row";
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { Shortcut } from "@/components/ui/shortcut";
@@ -50,7 +32,6 @@ import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout"
 import { useOpenAddProject } from "@/hooks/use-open-add-project";
 import { useImportSession } from "@/hooks/use-import-session";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
-import { useUsageLimitRecovery } from "@/hooks/use-usage-limit-recovery";
 import {
   type SidebarProjectEntry,
   type SidebarWorkspaceEntry,
@@ -99,7 +80,6 @@ interface SidebarSharedProps {
   labels: SidebarLabels;
   handleAddHost: () => void;
   handleOpenHostSettings: (serverId: string) => void;
-  usageLimitRecoveryRow: ReactElement | null;
 }
 
 interface SidebarLabels {
@@ -135,7 +115,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     hasProjectsBeforeFilter,
     resolvedProjectFilters,
     workspaceEntriesByKey,
-    allWorkspaceEntriesByKey,
     isInitialLoad,
     isRevalidating,
     refreshAll,
@@ -148,30 +127,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     shortcutModel,
   } = useSidebarModel();
   const { shortcutIndexByWorkspaceKey } = shortcutModel;
-  const allWorkspaceEntries = useMemo(
-    () => [...allWorkspaceEntriesByKey.values()],
-    [allWorkspaceEntriesByKey],
-  );
-  const {
-    continueUsageLimitedSessions,
-    isRecovering: isRecoveringUsageLimitedSessions,
-    usageLimitRecoveryCount,
-  } = useUsageLimitRecovery(allWorkspaceEntries);
-  const usageLimitRecoveryLabel = t("cockpit.actions.continueUsageLimited", {
-    count: usageLimitRecoveryCount,
-  });
-  const usageLimitRecoveryRow = (
-    <SidebarHeaderRow
-      icon={StepForward}
-      label={usageLimitRecoveryLabel}
-      onPress={continueUsageLimitedSessions}
-      disabled={usageLimitRecoveryCount === 0 || isRecoveringUsageLimitedSessions}
-      loading={isRecoveringUsageLimitedSessions}
-      testID="sidebar-continue-usage-limited"
-      variant="compact"
-    />
-  );
-
   const [isManualRefresh, setIsManualRefresh] = useState(false);
 
   const handleRefresh = useCallback(() => {
@@ -262,7 +217,6 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
     toggleProjectCollapsed,
     handleRefresh,
     labels,
-    usageLimitRecoveryRow,
   };
 
   if (isCompactLayout) {
@@ -572,7 +526,6 @@ function MobileSidebar({
   labels,
   handleAddHost,
   handleOpenHostSettings,
-  usageLimitRecoveryRow,
   insetsTop,
   insetsBottom,
   closeSidebar,
@@ -601,11 +554,7 @@ function MobileSidebar({
     >
       <View style={styles.sidebarContent} pointerEvents="auto">
         <WindowChromeSafeArea placement="below" />
-        <SidebarNavRows
-          style={styles.sidebarHeaderGroup}
-          onBeforeNavigate={closeSidebar}
-          additionalRow={usageLimitRecoveryRow}
-        />
+        <SidebarNavRows style={styles.sidebarHeaderGroup} onBeforeNavigate={closeSidebar} />
         <WindowChromeSafeArea placement="inline" style={styles.mobileCloseButtonRow}>
           <Pressable
             style={styles.mobileCloseButton}
@@ -689,7 +638,6 @@ function DesktopSidebar({
   labels,
   handleAddHost,
   handleOpenHostSettings,
-  usageLimitRecoveryRow,
   insetsTop,
   active,
 }: DesktopSidebarProps) {
@@ -802,7 +750,7 @@ function DesktopSidebar({
           ) : (
             <TitlebarDragRegion />
           )}
-          <SidebarNavRows style={sidebarHeaderGroupStyle} additionalRow={usageLimitRecoveryRow} />
+          <SidebarNavRows style={sidebarHeaderGroupStyle} />
         </View>
 
         {isInitialLoad && !hasActiveHostFilter ? (
