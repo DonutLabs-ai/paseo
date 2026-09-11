@@ -34,6 +34,7 @@ class FakeDirectoryClient {
   listProjectsCalls = 0;
   lastProjectOptions: unknown;
   projectResult: ProjectListResult | null = null;
+  workspaceResult: WorkspaceFetchResult | null = null;
   private pendingAgentFetch: Promise<AgentFetchResult> | null = null;
   private pendingWorkspaceFetch: Promise<WorkspaceFetchResult> | null = null;
   private readonly handlers = new Map<
@@ -97,6 +98,7 @@ class FakeDirectoryClient {
       this.pendingWorkspaceFetch = null;
       return pending;
     }
+    if (this.workspaceResult) return this.workspaceResult;
     return {
       requestId: "workspaces",
       entries: [],
@@ -189,6 +191,182 @@ afterEach(() => {
 });
 
 describe("DirectorySync session readiness", () => {
+  it("reconciles the owning workspace when the viewed agent turn completes", async () => {
+    const serverId = "terminal-turn-workspace-reconciliation";
+    const { client, directory } = createDirectory(serverId);
+    const workspacePayload = {
+      id: "workspace-completed-turn",
+      projectId: "project-1",
+      projectDisplayName: "Paseo",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo",
+      projectKind: "git",
+      workspaceKind: "local_checkout",
+      name: "completed turn",
+      status: "running",
+      statusEnteredAt: "2026-09-11T04:30:00.000Z",
+      activityAt: "2026-09-11T04:30:00.000Z",
+      archivingAt: null,
+      diffStat: null,
+      scripts: [],
+    } satisfies WorkspaceFetchResult["entries"][number];
+    const workspace = normalizeWorkspaceDescriptor(workspacePayload);
+    const agent = {
+      ...createAgent(serverId, "agent-completed-turn"),
+      workspaceId: workspace.id,
+    };
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, client as unknown as DaemonClient, 1);
+    directory.acceptWorkspaces([workspace]);
+    directory.acceptAgent(agent);
+    directory.applyAgentTurnLiveness(agent.id, {
+      type: "stream_open",
+      turn: { turnId: "turn-1", startedAt: new Date("2026-09-11T04:30:00.000Z") },
+    });
+    client.workspaceResult = {
+      requestId: "workspace-status-after-turn",
+      entries: [
+        { ...workspacePayload, status: "done", statusEnteredAt: "2026-09-11T04:31:00.000Z" },
+      ],
+      emptyProjects: [],
+      pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+    };
+
+    directory.applyAgentTurnLiveness(agent.id, { type: "stream_close", turnId: "turn-1" });
+
+    await expect
+      .poll(
+        () => useSessionStore.getState().sessions[serverId]?.workspaces.get(workspace.id)?.status,
+      )
+      .toBe("done");
+    expect(client.lastWorkspaceOptions).toEqual({
+      filter: { query: workspace.id },
+      page: { limit: 200 },
+    });
+    directory.dispose();
+  });
+
+  it("does not apply a completed-turn workspace response after a new turn starts", async () => {
+    const serverId = "superseded-terminal-turn-workspace-reconciliation";
+    const { client, directory } = createDirectory(serverId);
+    const workspacePayload = {
+      id: "workspace-restarted-turn",
+      projectId: "project-1",
+      projectDisplayName: "Paseo",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo",
+      projectKind: "git",
+      workspaceKind: "local_checkout",
+      name: "restarted turn",
+      status: "running",
+      statusEnteredAt: "2026-09-11T04:30:00.000Z",
+      activityAt: "2026-09-11T04:30:00.000Z",
+      archivingAt: null,
+      diffStat: null,
+      scripts: [],
+    } satisfies WorkspaceFetchResult["entries"][number];
+    const workspace = normalizeWorkspaceDescriptor(workspacePayload);
+    const agent = {
+      ...createAgent(serverId, "agent-restarted-turn"),
+      workspaceId: workspace.id,
+    };
+    const releaseWorkspace = client.holdWorkspaceFetch();
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, client as unknown as DaemonClient, 1);
+    directory.acceptWorkspaces([workspace]);
+    directory.acceptAgent(agent);
+    directory.applyAgentTurnLiveness(agent.id, {
+      type: "stream_open",
+      turn: { turnId: "turn-1", startedAt: new Date("2026-09-11T04:30:00.000Z") },
+    });
+    directory.applyAgentTurnLiveness(agent.id, { type: "stream_close", turnId: "turn-1" });
+    await expect.poll(() => client.fetchWorkspacesCalls).toBe(1);
+
+    directory.applyAgentTurnLiveness(agent.id, {
+      type: "stream_open",
+      turn: { turnId: "turn-2", startedAt: new Date("2026-09-11T04:31:00.000Z") },
+    });
+    releaseWorkspace({
+      requestId: "stale-workspace-status",
+      entries: [
+        { ...workspacePayload, status: "done", statusEnteredAt: "2026-09-11T04:31:00.000Z" },
+      ],
+      emptyProjects: [],
+      pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(
+      useSessionStore.getState().sessions[serverId]?.workspaces.get(workspace.id)?.status,
+    ).toBe("running");
+    directory.dispose();
+  });
+
+  it("preserves a newer pushed workspace status over the completed-turn response", async () => {
+    const serverId = "newer-push-terminal-turn-workspace-reconciliation";
+    const { client, directory } = createDirectory(serverId);
+    const workspacePayload = {
+      id: "workspace-newer-push",
+      projectId: "project-1",
+      projectDisplayName: "Paseo",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo",
+      projectKind: "git",
+      workspaceKind: "local_checkout",
+      name: "newer push",
+      status: "running",
+      statusEnteredAt: "2026-09-11T04:30:00.000Z",
+      activityAt: "2026-09-11T04:30:00.000Z",
+      archivingAt: null,
+      diffStat: null,
+      scripts: [],
+    } satisfies WorkspaceFetchResult["entries"][number];
+    const workspace = normalizeWorkspaceDescriptor(workspacePayload);
+    const agent = {
+      ...createAgent(serverId, "agent-newer-push"),
+      workspaceId: workspace.id,
+    };
+    const releaseWorkspace = client.holdWorkspaceFetch();
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, client as unknown as DaemonClient, 1);
+    directory.acceptWorkspaces([workspace]);
+    directory.acceptAgent(agent);
+    directory.applyAgentTurnLiveness(agent.id, {
+      type: "stream_open",
+      turn: { turnId: "turn-1", startedAt: new Date("2026-09-11T04:30:00.000Z") },
+    });
+    directory.applyAgentTurnLiveness(agent.id, { type: "stream_close", turnId: "turn-1" });
+    await expect.poll(() => client.fetchWorkspacesCalls).toBe(1);
+
+    client.emit({
+      type: "workspace_update",
+      payload: {
+        kind: "upsert",
+        workspace: {
+          ...workspacePayload,
+          status: "attention",
+          statusEnteredAt: "2026-09-11T04:31:30.000Z",
+        },
+      },
+    });
+    releaseWorkspace({
+      requestId: "older-workspace-status",
+      entries: [
+        { ...workspacePayload, status: "done", statusEnteredAt: "2026-09-11T04:31:00.000Z" },
+      ],
+      emptyProjects: [],
+      pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(
+      useSessionStore.getState().sessions[serverId]?.workspaces.get(workspace.id)?.status,
+    ).toBe("attention");
+    directory.dispose();
+  });
+
   it("restores the cached directory before network demand", async () => {
     const serverId = "offline-cached-directory";
     serverIds.add(serverId);
