@@ -22,6 +22,8 @@ export interface AgentLifecycleToken {
   readonly version: number;
 }
 
+export type AgentTurnPhaseTransition = "started" | "stopped" | null;
+
 export class AgentDirectoryReplica {
   private readonly lifecycleVersions = new Map<string, number>();
   private readonly members = new Set<string>();
@@ -208,14 +210,17 @@ export class AgentDirectoryReplica {
   applyTurnLiveness(
     agentId: string,
     transition: TurnLivenessTransition | readonly TurnLivenessTransition[],
-  ): boolean {
+  ): AgentTurnPhaseTransition {
     const wasRunning = this.storeProjection.get(agentId)?.turn.phase === "open";
     const accepted = this.storeProjection.applyTurn(agentId, transition);
-    if (!accepted) return false;
+    if (!accepted) return null;
     this.persist([this.agentUpsert(accepted)]);
-    const stoppedRunning = wasRunning && accepted.turn.phase === "idle";
-    if (stoppedRunning) this.onStoppedRunning(agentId);
-    return stoppedRunning;
+    const isRunning = accepted.turn.phase === "open";
+    if (wasRunning && !isRunning) {
+      this.onStoppedRunning(agentId);
+      return "stopped";
+    }
+    return !wasRunning && isRunning ? "started" : null;
   }
 
   private agentUpsert(agent: Agent): DirectoryReplicaMutation {

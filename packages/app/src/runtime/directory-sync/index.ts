@@ -410,20 +410,37 @@ export class DirectorySync {
     agentId: string,
     transition: TurnLivenessTransition | readonly TurnLivenessTransition[],
   ): void {
-    if (!this.agents.applyTurnLiveness(agentId, transition)) return;
-    void this.reconcileStoppedAgentWorkspace(agentId).catch((error) => {
-      console.warn("[DirectorySync] failed to reconcile workspace after agent turn completed", {
+    const phaseTransition = this.agents.applyTurnLiveness(agentId, transition);
+    if (!phaseTransition) return;
+    if (phaseTransition === "started" && !this.startedAgentNeedsWorkspaceReconciliation(agentId)) {
+      return;
+    }
+    const expectedPhase = phaseTransition === "started" ? "open" : "idle";
+    void this.reconcileAgentWorkspace(agentId, expectedPhase).catch((error) => {
+      console.warn("[DirectorySync] failed to reconcile workspace after agent turn transition", {
         serverId: this.serverId,
         agentId,
+        phaseTransition,
         error,
       });
     });
   }
 
-  private async reconcileStoppedAgentWorkspace(agentId: string): Promise<void> {
-    const stoppedAgent = this.agents.snapshot().get(agentId);
-    const workspaceId = stoppedAgent?.workspaceId;
-    if (!workspaceId || stoppedAgent.turn.phase !== "idle") return;
+  private startedAgentNeedsWorkspaceReconciliation(agentId: string): boolean {
+    const agent = this.agents.snapshot().get(agentId);
+    const workspaceId = agent?.workspaceId;
+    if (!workspaceId || agent.turn.phase !== "open") return false;
+    const status = this.workspaces.snapshot().workspaces.get(workspaceId)?.status;
+    return status === "failed" || status === "attention";
+  }
+
+  private async reconcileAgentWorkspace(
+    agentId: string,
+    expectedPhase: "open" | "idle",
+  ): Promise<void> {
+    const transitionedAgent = this.agents.snapshot().get(agentId);
+    const workspaceId = transitionedAgent?.workspaceId;
+    if (!workspaceId || transitionedAgent.turn.phase !== expectedPhase) return;
 
     const onlineConnection = this.getOnlineConnection();
     if (!onlineConnection) return;
@@ -450,7 +467,7 @@ export class DirectorySync {
     const currentAgent = this.agents.snapshot().get(agentId);
     if (
       currentAgent?.workspaceId !== workspaceId ||
-      currentAgent.turn.phase !== "idle" ||
+      currentAgent.turn.phase !== expectedPhase ||
       (this.workspaceVersions.get(workspaceId) ?? 0) !== workspaceVersion ||
       this.projectRevision !== projectRevision
     ) {

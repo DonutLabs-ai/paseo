@@ -146,13 +146,19 @@ describe("AgentDirectoryReplica", () => {
       () => undefined,
     );
     replica.commitSnapshot([entry(payload("agent"))], []);
-    replica.applyTurnLiveness("agent", {
-      type: "stream_open",
-      turn: { turnId: "turn-1", startedAt: null },
-    });
+    expect(
+      replica.applyTurnLiveness("agent", {
+        type: "stream_open",
+        turn: { turnId: "turn-1", startedAt: null },
+      }),
+    ).toBe("started");
 
-    replica.applyTurnLiveness("agent", { type: "stream_close", turnId: "turn-1" });
-    replica.applyTurnLiveness("agent", { type: "stream_close", turnId: "turn-1" });
+    expect(replica.applyTurnLiveness("agent", { type: "stream_close", turnId: "turn-1" })).toBe(
+      "stopped",
+    );
+    expect(replica.applyTurnLiveness("agent", { type: "stream_close", turnId: "turn-1" })).toBe(
+      null,
+    );
 
     expect(stopped).toEqual(["agent"]);
     store.clearSession(serverId);

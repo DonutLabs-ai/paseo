@@ -2438,6 +2438,11 @@ export class AgentManager {
       agent.activeForegroundTurnId = turnId;
       this.openActiveTurn(agent, turnId, turnStartedAt);
       agent.lifecycle = "running";
+      // The accepted turn supersedes completion/error attention from the previous turn. Keep
+      // permission attention until its permission is explicitly resolved.
+      if (agent.attention.requiresAttention && agent.attention.attentionReason !== "permission") {
+        agent.attention = { requiresAttention: false };
+      }
       this.touchUpdatedAt(agent);
       // AgentManager owns the accepted-turn boundary. Publish liveness before the canonical
       // prompt so clients can retire optimistic activity without painting an idle frame.
