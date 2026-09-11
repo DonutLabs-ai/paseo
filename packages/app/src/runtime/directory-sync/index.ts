@@ -2,6 +2,7 @@ import type {
   DaemonClient,
   FetchAgentsEntry,
   FetchAgentsOptions,
+  FetchWorkspacesEntry,
 } from "@getpaseo/client/internal/daemon-client";
 import { fetchAgentTimelineOnce } from "@/timeline/fetch-agent-timeline-once";
 import {
@@ -152,6 +153,8 @@ export class DirectorySync {
   private cacheAccepted = false;
   private revision = 0;
   private workspaceRevision = 0;
+  private projectRevision = 0;
+  private readonly workspaceVersions = new Map<string, number>();
   private readonly routeDemandIds = new Set<string>();
   private readonly fullDemandSources = new Set<object>();
   private demandRefresh: Promise<void> | null = null;
@@ -208,6 +211,9 @@ export class DirectorySync {
         if (message.type !== "workspace_update" || !this.isCurrent(client, source)) return;
         this.revision += 1;
         this.workspaceRevision += 1;
+        this.advanceWorkspaceVersion(
+          message.payload.kind === "upsert" ? message.payload.workspace.id : message.payload.id,
+        );
         const recorded = this.workspaceTransactions.record(source, message.payload);
         if (!recorded) {
           this.applyWorkspaceDelta(message.payload);
@@ -219,6 +225,7 @@ export class DirectorySync {
         if (message.type !== "project.update" || !this.isCurrent(client, source)) return;
         this.revision += 1;
         this.workspaceRevision += 1;
+        this.projectRevision += 1;
         const recorded = this.workspaceTransactions.record(source, message.payload);
         if (!recorded) {
           this.applyWorkspaceDelta(message.payload);
@@ -230,6 +237,7 @@ export class DirectorySync {
         if (message.type !== "script_status_update" || !this.isCurrent(client, source)) return;
         this.revision += 1;
         this.workspaceRevision += 1;
+        this.advanceWorkspaceVersion(message.payload.workspaceId);
         const delta: WorkspaceDirectoryDelta = {
           kind: "script_status",
           update: message.payload,
@@ -402,7 +410,66 @@ export class DirectorySync {
     agentId: string,
     transition: TurnLivenessTransition | readonly TurnLivenessTransition[],
   ): void {
-    this.agents.applyTurnLiveness(agentId, transition);
+    if (!this.agents.applyTurnLiveness(agentId, transition)) return;
+    void this.reconcileStoppedAgentWorkspace(agentId).catch((error) => {
+      console.warn("[DirectorySync] failed to reconcile workspace after agent turn completed", {
+        serverId: this.serverId,
+        agentId,
+        error,
+      });
+    });
+  }
+
+  private async reconcileStoppedAgentWorkspace(agentId: string): Promise<void> {
+    const stoppedAgent = this.agents.snapshot().get(agentId);
+    const workspaceId = stoppedAgent?.workspaceId;
+    if (!workspaceId || stoppedAgent.turn.phase !== "idle") return;
+
+    const onlineConnection = this.getOnlineConnection();
+    if (!onlineConnection) return;
+    const { client, source } = onlineConnection;
+    const workspaceVersion = this.workspaceVersions.get(workspaceId) ?? 0;
+    const projectRevision = this.projectRevision;
+    let cursor: string | undefined;
+    let workspace: FetchWorkspacesEntry | null = null;
+
+    do {
+      const payload = await client.fetchWorkspaces({
+        filter: { query: workspaceId },
+        page: { limit: PAGE_LIMIT, ...(cursor ? { cursor } : {}) },
+      });
+      if (!this.isCurrent(client, source)) return;
+      const match = payload.entries.find((entry) => entry.id === workspaceId);
+      if (match) {
+        workspace = match;
+        break;
+      }
+      cursor = payload.pageInfo.nextCursor ?? undefined;
+    } while (cursor);
+
+    const currentAgent = this.agents.snapshot().get(agentId);
+    if (
+      currentAgent?.workspaceId !== workspaceId ||
+      currentAgent.turn.phase !== "idle" ||
+      (this.workspaceVersions.get(workspaceId) ?? 0) !== workspaceVersion ||
+      this.projectRevision !== projectRevision
+    ) {
+      return;
+    }
+
+    const delta: WorkspaceDirectoryDelta = workspace
+      ? { kind: "upsert", workspace }
+      : { kind: "remove", id: workspaceId };
+    this.revision += 1;
+    this.workspaceRevision += 1;
+    this.advanceWorkspaceVersion(workspaceId);
+    if (!this.workspaceTransactions.record(source, delta)) {
+      this.applyWorkspaceDelta(delta);
+    }
+  }
+
+  private advanceWorkspaceVersion(workspaceId: string): void {
+    this.workspaceVersions.set(workspaceId, (this.workspaceVersions.get(workspaceId) ?? 0) + 1);
   }
 
   acceptAgent(agent: Agent): Agent {
@@ -636,6 +703,7 @@ export class DirectorySync {
   }
 
   acceptWorkspaces(workspaces: readonly WorkspaceDescriptor[]): void {
+    for (const workspace of workspaces) this.advanceWorkspaceVersion(workspace.id);
     const mutations = this.workspaces.acceptWorkspaces(workspaces);
     this.checkpoints?.commitDirectoryMutations(this.serverId, mutations);
   }
@@ -818,6 +886,8 @@ export class DirectorySync {
       if (mutation.kind === "workspace") workspaceIds.add(mutation.id);
       if (mutation.kind === "project") projectIds.add(mutation.id);
     }
+    for (const workspaceId of workspaceIds) this.advanceWorkspaceVersion(workspaceId);
+    if (projectIds.size > 0) this.projectRevision += 1;
     this.persistWorkspaceChanges(previous, workspaceIds, projectIds);
     for (const [entity, cursor] of Object.entries(completion.snapshot.syncCursors ?? {})) {
       if (cursor) this.writeCursor(entity as "projects" | "workspaces", cursor);

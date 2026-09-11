@@ -208,12 +208,14 @@ export class AgentDirectoryReplica {
   applyTurnLiveness(
     agentId: string,
     transition: TurnLivenessTransition | readonly TurnLivenessTransition[],
-  ): void {
+  ): boolean {
     const wasRunning = this.storeProjection.get(agentId)?.turn.phase === "open";
     const accepted = this.storeProjection.applyTurn(agentId, transition);
-    if (!accepted) return;
+    if (!accepted) return false;
     this.persist([this.agentUpsert(accepted)]);
-    if (wasRunning && accepted.turn.phase === "idle") this.onStoppedRunning(agentId);
+    const stoppedRunning = wasRunning && accepted.turn.phase === "idle";
+    if (stoppedRunning) this.onStoppedRunning(agentId);
+    return stoppedRunning;
   }
 
   private agentUpsert(agent: Agent): DirectoryReplicaMutation {
