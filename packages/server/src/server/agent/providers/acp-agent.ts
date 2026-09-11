@@ -3516,7 +3516,7 @@ function mapToolSnapshotToTimeline(
   const base = {
     type: "tool_call" as const,
     callId: snapshot.toolCallId,
-    name: snapshot.kind ?? snapshot.title,
+    name: snapshot.title,
     detail,
     metadata: {
       kind: snapshot.kind ?? undefined,
@@ -3567,6 +3567,27 @@ interface MapToolDetailContext {
   rawOutput: ReturnType<typeof readRecord>;
 }
 
+type ACPToolDetailKind = ToolKind | "write";
+
+const UNCLASSIFIED_ACP_TOOL_KINDS = new Map<string, ACPToolDetailKind>([
+  ["bash", "execute"],
+  ["read", "read"],
+  ["read_image", "read"],
+  ["write", "write"],
+  ["edit", "edit"],
+  ["glob", "search"],
+  ["grep", "search"],
+  ["web_search", "search"],
+  ["web_fetch", "fetch"],
+]);
+
+function resolveACPToolDetailKind(snapshot: ACPToolSnapshot): ACPToolDetailKind {
+  if (snapshot.kind && snapshot.kind !== "other") {
+    return snapshot.kind;
+  }
+  return UNCLASSIFIED_ACP_TOOL_KINDS.get(snapshot.title.trim().toLowerCase()) ?? "other";
+}
+
 function mapToolDetail(
   snapshot: ACPToolSnapshot,
   terminals: Map<string, TerminalEntry>,
@@ -3581,9 +3602,11 @@ function mapToolDetail(
     rawOutput: readRecord(snapshot.rawOutput),
   };
 
-  switch (snapshot.kind) {
+  switch (resolveACPToolDetailKind(snapshot)) {
     case "read":
       return buildReadToolDetail(context);
+    case "write":
+      return buildWriteToolDetail(context);
     case "edit":
     case "delete":
       return buildEditToolDetail(context);
@@ -3616,10 +3639,25 @@ function buildReadToolDetail(context: MapToolDetailContext): ToolCallDetail {
   const { snapshot, firstLocation, textContent, rawInput, rawOutput } = context;
   return {
     type: "read",
-    filePath: firstLocation ?? readString(rawInput, ["path", "filePath", "file"]) ?? snapshot.title,
+    filePath:
+      firstLocation ??
+      readString(rawInput, ["path", "filePath", "file_path", "file"]) ??
+      snapshot.title,
     content: textContent ?? readString(rawOutput, ["content", "text"]),
     offset: readNumber(rawInput, ["offset", "line"]),
     limit: readNumber(rawInput, ["limit"]),
+  };
+}
+
+function buildWriteToolDetail(context: MapToolDetailContext): ToolCallDetail {
+  const { snapshot, firstLocation, diffContent, rawInput } = context;
+  return {
+    type: "write",
+    filePath:
+      firstLocation ??
+      readString(rawInput, ["path", "filePath", "file_path", "file"]) ??
+      snapshot.title,
+    content: diffContent?.newText ?? readString(rawInput, ["content", "newText", "new_string"]),
   };
 }
 
@@ -3627,12 +3665,15 @@ function buildEditToolDetail(context: MapToolDetailContext): ToolCallDetail {
   const { snapshot, firstLocation, textContent, diffContent, rawInput } = context;
   return {
     type: "edit",
-    filePath: firstLocation ?? readString(rawInput, ["path", "filePath", "file"]) ?? snapshot.title,
-    oldString: diffContent?.oldText ?? readString(rawInput, ["oldText", "oldString"]),
+    filePath:
+      firstLocation ??
+      readString(rawInput, ["path", "filePath", "file_path", "file"]) ??
+      snapshot.title,
+    oldString: diffContent?.oldText ?? readString(rawInput, ["oldText", "oldString", "old_string"]),
     newString:
       snapshot.kind === "delete"
         ? ""
-        : (diffContent?.newText ?? readString(rawInput, ["newText", "newString"])),
+        : (diffContent?.newText ?? readString(rawInput, ["newText", "newString", "new_string"])),
     unifiedDiff: textContent ?? undefined,
   };
 }
@@ -3657,7 +3698,7 @@ function buildShellToolDetail(context: MapToolDetailContext): ToolCallDetail {
       buildShellCommand(rawInput) ??
       readString(rawInput, ["command"]) ??
       snapshot.title,
-    cwd: terminalContent?.cwd ?? readString(rawInput, ["cwd"]),
+    cwd: terminalContent?.cwd ?? readString(rawInput, ["cwd", "workdir"]),
     output: terminalContent?.output ?? textContent ?? readString(rawOutput, ["output", "text"]),
     exitCode: terminalContent?.exitCode ?? readNumber(rawOutput, ["exitCode"]),
   };

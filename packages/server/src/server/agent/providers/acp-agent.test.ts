@@ -689,6 +689,133 @@ describe("ACPAgentSession terminal tools", () => {
   });
 });
 
+describe("ACPAgentSession tool call normalization", () => {
+  test("uses the ACP title and input when an agent underclassifies a shell call as other", () => {
+    const internals = asInternals<ACPSessionInternals>(createSession());
+
+    const started = internals.translateSessionUpdate({
+      sessionUpdate: "tool_call",
+      toolCallId: "bash-1",
+      title: "bash",
+      kind: "other",
+      status: "in_progress",
+      rawInput: {
+        command: "pwd",
+        description: "Print working directory",
+        workdir: "/repo",
+      },
+    });
+    const completed = internals.translateSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "bash-1",
+      status: "completed",
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "/repo\n" },
+        },
+      ],
+    });
+
+    expect(started).toMatchObject([
+      {
+        type: "timeline",
+        item: {
+          type: "tool_call",
+          callId: "bash-1",
+          name: "bash",
+          status: "running",
+          detail: {
+            type: "shell",
+            command: "pwd",
+            cwd: "/repo",
+          },
+        },
+      },
+    ]);
+    expect(completed).toMatchObject([
+      {
+        type: "timeline",
+        item: {
+          type: "tool_call",
+          callId: "bash-1",
+          name: "bash",
+          status: "completed",
+          detail: {
+            type: "shell",
+            command: "pwd",
+            cwd: "/repo",
+            output: "/repo\n",
+          },
+        },
+      },
+    ]);
+  });
+
+  test("maps an underclassified full-file write to canonical write detail", () => {
+    const events = asInternals<ACPSessionInternals>(createSession()).translateSessionUpdate({
+      sessionUpdate: "tool_call",
+      toolCallId: "write-1",
+      title: "write",
+      kind: "other",
+      status: "in_progress",
+      rawInput: {
+        file_path: "/repo/src/example.ts",
+        content: "export const value = 1;\n",
+      },
+    });
+
+    expect(events).toMatchObject([
+      {
+        type: "timeline",
+        item: {
+          type: "tool_call",
+          callId: "write-1",
+          name: "write",
+          detail: {
+            type: "write",
+            filePath: "/repo/src/example.ts",
+            content: "export const value = 1;\n",
+          },
+        },
+      },
+    ]);
+  });
+
+  test("keeps an unknown ACP tool title and opaque result without guessing its semantics", () => {
+    const events = asInternals<ACPSessionInternals>(createSession()).translateSessionUpdate({
+      sessionUpdate: "tool_call",
+      toolCallId: "custom-1",
+      title: "vendor_lookup",
+      kind: "other",
+      status: "completed",
+      rawInput: { id: "abc" },
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "opaque result" },
+        },
+      ],
+    });
+
+    expect(events).toMatchObject([
+      {
+        type: "timeline",
+        item: {
+          type: "tool_call",
+          callId: "custom-1",
+          name: "vendor_lookup",
+          detail: {
+            type: "plain_text",
+            label: "vendor_lookup",
+            text: "opaque result",
+          },
+        },
+      },
+    ]);
+  });
+});
+
 describe("mapACPUsage", () => {
   test("maps ACP usage fields into Paseo usage", () => {
     expect(
