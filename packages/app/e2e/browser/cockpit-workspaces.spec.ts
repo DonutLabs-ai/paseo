@@ -106,7 +106,8 @@ test("continues every usage-limited session from the fixed sidebar action", asyn
     await button.click();
 
     await Promise.all([firstRunning, secondRunning]);
-    await expect(button).toHaveCount(0);
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveAccessibleName("Continue usage-limited sessions (0)");
 
     await page.getByTestId("cockpit-mode-toggle").click();
     const cockpitButton = page.getByTestId("cockpit-continue-usage-limited");

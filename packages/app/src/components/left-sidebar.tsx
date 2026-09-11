@@ -160,18 +160,17 @@ export const LeftSidebar = memo(function LeftSidebar({ active }: { active: boole
   const usageLimitRecoveryLabel = t("cockpit.actions.continueUsageLimited", {
     count: usageLimitRecoveryCount,
   });
-  const usageLimitRecoveryRow =
-    usageLimitRecoveryCount > 0 ? (
-      <SidebarHeaderRow
-        icon={StepForward}
-        label={usageLimitRecoveryLabel}
-        onPress={continueUsageLimitedSessions}
-        disabled={isRecoveringUsageLimitedSessions}
-        loading={isRecoveringUsageLimitedSessions}
-        testID="sidebar-continue-usage-limited"
-        variant="compact"
-      />
-    ) : null;
+  const usageLimitRecoveryRow = (
+    <SidebarHeaderRow
+      icon={StepForward}
+      label={usageLimitRecoveryLabel}
+      onPress={continueUsageLimitedSessions}
+      disabled={usageLimitRecoveryCount === 0 || isRecoveringUsageLimitedSessions}
+      loading={isRecoveringUsageLimitedSessions}
+      testID="sidebar-continue-usage-limited"
+      variant="compact"
+    />
+  );
 
   const [isManualRefresh, setIsManualRefresh] = useState(false);
 
