@@ -5,6 +5,7 @@ import {
   CalendarClock,
   CircleDashed,
   Folder,
+  FolderTree,
   FolderPlus,
   History,
   Home,
@@ -35,7 +36,7 @@ import {
 import { getShortcutOs } from "@/utils/shortcut-platform";
 import type { CommandCenterContribution, CommandCenterIconProps } from "./contributions";
 import { useCommandCenterActions } from "./provider";
-import { buildGroupingContribution } from "./root-contributions";
+import { buildGroupingContributions } from "./root-contributions";
 
 const ThemedPlus = withUnistyles(Plus, (theme) => ({ color: theme.colors.foregroundMuted }));
 const ThemedFolderPlus = withUnistyles(FolderPlus, (theme) => ({
@@ -56,6 +57,9 @@ const ThemedSettings = withUnistyles(Settings, (theme) => ({
 const ThemedHome = withUnistyles(Home, (theme) => ({ color: theme.colors.foregroundMuted }));
 const ThemedImport = withUnistyles(Import, (theme) => ({ color: theme.colors.foregroundMuted }));
 const ThemedFolder = withUnistyles(Folder, (theme) => ({ color: theme.colors.foregroundMuted }));
+const ThemedFolderTree = withUnistyles(FolderTree, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
 const ThemedCircleDashed = withUnistyles(CircleDashed, (theme) => ({
   color: theme.colors.foregroundMuted,
 }));
@@ -97,6 +101,10 @@ function ImportIcon({ size }: CommandCenterIconProps) {
 
 function FolderIcon({ size }: CommandCenterIconProps) {
   return <ThemedFolder size={size} strokeWidth={2.2} />;
+}
+
+function FolderTreeIcon({ size }: CommandCenterIconProps) {
+  return <ThemedFolderTree size={size} strokeWidth={2.2} />;
 }
 
 function CircleDashedIcon({ size }: CommandCenterIconProps) {
@@ -317,14 +325,19 @@ export function CommandCenterRootActions() {
     }
 
     availableActions.push(
-      buildGroupingContribution({
+      ...buildGroupingContributions({
         groupMode,
         labels: {
           section: t("shell.commandCenter.actions"),
           groupByProject: t("shell.commandCenter.groupByProject"),
+          groupByProjectStatus: t("shell.commandCenter.groupByProjectStatus"),
           groupByStatus: t("shell.commandCenter.groupByStatus"),
         },
-        icons: { project: FolderIcon, status: CircleDashedIcon },
+        icons: {
+          project: FolderIcon,
+          "project-status": FolderTreeIcon,
+          status: CircleDashedIcon,
+        },
         setGroupMode,
       }),
     );

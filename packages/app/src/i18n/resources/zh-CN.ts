@@ -73,6 +73,7 @@ export const zhCN: TranslationResources = {
       addProject: "添加 project",
       home: "首页",
       groupByProject: "按项目分组",
+      groupByProjectStatus: "按项目和状态分组",
       groupByStatus: "按状态分组",
       modelGroupLabel: "模型",
       modelSearchKeywords: "切换模型 更改模型 设置模型 选择模型",
@@ -1093,6 +1094,7 @@ export const zhCN: TranslationResources = {
       grouping: {
         label: "分组",
         project: "项目",
+        projectStatus: "项目和状态",
         status: "状态",
         labels: "标签",
       },

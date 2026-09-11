@@ -70,6 +70,7 @@ export const en = {
       addProject: "Add project",
       home: "Home",
       groupByProject: "Group by project",
+      groupByProjectStatus: "Group by project and status",
       groupByStatus: "Group by status",
       modelGroupLabel: "Model",
       modelSearchKeywords: "switch model change model set model select model",
@@ -1110,6 +1111,7 @@ export const en = {
       grouping: {
         label: "Grouping",
         project: "Project",
+        projectStatus: "Project & status",
         status: "Status",
         labels: "Labels",
       },

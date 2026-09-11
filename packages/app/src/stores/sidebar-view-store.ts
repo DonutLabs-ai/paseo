@@ -5,11 +5,12 @@ import { z } from "zod";
 import { workspaceLabelKey } from "@getpaseo/protocol/workspace-labels";
 import { createValidatedPersistStorage } from "@/storage/validated-persist-storage";
 
-export type SidebarGroupMode = "project" | "status";
+export const SIDEBAR_GROUP_MODES = ["project", "project-status", "status"] as const;
+export type SidebarGroupMode = (typeof SIDEBAR_GROUP_MODES)[number];
 
 const SIDEBAR_VIEW_STORAGE_KEY = "sidebar-view";
 const LEGACY_SIDEBAR_GROUP_MODE_STORAGE_KEY = "sidebar-group-mode";
-const SIDEBAR_VIEW_STORE_VERSION = 6;
+const SIDEBAR_VIEW_STORE_VERSION = 7;
 
 /**
  * The key standing for "this workspace carries no labels at all".
@@ -79,7 +80,7 @@ interface SidebarViewPersistedState {
   labelFilter: SidebarLabelFilter;
 }
 
-const PersistedSidebarGroupModeSchema = z.enum(["project", "status", "label"]);
+const PersistedSidebarGroupModeSchema = z.enum(["project", "project-status", "status", "label"]);
 const SidebarLabelFilterSchema = z.object({
   labels: z.array(z.string()),
 });
@@ -102,7 +103,7 @@ function readLegacyGroupMode(persistedState: SidebarViewStorageState): SidebarGr
 
   const modes = Object.values(groupModeByServerId);
   if (modes.length === 0) return null;
-  return modes.includes("status") ? "status" : "project";
+  return modes.includes("status") ? "status" : "project-status";
 }
 
 // Reads the host filter from any persisted shape: the current `hostFilters` array, or the
@@ -118,11 +119,14 @@ function readHostFilters(persistedState: SidebarViewStorageState): string[] {
   return legacyHostFilter ? [legacyHostFilter] : [];
 }
 
-export function migrateSidebarViewState(persistedState: unknown): SidebarViewPersistedState {
+export function migrateSidebarViewState(
+  persistedState: unknown,
+  persistedVersion = 0,
+): SidebarViewPersistedState {
   const result = SidebarViewPersistedStateSchema.safeParse(persistedState);
   if (!result.success) {
     return {
-      groupMode: "project",
+      groupMode: "project-status",
       hostFilters: [],
       projectFilters: [],
       labelFilter: emptyLabelFilter(),
@@ -140,8 +144,19 @@ export function migrateSidebarViewState(persistedState: unknown): SidebarViewPer
     };
   }
 
+  let groupMode: SidebarGroupMode;
+  if (state.groupMode === "status" || state.groupMode === "project-status") {
+    groupMode = state.groupMode;
+  } else if (state.groupMode === "project" && persistedVersion >= 7) {
+    groupMode = "project";
+  } else {
+    // Before v7, "project" named the nested Project -> Status layout. Preserve that visible
+    // behavior during migration; v7 gives the un-nested project layout its own meaning.
+    groupMode = "project-status";
+  }
+
   return {
-    groupMode: state.groupMode === "status" ? "status" : "project",
+    groupMode,
     hostFilters: readHostFilters(state),
     projectFilters: state.projectFilters ?? [],
     labelFilter: state.labelFilter
@@ -178,7 +193,7 @@ export function createSidebarViewStorage(
 export const useSidebarViewStore = create<SidebarViewStoreState>()(
   persist(
     (set) => ({
-      groupMode: "project",
+      groupMode: "project-status",
       hostFilters: [],
       projectFilters: [],
       labelFilter: emptyLabelFilter(),

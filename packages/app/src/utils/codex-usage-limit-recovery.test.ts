@@ -7,6 +7,8 @@ import {
 
 const usageLimitError =
   "[System Error] You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 16th, 2026 3:58 PM.";
+const usageLimitUpgradeError =
+  "[System Error] You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 9:13 PM.";
 
 function message(
   kind: "user_message" | "assistant_message",
@@ -24,6 +26,7 @@ function message(
 describe("Codex usage-limit recovery", () => {
   it("matches the Codex usage-limit system error family", () => {
     expect(isCodexUsageLimitError(usageLimitError)).toBe(true);
+    expect(isCodexUsageLimitError(usageLimitUpgradeError)).toBe(true);
     expect(
       isCodexUsageLimitError(
         "[System Error] Selected model is at capacity. Please try a different model.",

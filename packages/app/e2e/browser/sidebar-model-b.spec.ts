@@ -5,7 +5,11 @@ import { seedWorkspace, type SeededWorkspace } from "../support/helpers/seed-cli
 import { seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { getServerId } from "../support/helpers/server-id";
 import { projectEquivalenceViewKey } from "../support/helpers/project-view-key";
-import { selectSidebarStatusGrouping } from "../support/helpers/sidebar";
+import {
+  selectSidebarProjectGrouping,
+  selectSidebarProjectStatusGrouping,
+  selectSidebarStatusGrouping,
+} from "../support/helpers/sidebar";
 import { waitForSidebarHydration } from "../support/helpers/workspace-ui";
 import { getVisibleWorkspaceAgentTabIds } from "../support/helpers/workspace-tabs";
 
@@ -39,6 +43,34 @@ async function seedSecondWorkspace(seeded: SeededWorkspace, title: string): Prom
 
 test.describe("Model B sidebar shape", () => {
   test.describe.configure({ timeout: 180_000 });
+
+  test("offers project-only and project-with-status as distinct grouping choices", async ({
+    page,
+  }) => {
+    const seeded = await seedWorkspace({ repoPrefix: "model-b-project-status-grouping-" });
+    const projectViewKey = projectEquivalenceViewKey(seeded.projectKey);
+    const statusSubgroup = page.getByTestId(`sidebar-project-status-group-${projectViewKey}-done`);
+
+    try {
+      await gotoAppShell(page);
+      await waitForSidebarHydration(page);
+
+      // The default retains today's nested project-and-status layout; store migration is covered
+      // separately so an upgrade preserves the same visible structure.
+      await expect(statusSubgroup).toBeVisible({ timeout: 30_000 });
+
+      // Project means exactly project: the workspace remains, without an injected status header.
+      await selectSidebarProjectGrouping(page);
+      await expect(statusSubgroup).toHaveCount(0);
+      await expect(workspaceRow(page, seeded.workspaceId)).toBeVisible({ timeout: 30_000 });
+
+      // The old nested layout remains available as its own explicit choice.
+      await selectSidebarProjectStatusGrouping(page);
+      await expect(statusSubgroup).toBeVisible({ timeout: 30_000 });
+    } finally {
+      await seeded.cleanup();
+    }
+  });
 
   test("git and non-git projects both render as expandable parents, both show a per-row New workspace icon, and the global button covers both", async ({
     page,

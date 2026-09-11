@@ -18,6 +18,7 @@ import {
   Diff,
   EyeOff,
   Folder,
+  FolderTree,
   GitBranch,
   GitPullRequest,
   Globe,
@@ -47,6 +48,7 @@ import type { SidebarProjectEntry } from "@/hooks/use-sidebar-workspaces-list";
 import type { Theme } from "@/styles/theme";
 import {
   hasActiveSidebarLabelFilter,
+  SIDEBAR_GROUP_MODES,
   SIDEBAR_UNLABELLED_LABEL_KEY,
   type SidebarGroupMode,
 } from "@/stores/sidebar-view-store";
@@ -88,6 +90,7 @@ type OptionIcon = ComponentType<{
 // current values, and a column of icons there would be decoration competing with the values.
 const GROUPING_ICONS: Record<SidebarGroupMode, OptionIcon> = {
   project: withUnistyles(Folder),
+  "project-status": withUnistyles(FolderTree),
   status: withUnistyles(CircleDashed),
 };
 
@@ -120,12 +123,12 @@ const TRAILING_ICONS: Record<SidebarTrailingChoice, OptionIcon> = {
   timestamp: withUnistyles(Clock),
 };
 
-const GROUPING_MODES: readonly SidebarGroupMode[] = ["project", "status"];
 const TITLE_SOURCES: readonly WorkspaceTitleSource[] = ["title", "branch"];
 const TRAILING_CHOICES: readonly SidebarTrailingChoice[] = ["diff", "timestamp"];
 
 const GROUPING_LABEL_KEYS: Record<SidebarGroupMode, string> = {
   project: "sidebar.display.grouping.project",
+  "project-status": "sidebar.display.grouping.projectStatus",
   status: "sidebar.display.grouping.status",
 };
 
@@ -196,7 +199,7 @@ export function SidebarDisplayPreferencesMenu(): ReactElement {
         title: t("sidebar.display.grouping.label"),
         content: (
           <OptionList
-            values={GROUPING_MODES}
+            values={SIDEBAR_GROUP_MODES}
             icons={GROUPING_ICONS}
             labelKeys={GROUPING_LABEL_KEYS}
             selectedValue={preferences.grouping}

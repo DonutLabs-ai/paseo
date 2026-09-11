@@ -55,7 +55,7 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
     pinnedWorkspaceOrder: input.pinnedWorkspaceOrder,
   });
   const pinnedGroups =
-    input.groupMode === "project"
+    input.groupMode === "project-status"
       ? {
           ...splitPinnedGroups,
           unpinnedProjects: splitPinnedGroups.unpinnedProjects.map((project) => ({
@@ -80,7 +80,7 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
   if (!input.pinnedCollapsed) {
     sections.push({ workspaces: pinnedGroups.pinnedChats });
   }
-  if (input.groupMode === "project") {
+  if (input.groupMode !== "status") {
     sections.push(
       ...pinnedGroups.unpinnedProjects.map((project) => ({
         workspaces: project.workspaces,
@@ -104,13 +104,14 @@ export function buildSidebarProjection(input: SidebarProjectionInput): SidebarPr
   };
 }
 
-/** Project mode builds its nested status groups in each project block; flat modes use this list. */
+/** Project modes build their rows in each project block; flat modes use this list. */
 function buildWorkspaceGroups(
   input: SidebarProjectionInput,
   unpinnedWorkspaces: SidebarWorkspaceEntry[],
 ): SidebarWorkspaceGroup[] {
   switch (input.groupMode) {
     case "project":
+    case "project-status":
       return [];
     case "status":
       return statusWorkspaceGroups(
