@@ -73,6 +73,7 @@ export const ja: TranslationResources = {
       addProject: "プロジェクトを追加",
       home: "ホーム",
       groupByProject: "プロジェクトでグループ化",
+      groupByProjectStatus: "プロジェクトとステータスでグループ化",
       groupByStatus: "ステータスでグループ化",
       modelGroupLabel: "モデル",
       modelSearchKeywords: "モデルを切り替え モデルを変更 モデルを設定 モデルを選択",
@@ -1113,6 +1114,7 @@ export const ja: TranslationResources = {
       grouping: {
         label: "グループ化",
         project: "プロジェクト",
+        projectStatus: "プロジェクトとステータス",
         status: "ステータス",
         labels: "ラベル",
       },

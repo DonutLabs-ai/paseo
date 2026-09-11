@@ -1,4 +1,4 @@
-import type { SidebarGroupMode } from "@/stores/sidebar-view-store";
+import { SIDEBAR_GROUP_MODES, type SidebarGroupMode } from "@/stores/sidebar-view-store";
 import type { CommandCenterContribution, CommandCenterIcon } from "./contributions";
 
 export interface GroupingCommandCenterSource {
@@ -6,23 +6,25 @@ export interface GroupingCommandCenterSource {
   labels: {
     section: string;
     groupByProject: string;
+    groupByProjectStatus: string;
     groupByStatus: string;
   };
-  icons: {
-    project?: CommandCenterIcon;
-    status?: CommandCenterIcon;
-  };
+  icons: Partial<Record<SidebarGroupMode, CommandCenterIcon>>;
   setGroupMode(mode: SidebarGroupMode): void;
 }
 
-// One entry that always names the mode you are not in, so it can never read as a no-op.
-export function buildGroupingContribution(
+// One entry per other mode makes all three choices directly reachable without offering a no-op.
+export function buildGroupingContributions(
   source: GroupingCommandCenterSource,
-): CommandCenterContribution {
-  // Collapse into nextGroupMode() from sidebar-view-store once #2504 lands.
-  const target: SidebarGroupMode = source.groupMode === "project" ? "status" : "project";
-  return {
-    id: "sidebar-grouping",
+): CommandCenterContribution[] {
+  const titleByMode: Record<SidebarGroupMode, string> = {
+    project: source.labels.groupByProject,
+    "project-status": source.labels.groupByProjectStatus,
+    status: source.labels.groupByStatus,
+  };
+
+  return SIDEBAR_GROUP_MODES.filter((target) => target !== source.groupMode).map((target) => ({
+    id: `sidebar-grouping-${target}`,
     group: "actions",
     groupRank: 0,
     rank: 8,
@@ -31,9 +33,9 @@ export function buildGroupingContribution(
     run: () => source.setGroupMode(target),
     presentation: {
       kind: "action",
-      title: target === "status" ? source.labels.groupByStatus : source.labels.groupByProject,
+      title: titleByMode[target],
       sectionTitle: source.labels.section,
-      icon: target === "status" ? source.icons.status : source.icons.project,
+      icon: source.icons[target],
     },
-  };
+  }));
 }

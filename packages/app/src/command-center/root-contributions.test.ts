@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { SidebarGroupMode } from "@/stores/sidebar-view-store";
 import type { CommandCenterIconProps } from "./contributions";
-import { buildGroupingContribution, type GroupingCommandCenterSource } from "./root-contributions";
+import { buildGroupingContributions, type GroupingCommandCenterSource } from "./root-contributions";
 
 function ProjectIcon(_props: CommandCenterIconProps) {
   return null;
 }
 
 function StatusIcon(_props: CommandCenterIconProps) {
+  return null;
+}
+
+function ProjectStatusIcon(_props: CommandCenterIconProps) {
   return null;
 }
 
@@ -22,9 +26,14 @@ function source(groupMode: SidebarGroupMode): {
       labels: {
         section: "Actions",
         groupByProject: "Group by project",
+        groupByProjectStatus: "Group by project and status",
         groupByStatus: "Group by status",
       },
-      icons: { project: ProjectIcon, status: StatusIcon },
+      icons: {
+        project: ProjectIcon,
+        "project-status": ProjectStatusIcon,
+        status: StatusIcon,
+      },
       setGroupMode: (mode) => applied.push(mode),
     },
     applied,
@@ -32,45 +41,57 @@ function source(groupMode: SidebarGroupMode): {
 }
 
 describe("grouping command center contribution", () => {
-  it("offers status while grouped by project", () => {
+  it("offers both other choices while grouped by project", () => {
     const fixture = source("project");
-    const contribution = buildGroupingContribution(fixture.value);
+    const contributions = buildGroupingContributions(fixture.value);
 
-    expect(contribution.presentation).toMatchObject({
-      title: "Group by status",
-      icon: StatusIcon,
-    });
+    expect(contributions.map((contribution) => contribution.presentation)).toMatchObject([
+      { title: "Group by project and status", icon: ProjectStatusIcon },
+      { title: "Group by status", icon: StatusIcon },
+    ]);
 
-    contribution.run();
-    expect(fixture.applied).toEqual(["status"]);
+    contributions[0]?.run();
+    contributions[1]?.run();
+    expect(fixture.applied).toEqual(["project-status", "status"]);
   });
 
-  it("offers project while grouped by status", () => {
+  it("offers both project choices while grouped by status", () => {
     const fixture = source("status");
-    const contribution = buildGroupingContribution(fixture.value);
+    const contributions = buildGroupingContributions(fixture.value);
 
-    expect(contribution.presentation).toMatchObject({
-      title: "Group by project",
-      icon: ProjectIcon,
-    });
+    expect(contributions.map((contribution) => contribution.presentation)).toMatchObject([
+      { title: "Group by project", icon: ProjectIcon },
+      { title: "Group by project and status", icon: ProjectStatusIcon },
+    ]);
 
-    contribution.run();
-    expect(fixture.applied).toEqual(["project"]);
+    contributions[0]?.run();
+    contributions[1]?.run();
+    expect(fixture.applied).toEqual(["project", "project-status"]);
   });
 
-  it("keeps a stable id across both modes so the registry tiebreak never moves", () => {
-    expect(buildGroupingContribution(source("project").value).id).toBe(
-      buildGroupingContribution(source("status").value).id,
-    );
+  it("keeps one stable id per target mode", () => {
+    const fromProject = buildGroupingContributions(source("project").value);
+    const fromStatus = buildGroupingContributions(source("status").value);
+
+    expect(fromProject.map((contribution) => contribution.id)).toEqual([
+      "sidebar-grouping-project-status",
+      "sidebar-grouping-status",
+    ]);
+    expect(fromStatus.map((contribution) => contribution.id)).toEqual([
+      "sidebar-grouping-project",
+      "sidebar-grouping-project-status",
+    ]);
   });
 
   it("stays out of the default empty-query list", () => {
-    for (const mode of ["project", "status"] as const) {
-      const contribution = buildGroupingContribution(source(mode).value);
-      expect(contribution.visibility).toBe("query");
-      expect(contribution.group).toBe("actions");
-      // 6 is keyboard-shortcuts and 7 belongs to the workspace actions in #3013.
-      expect(contribution.rank).toBe(8);
+    for (const mode of ["project", "project-status", "status"] as const) {
+      const contributions = buildGroupingContributions(source(mode).value);
+      for (const contribution of contributions) {
+        expect(contribution.visibility).toBe("query");
+        expect(contribution.group).toBe("actions");
+        // 6 is keyboard-shortcuts and 7 belongs to the workspace actions in #3013.
+        expect(contribution.rank).toBe(8);
+      }
     }
   });
 });

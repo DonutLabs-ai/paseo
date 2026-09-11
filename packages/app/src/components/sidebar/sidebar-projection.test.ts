@@ -4,6 +4,7 @@ import type {
   SidebarWorkspaceEntry,
   SidebarWorkspacePlacement,
 } from "@/hooks/use-sidebar-workspaces-list";
+import type { SidebarGroupMode } from "@/stores/sidebar-view-store";
 import { buildSidebarProjection } from "./sidebar-projection";
 
 function makeWorkspace(
@@ -69,10 +70,7 @@ function makeProject(
   };
 }
 
-function projectionInput(options?: {
-  groupMode?: "project" | "status";
-  pinnedCollapsed?: boolean;
-}) {
+function projectionInput(options?: { groupMode?: SidebarGroupMode; pinnedCollapsed?: boolean }) {
   const pinned = makeWorkspace("pinned", "running");
   const unpinned = makeWorkspace("unpinned", "needs_input");
   return {
@@ -94,7 +92,7 @@ function projectionInput(options?: {
   };
 }
 
-function projectStatusSubgroupInput() {
+function projectStatusSubgroupInput(groupMode: SidebarGroupMode = "project-status") {
   const done = makeWorkspace("done", "done");
   const working = makeWorkspace("working", "running");
   const ready = makeWorkspace("ready", "attention");
@@ -102,7 +100,7 @@ function projectStatusSubgroupInput() {
   const needsInput = makeWorkspace("needs-input", "needs_input");
   const all = [done, working, ready, failed, needsInput];
   return {
-    ...projectionInput({ groupMode: "project" }),
+    ...projectionInput({ groupMode }),
     projects: [makeProject(all.map((workspace) => workspace.placement))],
     pinnedKeys: { pinnedWorkspaceKeys: [], pinnedAtByKey: {} },
     workspaceEntriesByKey: new Map(
@@ -115,7 +113,7 @@ function projectStatusSubgroupInput() {
  * Two projects, one workspace each, both labelled — so every grouping mode puts rows from more
  * than one project on screen, and a mode that asked for fewer icons than it renders would show it.
  */
-function twoProjectInput(groupMode: "project" | "status") {
+function twoProjectInput(groupMode: SidebarGroupMode) {
   const first = makeWorkspace("first", "running", ["Urgent"], "project");
   const second = makeWorkspace("second", "needs_input", ["Backend"], "other-project");
   return {
@@ -135,7 +133,7 @@ function twoProjectInput(groupMode: "project" | "status") {
 
 describe("buildSidebarProjection", () => {
   it("orders each project's status subgroups before building shortcut targets", () => {
-    const projection = buildSidebarProjection(projectStatusSubgroupInput());
+    const projection = buildSidebarProjection(projectStatusSubgroupInput("project-status"));
     const project = projection.pinnedGroups.unpinnedProjects[0];
 
     expect(project?.workspaces.map((workspace) => workspace.workspaceId)).toEqual([
@@ -154,9 +152,22 @@ describe("buildSidebarProjection", () => {
     ]);
   });
 
+  it("preserves manual workspace order in un-nested project grouping", () => {
+    const projection = buildSidebarProjection(projectStatusSubgroupInput("project"));
+    const project = projection.pinnedGroups.unpinnedProjects[0];
+
+    expect(project?.workspaces.map((workspace) => workspace.workspaceId)).toEqual([
+      "done",
+      "working",
+      "ready",
+      "failed",
+      "needs-input",
+    ]);
+  });
+
   // The rule that outlived the bug it was written for: a project icon is fetched per project, so
   // whatever a mode groups by, the rows it produces can only reference projects already covered.
-  for (const groupMode of ["project", "status"] as const) {
+  for (const groupMode of ["project", "project-status", "status"] as const) {
     it(`covers every row ${groupMode} grouping renders with a project icon target`, () => {
       const projection = buildSidebarProjection(twoProjectInput(groupMode));
       const covered = new Set(projection.projectIconTargets.map((target) => target.projectViewKey));

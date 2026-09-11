@@ -40,7 +40,7 @@ function createMemoryStorage(entries: Record<string, string | null>): MemoryStor
 describe("sidebar view store", () => {
   beforeEach(() => {
     useSidebarViewStore.setState({
-      groupMode: "project",
+      groupMode: "project-status",
       hostFilters: [],
       projectFilters: [],
       labelFilter: { labels: [] },
@@ -122,6 +122,40 @@ describe("sidebar view store", () => {
     ).toEqual({
       groupMode: "status",
       hostFilters: ["host-a", "host-b"],
+      projectFilters: [],
+      labelFilter: { labels: [] },
+    });
+  });
+
+  it("preserves the old project-and-status layout when migrating a v6 project preference", () => {
+    expect(
+      migrateSidebarViewState(
+        {
+          groupMode: "project",
+          hostFilters: ["host-a"],
+        },
+        6,
+      ),
+    ).toEqual({
+      groupMode: "project-status",
+      hostFilters: ["host-a"],
+      projectFilters: [],
+      labelFilter: { labels: [] },
+    });
+  });
+
+  it("keeps project as the un-nested project layout after the v7 migration", () => {
+    expect(
+      migrateSidebarViewState(
+        {
+          groupMode: "project",
+          hostFilters: ["host-a"],
+        },
+        7,
+      ),
+    ).toEqual({
+      groupMode: "project",
+      hostFilters: ["host-a"],
       projectFilters: [],
       labelFilter: { labels: [] },
     });
@@ -224,11 +258,14 @@ describe("sidebar view store", () => {
   // the schema does not list fails the parse and takes every other sidebar setting down with it.
   it("carries a persisted project filter through the version migration", () => {
     expect(
-      migrateSidebarViewState({
-        groupMode: "project",
-        hostFilters: ["host-a"],
-        projectFilters: ["project-a", "project-b"],
-      }),
+      migrateSidebarViewState(
+        {
+          groupMode: "project",
+          hostFilters: ["host-a"],
+          projectFilters: ["project-a", "project-b"],
+        },
+        7,
+      ),
     ).toEqual({
       groupMode: "project",
       hostFilters: ["host-a"],
@@ -239,7 +276,7 @@ describe("sidebar view store", () => {
 
   it("never keeps project filters from state the schema rejects", () => {
     expect(migrateSidebarViewState({ projectFilters: "project-a" })).toEqual({
-      groupMode: "project",
+      groupMode: "project-status",
       hostFilters: [],
       projectFilters: [],
       labelFilter: { labels: [] },

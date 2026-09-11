@@ -73,6 +73,7 @@ export const ar: TranslationResources = {
       addProject: "إضافة مشروع",
       home: "بيت",
       groupByProject: "تجميع حسب المشروع",
+      groupByProjectStatus: "تجميع حسب المشروع والحالة",
       groupByStatus: "تجميع حسب الحالة",
       modelGroupLabel: "النموذج",
       modelSearchKeywords: "تبديل النموذج تغيير النموذج تعيين النموذج اختيار النموذج",
@@ -1101,6 +1102,7 @@ export const ar: TranslationResources = {
       grouping: {
         label: "التجميع",
         project: "المشروع",
+        projectStatus: "المشروع والحالة",
         status: "الحالة",
         labels: "التسميات",
       },

@@ -73,6 +73,7 @@ export const ko: TranslationResources = {
       addProject: "프로젝트 추가",
       home: "홈",
       groupByProject: "프로젝트별 그룹화",
+      groupByProjectStatus: "프로젝트 및 상태별 그룹화",
       groupByStatus: "상태별 그룹화",
       modelGroupLabel: "모델",
       modelSearchKeywords: "모델 전환 모델 변경 모델 설정 모델 선택",
@@ -1108,6 +1109,7 @@ export const ko: TranslationResources = {
       grouping: {
         label: "그룹화",
         project: "프로젝트",
+        projectStatus: "프로젝트 및 상태",
         status: "상태",
         labels: "레이블",
       },

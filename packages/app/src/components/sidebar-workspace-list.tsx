@@ -1701,6 +1701,26 @@ type RenderProjectWorkspaceRow = (
   },
 ) => ReactElement;
 
+function mergeProjectWorkspaceReorder(
+  projectWorkspaces: SidebarWorkspacePlacement[],
+  reorderedWorkspaces: SidebarWorkspacePlacement[],
+): SidebarWorkspacePlacement[] {
+  const reorderedKeys = mergeReorderedSubset({
+    currentOrder: projectWorkspaces.map((workspace) => workspace.workspaceKey),
+    reorderedSubset: reorderedWorkspaces.map((workspace) => workspace.workspaceKey),
+  });
+  const workspaceByKey = new Map(
+    projectWorkspaces.map((workspace) => [workspace.workspaceKey, workspace]),
+  );
+  return reorderedKeys.map((workspaceKey) => {
+    const workspace = workspaceByKey.get(workspaceKey);
+    if (!workspace) {
+      throw new Error(`Missing workspace placement for reordered key ${workspaceKey}`);
+    }
+    return workspace;
+  });
+}
+
 function ProjectStatusSubgroupRows({
   projectViewKey,
   projectWorkspaces,
@@ -1739,21 +1759,10 @@ function ProjectStatusSubgroupRows({
   );
   const handleWorkspaceDragEnd = useCallback(
     (reorderedWorkspaces: SidebarWorkspacePlacement[]) => {
-      const reorderedKeys = mergeReorderedSubset({
-        currentOrder: projectWorkspaces.map((workspace) => workspace.workspaceKey),
-        reorderedSubset: reorderedWorkspaces.map((workspace) => workspace.workspaceKey),
-      });
-      const workspaceByKey = new Map(
-        projectWorkspaces.map((workspace) => [workspace.workspaceKey, workspace]),
+      onWorkspaceReorder(
+        projectViewKey,
+        mergeProjectWorkspaceReorder(projectWorkspaces, reorderedWorkspaces),
       );
-      const mergedWorkspaces = reorderedKeys.map((workspaceKey) => {
-        const workspace = workspaceByKey.get(workspaceKey);
-        if (!workspace) {
-          throw new Error(`Missing workspace placement for reordered key ${workspaceKey}`);
-        }
-        return workspace;
-      });
-      onWorkspaceReorder(projectViewKey, mergedWorkspaces);
     },
     [onWorkspaceReorder, projectViewKey, projectWorkspaces],
   );
@@ -1791,6 +1800,7 @@ function ProjectStatusSubgroupRows({
 
 function ProjectBlock({
   project,
+  groupByStatus,
   workspaceEntriesByKey,
   collapsed,
   displayName,
@@ -1816,6 +1826,7 @@ function ProjectBlock({
   onToggleWorkspacePin,
 }: {
   project: SidebarProjectEntry;
+  groupByStatus: boolean;
   workspaceEntriesByKey: ReadonlyMap<string, SidebarWorkspaceEntry>;
   collapsed: boolean;
   displayName: string;
@@ -1848,11 +1859,13 @@ function ProjectBlock({
   } = useLimitedSidebarGroup(project.workspaces);
   const statusSubgroups = useMemo(
     () =>
-      buildProjectStatusSubgroups({
-        workspaces: visibleWorkspaces,
-        workspaceEntriesByKey,
-      }),
-    [visibleWorkspaces, workspaceEntriesByKey],
+      groupByStatus
+        ? buildProjectStatusSubgroups({
+            workspaces: visibleWorkspaces,
+            workspaceEntriesByKey,
+          })
+        : [],
+    [groupByStatus, visibleWorkspaces, workspaceEntriesByKey],
   );
   const rowModel = useMemo(
     () =>
@@ -1933,6 +1946,29 @@ function ProjectBlock({
       workspaceEntriesByKey,
     ],
   );
+  const renderWorkspace = useCallback(
+    ({
+      item,
+      drag: workspaceDrag,
+      isActive,
+      dragHandleProps: workspaceDragHandleProps,
+    }: DraggableRenderItemInfo<SidebarWorkspacePlacement>) =>
+      renderWorkspaceRow(item, {
+        drag: workspaceDrag,
+        isDragging: isActive,
+        dragHandleProps: workspaceDragHandleProps,
+      }),
+    [renderWorkspaceRow],
+  );
+  const handleWorkspaceDragEnd = useCallback(
+    (reorderedWorkspaces: SidebarWorkspacePlacement[]) => {
+      onWorkspaceReorder(
+        project.viewKey,
+        mergeProjectWorkspaceReorder(project.workspaces, reorderedWorkspaces),
+      );
+    },
+    [onWorkspaceReorder, project.viewKey, project.workspaces],
+  );
 
   const toast = useToast();
   const { t } = useTranslation();
@@ -2000,20 +2036,37 @@ function ProjectBlock({
       projectChildren = (
         <>
           <View testID={`sidebar-workspace-list-${project.viewKey}`}>
-            {statusSubgroups.map((group) => (
-              <ProjectStatusSubgroupRows
-                key={group.bucket}
-                projectViewKey={project.viewKey}
-                projectWorkspaces={project.workspaces}
-                group={group}
-                renderWorkspaceRow={renderWorkspaceRow}
-                onWorkspaceReorder={onWorkspaceReorder}
-                activeWorkspaceSelection={activeWorkspaceSelection}
-                parentGestureRef={parentGestureRef}
-                useNestable={useNestable}
-                dragGestureHostActive={dragGestureHostActive}
+            {groupByStatus ? (
+              statusSubgroups.map((group) => (
+                <ProjectStatusSubgroupRows
+                  key={group.bucket}
+                  projectViewKey={project.viewKey}
+                  projectWorkspaces={project.workspaces}
+                  group={group}
+                  renderWorkspaceRow={renderWorkspaceRow}
+                  onWorkspaceReorder={onWorkspaceReorder}
+                  activeWorkspaceSelection={activeWorkspaceSelection}
+                  parentGestureRef={parentGestureRef}
+                  useNestable={useNestable}
+                  dragGestureHostActive={dragGestureHostActive}
+                />
+              ))
+            ) : (
+              <DraggableList
+                testID={`sidebar-project-workspace-list-${project.viewKey}`}
+                data={visibleWorkspaces}
+                keyExtractor={workspaceKeyExtractor}
+                renderItem={renderWorkspace}
+                onDragEnd={handleWorkspaceDragEnd}
+                extraData={activeWorkspaceSelectionKey(activeWorkspaceSelection)}
+                scrollEnabled={false}
+                useDragHandle
+                nestable={useNestable}
+                simultaneousGestureRef={parentGestureRef}
+                gestureHostPresented={dragGestureHostActive}
+                containerStyle={styles.workspaceListContainer}
               />
-            ))}
+            )}
           </View>
           {canToggleWorkspaces ? (
             <SidebarGroupToggleRow
@@ -2079,6 +2132,7 @@ type ProjectBlockProps = Parameters<typeof ProjectBlock>[0];
 function areProjectBlockPropsEqual(previous: ProjectBlockProps, next: ProjectBlockProps): boolean {
   return (
     previous.project === next.project &&
+    previous.groupByStatus === next.groupByStatus &&
     previous.workspaceEntriesByKey === next.workspaceEntriesByKey &&
     previous.collapsed === next.collapsed &&
     previous.displayName === next.displayName &&
@@ -2223,11 +2277,9 @@ export function SidebarWorkspaceList({
   const sidebarFilterEmpty =
     hasActiveLabelFilter && hasProjectsBeforeFilter && projects.length === 0;
 
-  // Project mode is the one that keeps its project headers; every other grouping mode is a flat
-  // list of grouped rows, so a new mode lands in the grouped branch rather than silently in this
-  // one's `else`.
+  // Both project modes keep project headers; status is the only flat grouping mode.
   const content =
-    groupMode !== "project" ? (
+    groupMode === "status" ? (
       <SidebarGroupedModeList
         workspaceGroups={sidebarContent.workspaceGroups}
         pinnedGroups={sidebarContent.pinnedGroups}
@@ -2247,6 +2299,7 @@ export function SidebarWorkspaceList({
       />
     ) : (
       <ProjectModeList
+        groupByStatus={groupMode === "project-status"}
         projects={sidebarContent.projects}
         pinnedGroups={sidebarContent.pinnedGroups}
         snoozedWorkspaces={sidebarContent.snoozedWorkspaces}
@@ -2347,6 +2400,7 @@ function SidebarGroupedModeList({
 }
 
 function ProjectModeList({
+  groupByStatus,
   projects,
   pinnedGroups,
   snoozedWorkspaces,
@@ -2379,6 +2433,7 @@ function ProjectModeList({
   | "isRefreshing"
   | "onRefresh"
 > & {
+  groupByStatus: boolean;
   /** Swaps the list body for the label filter's empty state. Never the header above it. */
   sidebarFilterEmpty: boolean;
   projectIconByProjectViewKey: ReadonlyMap<string, string | null>;
@@ -2565,6 +2620,7 @@ function ProjectModeList({
         <MemoProjectBlock
           key={item.viewKey}
           project={item}
+          groupByStatus={groupByStatus}
           workspaceEntriesByKey={workspaceEntriesByKey}
           collapsed={collapsedProjectKeys.has(item.viewKey)}
           displayName={item.projectName}
@@ -2593,6 +2649,7 @@ function ProjectModeList({
     },
     [
       collapsedProjectKeys,
+      groupByStatus,
       activeWorkspaceSelection,
       handleWorktreeCreated,
       handleWorkspaceReorder,

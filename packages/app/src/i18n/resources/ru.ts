@@ -73,6 +73,7 @@ export const ru: TranslationResources = {
       addProject: "Добавить проект",
       home: "Главная",
       groupByProject: "Группировать по проекту",
+      groupByProjectStatus: "Группировать по проекту и статусу",
       groupByStatus: "Группировать по статусу",
       modelGroupLabel: "Модель",
       modelSearchKeywords: "Сменить, изменить, выбрать или установить модель",
@@ -1118,6 +1119,7 @@ export const ru: TranslationResources = {
       grouping: {
         label: "Группировка",
         project: "Проект",
+        projectStatus: "Проект и статус",
         status: "Статус",
         labels: "Метки",
       },

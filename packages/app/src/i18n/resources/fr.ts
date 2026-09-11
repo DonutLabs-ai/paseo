@@ -74,6 +74,7 @@ export const fr: TranslationResources = {
       addProject: "Ajouter un projet",
       home: "Maison",
       groupByProject: "Grouper par projet",
+      groupByProjectStatus: "Grouper par projet et statut",
       groupByStatus: "Grouper par statut",
       modelGroupLabel: "Modèle",
       modelSearchKeywords:
@@ -1137,6 +1138,7 @@ export const fr: TranslationResources = {
       grouping: {
         label: "Regroupement",
         project: "Projet",
+        projectStatus: "Projet et statut",
         status: "Statut",
         labels: "Libellés",
       },
