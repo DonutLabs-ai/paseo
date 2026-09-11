@@ -44,6 +44,7 @@ import {
   type AgentRunResult,
   type AgentSession,
   type AgentSessionConfig,
+  type AgentTurnFailureReason,
   type SteerResult,
   type AgentStreamEvent,
   type AgentTimelineItem,
@@ -91,7 +92,7 @@ import { withTimeout } from "../../utils/promise-timeout.js";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
-const MODEL_CAPACITY_RETRY_DELAY_MS = 60_000;
+const AUTOMATIC_RETRY_DELAY_MS = 60_000;
 const IMPORTABLE_SESSION_LIST_TIMEOUT_MS = 90_000;
 const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: false,
@@ -106,6 +107,16 @@ const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
 };
 
 type TimeoutResult = "completed" | "timed_out";
+type AutomaticRetryFailureReason = Extract<
+  AgentTurnFailureReason,
+  "model_at_capacity" | "transient_transport"
+>;
+
+function isAutomaticRetryFailureReason(
+  failureReason: AgentTurnFailureReason | undefined,
+): failureReason is AutomaticRetryFailureReason {
+  return failureReason === "model_at_capacity" || failureReason === "transient_transport";
+}
 
 function submittedPromptText(prompt: AgentPromptInput): string {
   if (typeof prompt === "string") {
@@ -755,7 +766,7 @@ export class AgentManager {
   private readonly inFlightAgentCloses = new Map<string, Promise<void>>();
   private readonly reloadedSessionCloses = new WeakMap<AgentSession, Promise<void>>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
-  private readonly modelCapacityRetryTimers = new Map<string, NodeJS.Timeout>();
+  private readonly automaticRetryTimers = new Map<string, NodeJS.Timeout>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
@@ -856,8 +867,8 @@ export class AgentManager {
 
   prepareForShutdown(): void {
     this.acceptingAgentRegistrations = false;
-    for (const agentId of this.modelCapacityRetryTimers.keys()) {
-      this.cancelModelCapacityRetry(agentId);
+    for (const agentId of this.automaticRetryTimers.keys()) {
+      this.cancelAutomaticRetry(agentId);
     }
   }
 
@@ -2383,7 +2394,7 @@ export class AgentManager {
     options?: AgentManagerRunOptions,
   ): AsyncGenerator<AgentStreamEvent> {
     const existingAgent = this.requireSessionAgent(agentId);
-    this.cancelModelCapacityRetry(agentId);
+    this.cancelAutomaticRetry(agentId);
     this.logger.trace(
       {
         agentId,
@@ -3576,7 +3587,7 @@ export class AgentManager {
     agent: LiveManagedAgent,
     cancelReason: string,
   ): ManagedAgentClosed {
-    this.cancelModelCapacityRetry(agent.id);
+    this.cancelAutomaticRetry(agent.id);
     this.agentStreamCoalescer.flushAndDiscard(agent.id);
     this.agents.delete(agent.id);
     this.previousStatuses.delete(agent.id);
@@ -4326,7 +4337,7 @@ export class AgentManager {
       "agent.manager.turn.completed",
     );
     if (terminalDisposition === "stale") return;
-    this.cancelModelCapacityRetry(agent.id);
+    this.cancelAutomaticRetry(agent.id);
     if (event.usage) {
       agent.lastUsage = { ...agent.lastUsage, ...event.usage };
     }
@@ -4375,19 +4386,23 @@ export class AgentManager {
       agent.lifecycle = "error";
     }
     agent.lastError = event.error;
-    const shouldRetryModelCapacity =
-      isForegroundEvent && !options?.fromHistory && event.failureReason === "model_at_capacity";
+    const automaticRetryFailureReason =
+      isForegroundEvent &&
+      !options?.fromHistory &&
+      isAutomaticRetryFailureReason(event.failureReason)
+        ? event.failureReason
+        : null;
     const formattedFailure = this.formatTurnFailedMessage(event);
     await this.appendSystemErrorTimelineMessage(
       agent,
       event.provider,
-      shouldRetryModelCapacity
+      automaticRetryFailureReason
         ? `${formattedFailure}\n\nPaseo will continue this session automatically in 60 seconds.`
         : formattedFailure,
       options,
     );
-    if (shouldRetryModelCapacity) {
-      this.scheduleModelCapacityRetry(agent);
+    if (automaticRetryFailureReason) {
+      this.scheduleAutomaticRetry(agent, automaticRetryFailureReason);
     }
     this.resolvePendingPermissionsForAgent(agent, event.provider, options, "Turn failed");
     if (!isForegroundEvent && !agent.activeForegroundTurnId) {
@@ -4421,7 +4436,7 @@ export class AgentManager {
       "agent.manager.turn.canceled",
     );
     if (terminalDisposition === "stale") return;
-    this.cancelModelCapacityRetry(agent.id);
+    this.cancelAutomaticRetry(agent.id);
     if (!isForegroundEvent && !agent.activeForegroundTurnId && !agent.pendingReplacement) {
       agent.lifecycle = "idle";
     }
@@ -4665,51 +4680,55 @@ export class AgentManager {
     return parts.join("\n\n");
   }
 
-  private scheduleModelCapacityRetry(agent: ActiveManagedAgent): void {
-    this.cancelModelCapacityRetry(agent.id);
+  private scheduleAutomaticRetry(
+    agent: ActiveManagedAgent,
+    failureReason: AutomaticRetryFailureReason,
+  ): void {
+    this.cancelAutomaticRetry(agent.id);
     const timer = setTimeout(() => {
-      if (this.modelCapacityRetryTimers.get(agent.id) !== timer) {
+      if (this.automaticRetryTimers.get(agent.id) !== timer) {
         return;
       }
-      this.modelCapacityRetryTimers.delete(agent.id);
+      this.automaticRetryTimers.delete(agent.id);
       const current = this.agents.get(agent.id);
       if (!this.acceptingAgentRegistrations || !current || this.hasInFlightRun(agent.id)) {
         return;
       }
       this.logger.info(
-        { agentId: agent.id, provider: current.provider },
-        "Retrying agent after model capacity failure",
+        { agentId: agent.id, provider: current.provider, failureReason },
+        "Retrying agent after recoverable failure",
       );
       const retry = this.runAgent(agent.id, AGENT_CONTINUE_PROMPT).then(
         () => undefined,
         (error: unknown) => {
           this.logger.warn(
-            { err: error, agentId: agent.id, provider: current.provider },
-            "Automatic model capacity retry failed",
+            { err: error, agentId: agent.id, provider: current.provider, failureReason },
+            "Automatic agent retry failed",
           );
         },
       );
       this.trackBackgroundTask(retry);
-    }, MODEL_CAPACITY_RETRY_DELAY_MS);
+    }, AUTOMATIC_RETRY_DELAY_MS);
     timer.unref();
-    this.modelCapacityRetryTimers.set(agent.id, timer);
+    this.automaticRetryTimers.set(agent.id, timer);
     this.logger.info(
       {
         agentId: agent.id,
         provider: agent.provider,
-        delayMs: MODEL_CAPACITY_RETRY_DELAY_MS,
+        failureReason,
+        delayMs: AUTOMATIC_RETRY_DELAY_MS,
       },
-      "Scheduled agent retry after model capacity failure",
+      "Scheduled agent retry after recoverable failure",
     );
   }
 
-  private cancelModelCapacityRetry(agentId: string): void {
-    const timer = this.modelCapacityRetryTimers.get(agentId);
+  private cancelAutomaticRetry(agentId: string): void {
+    const timer = this.automaticRetryTimers.get(agentId);
     if (!timer) {
       return;
     }
     clearTimeout(timer);
-    this.modelCapacityRetryTimers.delete(agentId);
+    this.automaticRetryTimers.delete(agentId);
   }
 
   private recordTimeline(
@@ -4779,9 +4798,9 @@ export class AgentManager {
       return;
     }
 
-    // Capacity errors are transient while the daemon owns a scheduled retry.
+    // Explicitly classified recoverable errors are transient while the daemon owns a retry.
     // Surface attention only if a later retry finishes or fails for another reason.
-    if (currentStatus === "error" && this.modelCapacityRetryTimers.has(agent.id)) {
+    if (currentStatus === "error" && this.automaticRetryTimers.has(agent.id)) {
       return;
     }
 
