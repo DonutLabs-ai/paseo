@@ -191,6 +191,64 @@ afterEach(() => {
 });
 
 describe("DirectorySync session readiness", () => {
+  it("reconciles a failed workspace when its agent starts a new turn", async () => {
+    const serverId = "failed-workspace-started-turn-reconciliation";
+    const { client, directory } = createDirectory(serverId);
+    const workspacePayload = {
+      id: "workspace-retried-turn",
+      projectId: "project-1",
+      projectDisplayName: "Paseo",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo",
+      projectKind: "git",
+      workspaceKind: "local_checkout",
+      name: "retried turn",
+      status: "failed",
+      statusEnteredAt: "2026-09-11T04:30:00.000Z",
+      activityAt: "2026-09-11T04:30:00.000Z",
+      archivingAt: null,
+      diffStat: null,
+      scripts: [],
+    } satisfies WorkspaceFetchResult["entries"][number];
+    const workspace = normalizeWorkspaceDescriptor(workspacePayload);
+    const agent = {
+      ...createAgent(serverId, "agent-retried-turn"),
+      workspaceId: workspace.id,
+      status: "error" as const,
+      requiresAttention: true,
+      attentionReason: "error" as const,
+      attentionTimestamp: new Date("2026-09-11T04:30:00.000Z"),
+    };
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, client as unknown as DaemonClient, 1);
+    directory.acceptWorkspaces([workspace]);
+    directory.acceptAgent(agent);
+    client.workspaceResult = {
+      requestId: "workspace-status-after-retry-start",
+      entries: [
+        { ...workspacePayload, status: "running", statusEnteredAt: "2026-09-11T04:31:00.000Z" },
+      ],
+      emptyProjects: [],
+      pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+    };
+
+    directory.applyAgentTurnLiveness(agent.id, {
+      type: "stream_open",
+      turn: { turnId: "turn-2", startedAt: new Date("2026-09-11T04:31:00.000Z") },
+    });
+
+    await expect
+      .poll(
+        () => useSessionStore.getState().sessions[serverId]?.workspaces.get(workspace.id)?.status,
+      )
+      .toBe("running");
+    expect(client.lastWorkspaceOptions).toEqual({
+      filter: { query: workspace.id },
+      page: { limit: 200 },
+    });
+    directory.dispose();
+  });
+
   it("reconciles the owning workspace when the viewed agent turn completes", async () => {
     const serverId = "terminal-turn-workspace-reconciliation";
     const { client, directory } = createDirectory(serverId);

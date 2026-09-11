@@ -7532,6 +7532,112 @@ test("clearAgentAttention on errored agent stays cleared until a new error trans
   expect(persistedAfterSecondFailure?.attentionReason).toBe("error");
 });
 
+test("an accepted turn clears attention from the previous failed turn", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-retry-attention-"));
+  const storagePath = join(workdir, "agents");
+  const storage = new AgentStorage(storagePath, logger);
+
+  class FailingThenHeldSession extends TestAgentSession {
+    private attempt = 0;
+    private heldTurnId: string | null = null;
+
+    override async startTurn(): Promise<{ turnId: string }> {
+      this.attempt += 1;
+      const turnId = `retry-turn-${this.attempt}`;
+      const shouldFail = this.attempt === 1;
+      if (!shouldFail) {
+        this.heldTurnId = turnId;
+      }
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        if (shouldFail) {
+          this.pushEvent({
+            type: "turn_failed",
+            provider: this.provider,
+            error: "usage limit",
+            turnId,
+          });
+        }
+      }, 0);
+      return { turnId };
+    }
+
+    completeHeldTurn(): void {
+      if (!this.heldTurnId) {
+        throw new Error("Expected a held retry turn");
+      }
+      this.pushEvent({
+        type: "turn_completed",
+        provider: this.provider,
+        turnId: this.heldTurnId,
+      });
+    }
+  }
+
+  class FailingThenHeldClient implements AgentClient {
+    readonly provider = "codex" as const;
+    readonly capabilities = TEST_CAPABILITIES;
+    session: FailingThenHeldSession | null = null;
+
+    async isAvailable(): Promise<boolean> {
+      return true;
+    }
+
+    async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      const session = new FailingThenHeldSession(config);
+      this.session = session;
+      return session;
+    }
+
+    async resumeSession(
+      _handle: AgentPersistenceHandle,
+      config?: Partial<AgentSessionConfig>,
+    ): Promise<AgentSession> {
+      const session = new FailingThenHeldSession({
+        provider: "codex",
+        cwd: config?.cwd ?? process.cwd(),
+      });
+      this.session = session;
+      return session;
+    }
+  }
+
+  const client = new FailingThenHeldClient();
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000131",
+  });
+  const agent = await manager.createAgent(
+    { provider: "codex", cwd: workdir, title: "Retry attention test" },
+    undefined,
+    { workspaceId: undefined },
+  );
+
+  await expect(manager.runAgent(agent.id, "fail once")).rejects.toThrow("usage limit");
+  expect(manager.getAgent(agent.id)?.attention).toMatchObject({
+    requiresAttention: true,
+    attentionReason: "error",
+  });
+
+  const running = waitForAgentLifecycle(manager, agent.id, "running");
+  const retry = manager.runAgent(agent.id, "continue");
+  await running;
+
+  expect(manager.getAgent(agent.id)?.attention).toEqual({ requiresAttention: false });
+  await manager.flush();
+  expect(await storage.get(agent.id)).toMatchObject({
+    lastStatus: "running",
+    requiresAttention: false,
+    attentionReason: null,
+    attentionTimestamp: null,
+  });
+
+  client.session?.completeHeldTurn();
+  await retry;
+});
+
 test("streamAgent clears pending run when startTurn fails before a turn id exists", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-start-turn-failure-"));
   const storagePath = join(workdir, "agents");
