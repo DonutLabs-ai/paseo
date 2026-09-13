@@ -3691,6 +3691,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         type: "turn_failed",
         provider: CODEX_PROVIDER,
         error: error.message,
+        failureReason: this.currentThreadId === null ? undefined : "provider_process_exit",
       });
     }
     this.activeForegroundTurnId = null;

@@ -40,6 +40,13 @@ work is gone. Report that exit as a turn failure so the agent lands in `error` w
 Only the Claude provider does this today; the others still report a death only when a turn happens to
 be in flight.
 
+Codex app-server exits during an active turn are recoverable only after Codex has established a
+durable thread. The adapter marks that exact boundary failure as `provider_process_exit`, and the
+manager schedules a guarded continuation on the same agent and thread after 60 seconds. An exit
+before thread persistence remains an actionable error because there is no durable task position to
+resume. History replay, idle exits, tool failures, and explicit provider turn failures do not enter
+this process-exit recovery path.
+
 ### Cancellation
 
 Provider interruption is idempotent at the `AgentSession` boundary. It resolves when the prior

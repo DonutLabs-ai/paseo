@@ -55,7 +55,7 @@ class ProcessExitCodexClient extends CodexAppServerAgentClient implements AgentC
   }
 }
 
-test("unexpected Codex app-server exit fails the active run and agent", async () => {
+test("unexpected Codex app-server exit marks a persisted active turn as recoverable", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "codex-process-exit-"));
   const appServer = createFakeCodexAppServer();
   const manager = new AgentManager({
@@ -96,6 +96,7 @@ test("unexpected Codex app-server exit fails the active run and agent", async ()
         event: expect.objectContaining({
           type: "turn_failed",
           error: "Codex app-server exited with code 17 and signal null\nprovider crashed",
+          failureReason: "provider_process_exit",
         }),
       }),
     );

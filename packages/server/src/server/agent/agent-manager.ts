@@ -109,13 +109,17 @@ const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
 type TimeoutResult = "completed" | "timed_out";
 type AutomaticRetryFailureReason = Extract<
   AgentTurnFailureReason,
-  "model_at_capacity" | "transient_transport"
+  "model_at_capacity" | "transient_transport" | "provider_process_exit"
 >;
 
 function isAutomaticRetryFailureReason(
   failureReason: AgentTurnFailureReason | undefined,
 ): failureReason is AutomaticRetryFailureReason {
-  return failureReason === "model_at_capacity" || failureReason === "transient_transport";
+  return (
+    failureReason === "model_at_capacity" ||
+    failureReason === "transient_transport" ||
+    failureReason === "provider_process_exit"
+  );
 }
 
 function submittedPromptText(prompt: AgentPromptInput): string {

@@ -8704,6 +8704,77 @@ test("transient Codex response stream failures automatically continue after 60 s
   }
 });
 
+test("Codex provider process exits automatically continue after 60 seconds", async () => {
+  vi.useFakeTimers();
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-process-exit-retry-"));
+  const processExitError = "Codex app-server exited with code 17 and signal null";
+
+  class ProcessExitRetrySession extends TestAgentSession {
+    readonly prompts: AgentPromptInput[] = [];
+    private turns = 0;
+
+    override async startTurn(prompt: AgentPromptInput): Promise<{ turnId: string }> {
+      this.prompts.push(prompt);
+      const turnId = `process-exit-turn-${++this.turns}`;
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        this.pushEvent(
+          this.turns === 1
+            ? {
+                type: "turn_failed",
+                provider: this.provider,
+                error: processExitError,
+                failureReason: "provider_process_exit",
+                turnId,
+              }
+            : { type: "turn_completed", provider: this.provider, turnId },
+        );
+      }, 0);
+      return { turnId };
+    }
+  }
+
+  const session = new ProcessExitRetrySession({ provider: "codex", cwd: workdir });
+  const client: AgentClient = {
+    provider: "codex",
+    capabilities: TEST_CAPABILITIES,
+    isAvailable: async () => true,
+    createSession: async () => session,
+    resumeSession: async () => session,
+  };
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+
+  try {
+    const agent = await manager.createAgent(
+      { provider: "codex", cwd: workdir },
+      "00000000-0000-4000-8000-000000000234",
+      { workspaceId: undefined },
+    );
+    const initialRun = manager.runAgent(agent.id, "Continue the task");
+    const initialFailure = expect(initialRun).rejects.toThrow(processExitError);
+    await vi.advanceTimersByTimeAsync(0);
+    await initialFailure;
+
+    expect(session.prompts).toEqual(["Continue the task"]);
+    expect(manager.getTimeline(agent.id).at(-1)).toEqual({
+      type: "assistant_message",
+      text: `[System Error] ${processExitError}\n\nPaseo will continue this session automatically in 60 seconds.`,
+    });
+    expect(manager.getAgent(agent.id)?.attention).toEqual({ requiresAttention: false });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.runOnlyPendingTimersAsync();
+    await manager.flush();
+
+    expect(session.prompts).toEqual(["Continue the task", "Continue from where you left off."]);
+    expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle");
+  } finally {
+    await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
+    vi.useRealTimers();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("a manual follow-up cancels a pending model capacity retry", async () => {
   vi.useFakeTimers();
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-capacity-manual-"));

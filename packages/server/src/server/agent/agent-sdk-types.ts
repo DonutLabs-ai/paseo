@@ -424,7 +424,10 @@ export type AgentTimelineItem =
   | CompactionTimelineItem
   | PluginTimelineItem;
 
-export type AgentTurnFailureReason = "model_at_capacity" | "transient_transport";
+export type AgentTurnFailureReason =
+  | "model_at_capacity"
+  | "transient_transport"
+  | "provider_process_exit";
 
 export type AgentStreamEvent =
   | { type: "thread_started"; sessionId: string; provider: AgentProvider }
