@@ -1779,6 +1779,15 @@ export class Session {
 
         this.forwardAgentStream(event, serializedEvent);
 
+        if (
+          event.event.type === "turn_started" ||
+          event.event.type === "turn_completed" ||
+          event.event.type === "turn_failed" ||
+          event.event.type === "turn_canceled"
+        ) {
+          this.emitAgentTurnWorkspaceUpdate(event.agentId);
+        }
+
         if (event.event.type === "permission_requested") {
           this.emit({
             type: "agent_permission_request",
@@ -1818,6 +1827,19 @@ export class Session {
       this.sessionLogger.error(
         { err: error, parentAgentId, workspaceId: parent.workspaceId },
         "Failed to emit provider subagent workspace update",
+      );
+    });
+  }
+
+  private emitAgentTurnWorkspaceUpdate(agentId: string): void {
+    const agent = this.agentManager.getAgent(agentId);
+    if (!agent?.workspaceId) {
+      return;
+    }
+    void this.emitWorkspaceUpdateForWorkspaceId(agent.workspaceId).catch((error) => {
+      this.sessionLogger.error(
+        { err: error, agentId, workspaceId: agent.workspaceId },
+        "Failed to emit agent turn workspace update",
       );
     });
   }

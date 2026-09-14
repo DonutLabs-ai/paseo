@@ -1,5 +1,23 @@
 import { describe, expect, test } from "vitest";
+import { InMemoryAgentTimelineStore } from "../agent-timeline-store.js";
+import type {
+  AgentTimelineFetchOptions,
+  AgentTimelineFetchResult,
+} from "../agent-timeline-store-types.js";
 import { ProviderSubagentStore } from "./store.js";
+
+class RecordingTimelineStore extends InMemoryAgentTimelineStore {
+  readonly fetches: Array<{
+    options: AgentTimelineFetchOptions | undefined;
+    result: AgentTimelineFetchResult;
+  }> = [];
+
+  override fetch(agentId: string, options?: AgentTimelineFetchOptions): AgentTimelineFetchResult {
+    const result = super.fetch(agentId, options);
+    this.fetches.push({ options, result });
+    return result;
+  }
+}
 
 describe("ProviderSubagentStore", () => {
   test("keeps provider children and their timelines scoped to the parent agent", () => {
@@ -102,5 +120,86 @@ describe("ProviderSubagentStore", () => {
     expect(page.rows[0]?.seq).toBe(1);
     expect(page.rows.at(-1)?.seq).toBe(101);
     expect(page.hasOlder).toBe(false);
+  });
+
+  test("fetches a bounded canonical tail for nonmergeable provider history", () => {
+    const timelines = new RecordingTimelineStore();
+    const subagents = new ProviderSubagentStore(timelines);
+    for (let index = 1; index <= 600; index += 1) {
+      subagents.apply("parent-a", "opencode", {
+        type: "timeline",
+        id: "child-1",
+        item: { type: "user_message", text: `message ${index}` },
+      });
+    }
+
+    const page = subagents.fetchTimeline("parent-a", "child-1", {
+      direction: "tail",
+      limit: 100,
+    });
+
+    expect(page.rows.map((row) => row.seq)).toEqual(
+      Array.from({ length: 100 }, (_, index) => index + 501),
+    );
+    expect(page.hasOlder).toBe(true);
+    expect(
+      timelines.fetches.map(({ options, result }) => ({
+        direction: options?.direction,
+        limit: options?.limit,
+        rowCount: result.rows.length,
+      })),
+    ).toEqual([{ direction: "tail", limit: 100, rowCount: 100 }]);
+  });
+
+  test("expands a bounded fetch to include a projected tool lifecycle", () => {
+    const timelines = new RecordingTimelineStore();
+    const subagents = new ProviderSubagentStore(timelines);
+    for (let index = 1; index <= 194; index += 1) {
+      subagents.apply("parent-a", "opencode", {
+        type: "timeline",
+        id: "child-1",
+        item: { type: "user_message", text: `message ${index}` },
+      });
+    }
+    for (const status of ["running", "completed"] as const) {
+      subagents.apply("parent-a", "opencode", {
+        type: "timeline",
+        id: "child-1",
+        item: {
+          type: "tool_call",
+          callId: "call-1",
+          name: "shell",
+          status,
+          error: null,
+          detail: { type: "shell", command: "pwd", output: "/workspace" },
+        },
+      });
+    }
+    for (let index = 197; index <= 200; index += 1) {
+      subagents.apply("parent-a", "opencode", {
+        type: "timeline",
+        id: "child-1",
+        item: { type: "user_message", text: `message ${index}` },
+      });
+    }
+
+    const page = subagents.fetchTimeline("parent-a", "child-1", {
+      direction: "tail",
+      limit: 10,
+    });
+
+    expect(page.rows.map((row) => row.seq)).toEqual(
+      Array.from({ length: 11 }, (_, index) => index + 190),
+    );
+    expect(
+      timelines.fetches.map(({ options, result }) => ({
+        direction: options?.direction,
+        limit: options?.limit,
+        rowCount: result.rows.length,
+      })),
+    ).toEqual([
+      { direction: "tail", limit: 10, rowCount: 10 },
+      { direction: "before", limit: 10, rowCount: 10 },
+    ]);
   });
 });
