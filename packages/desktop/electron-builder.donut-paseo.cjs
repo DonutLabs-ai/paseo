@@ -18,8 +18,15 @@ const officialExtraMetadata = isRecord(parsedOfficialConfig.extraMetadata)
 const officialDirectories = isRecord(parsedOfficialConfig.directories)
   ? parsedOfficialConfig.directories
   : {};
+const officialAsarUnpack = Array.isArray(parsedOfficialConfig.asarUnpack)
+  ? parsedOfficialConfig.asarUnpack
+  : [];
+const officialExtraResources = Array.isArray(parsedOfficialConfig.extraResources)
+  ? parsedOfficialConfig.extraResources
+  : [];
 const officialLinux = isRecord(parsedOfficialConfig.linux) ? parsedOfficialConfig.linux : {};
 const officialPacman = isRecord(parsedOfficialConfig.pacman) ? parsedOfficialConfig.pacman : {};
+const nodeRuntimeName = process.platform === "win32" ? "node.exe" : "node";
 
 module.exports = {
   ...parsedOfficialConfig,
@@ -38,6 +45,14 @@ module.exports = {
     ...officialDirectories,
     output: "release-donut-paseo",
   },
+  asarUnpack: [...new Set([...officialAsarUnpack, "node_modules/**/*"])],
+  extraResources: [
+    ...officialExtraResources,
+    {
+      from: process.execPath,
+      to: `node-runtime/${nodeRuntimeName}`,
+    },
+  ],
   publish: {
     provider: "github",
     owner: "DonutLabs-ai",
