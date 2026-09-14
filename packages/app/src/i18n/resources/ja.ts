@@ -12,6 +12,7 @@ export const ja: TranslationResources = {
       copy: "コピー",
       copyLine: "行をコピー",
       dismiss: "閉じる",
+      reload: "再読み込み",
       retry: "再試行",
       search: "検索",
       select: "選択",
@@ -155,7 +156,8 @@ export const ja: TranslationResources = {
       initialPromptRequired: "初期プロンプトが必要です",
       alreadyLoading: "すでに読み込み中です",
       uploadFailed: "ファイルのアップロードに失敗しました",
-      noClipboardImage: "クリップボードに画像がありません",
+      noClipboardImage:
+        "現在のクリップボードに画像がありません。キーボードから貼り付けてみてください。",
       pasteImageFailed: "画像を貼り付けられませんでした",
       fileTooLarge: "{{fileName}}が大きすぎます（最大{{size}}）",
     },
@@ -212,6 +214,10 @@ export const ja: TranslationResources = {
       "セッションを開きましたが、スケジュールされたプロンプトを特定できませんでした。",
     messageCapped: "このメッセージは上限で切り詰められました（{{bytes}}バイト）。",
     permission: {
+      rejectedPlan: "却下されたプラン",
+      approvedPlan: "承認されたプラン",
+      canceledPlan: "キャンセルされたプラン",
+
       plan: "プラン",
       required: "権限が必要です",
       deny: "拒否",
@@ -1107,6 +1113,16 @@ export const ja: TranslationResources = {
       noPrompt: "プロンプトはまだありません",
     },
   },
+  changelog: {
+    title: "新着情報",
+    installed: "インストール済み",
+    showMore: "もっと見る",
+    openWebsite: "変更履歴をすべて表示",
+    error: {
+      title: "変更履歴を読み込めません",
+      description: "接続を確認してもう一度お試しください。",
+    },
+  },
   sidebar: {
     display: {
       trigger: "表示設定",
@@ -1331,6 +1347,7 @@ export const ja: TranslationResources = {
       detail: "ローカルデーモンを停止中。",
     },
     daemon: {
+      lifecycle: en.desktop.daemon.lifecycle,
       title: "デーモン",
       status: {
         title: "ステータス",
@@ -2140,6 +2157,7 @@ export const ja: TranslationResources = {
     about: {
       title: "アプリ情報",
       appVersion: "アプリバージョン",
+      whatsNewHint: "各バージョンのリリースノート",
       thisDevice: "このデバイス",
       connectedHosts: "接続されているホスト",
       offline: "オフライン",

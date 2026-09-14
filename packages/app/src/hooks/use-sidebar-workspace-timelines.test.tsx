@@ -3,7 +3,7 @@
  */
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ViewedTimelineUiBridge } from "@/timeline/viewed-timeline-sync";
+import type { ViewedTimelineOwner } from "@/timeline/viewed-timeline-sync";
 import { useSessionStore } from "@/stores/session-store";
 import { useSidebarWorkspaceTimelines } from "./use-sidebar-workspace-timelines";
 
@@ -14,12 +14,19 @@ interface PreviewWorkspace {
 
 function createTimelineBridge() {
   const replaceVisibleAgentIds = vi.fn<(sourceId: string, agentIds: string[]) => void>();
-  const bridge: ViewedTimelineUiBridge = {
+  const bridge: ViewedTimelineOwner = {
     replaceVisibleAgentIds,
     subscribe: () => () => undefined,
     getAgentTimelineStatus: () => "ready",
     getAgentTimelineError: () => null,
     retryVisibleAgentTimeline: () => undefined,
+    setActive: () => undefined,
+    setConnected: () => undefined,
+    recoverGap: () => undefined,
+    dispose: () => undefined,
+    applyTimelineResponse: () => undefined,
+    enqueueStreamEvent: () => undefined,
+    flushStreamAgent: () => undefined,
   };
   return { bridge, replaceVisibleAgentIds };
 }
