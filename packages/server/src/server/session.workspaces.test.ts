@@ -8453,6 +8453,74 @@ test("overlapping workspace rebuilds publish the newest provider subagent status
   expect(statuses).toEqual(["running", "done"]);
 });
 
+test("root agent turn completion publishes the owning workspace's settled status", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const agent = makeManagedAgent({
+    id: "root-agent",
+    cwd: REPO_CWD,
+    workspaceId: "ws-repo-running",
+    lifecycle: "running",
+    updatedAt: "2026-08-01T10:00:00.000Z",
+  });
+  let listener: ((event: AgentManagerEvent) => void) | null = null;
+  const session = createSessionForWorkspaceTests({
+    onMessage: (message) => emitted.push(message),
+    agentStorage: { list: async () => [] },
+    agentManager: {
+      subscribe: (nextListener: (event: AgentManagerEvent) => void) => {
+        listener = nextListener;
+        return () => {};
+      },
+      listAgents: () => [agent],
+      listProviderSubagentActivity: () => [],
+      getAgent: (agentId: string) => (agentId === agent.id ? agent : null),
+    },
+  });
+
+  await session.handleMessage({
+    type: "fetch_workspaces_request",
+    requestId: "root-agent-workspace-status",
+    subscribe: { subscriptionId: "root-agent-workspace-status" },
+  });
+  expect(findByType(emitted, "fetch_workspaces_response")?.payload.entries[0]?.status).toBe(
+    "running",
+  );
+  emitted.length = 0;
+
+  Object.assign(agent, {
+    lifecycle: "idle",
+    activeForegroundTurnId: null,
+    activeTurnId: null,
+    activeTurnStartedAt: null,
+    updatedAt: new Date("2026-08-01T10:01:00.000Z"),
+  });
+  listener?.({
+    type: "agent_stream",
+    agentId: agent.id,
+    event: {
+      type: "turn_completed",
+      provider: "codex",
+      turnId: "turn-1",
+    },
+  });
+
+  const update = await waitForWorkspaceUpdate(
+    emitted,
+    (message) =>
+      message.payload.kind === "upsert" &&
+      message.payload.workspace.id === "ws-repo-running" &&
+      message.payload.workspace.status === "done",
+    "root turn completion marks the owning workspace done",
+  );
+  expect(update.payload).toMatchObject({
+    kind: "upsert",
+    workspace: {
+      id: "ws-repo-running",
+      status: "done",
+    },
+  });
+});
+
 test("title-only terminal change does not build workspace descriptors or emit workspace_update", async () => {
   const emitted: SessionOutboundMessage[] = [];
   const cwd = mkdtempSync(path.join(tmpdir(), "paseo-session-title-"));

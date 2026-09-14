@@ -14,6 +14,7 @@ import type {
   AgentSessionConfig,
   AgentSlashCommand,
   AgentStreamEvent,
+  ToolCallTimelineItem,
 } from "../agent-sdk-types.js";
 import {
   buildCodexAppServerEnv,
@@ -117,6 +118,10 @@ interface CodexSessionTestAccess {
   planModeEnabled: boolean;
   collaborationModes: CollaborationModeRecord[];
   config: AgentSessionConfig;
+  subAgentCallsByCallId: Map<
+    string,
+    { childItems: Map<string, unknown>; toolCall: ToolCallTimelineItem }
+  >;
 }
 
 interface CodexClientLike {
@@ -138,6 +143,7 @@ type TurnTerminalEvent = Extract<
 const ONE_BY_ONE_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X1r0AAAAASUVORK5CYII=";
 const CODEX_PROVIDER = "codex";
+const MAX_SERIALIZED_PARENT_SUB_AGENT_SNAPSHOT_BYTES = 64_000;
 
 function createConfig(overrides: Partial<AgentSessionConfig> = {}): AgentSessionConfig {
   return {
@@ -2664,6 +2670,168 @@ describe("Codex app-server provider", () => {
       id: "child-thread-1",
       status: "completed",
     });
+  });
+
+  test("bounds parent sub-agent snapshots while retaining canonical child activity", () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals(session).handleNotification("item/completed", {
+      threadId: "test-thread",
+      item: {
+        type: "subAgentActivity",
+        id: "spawn-bounded-child",
+        kind: "started",
+        agentThreadId: "bounded-child-thread",
+        agentPath: "/root/bounded-child",
+      },
+    });
+    const childMessages = Array.from(
+      { length: 20 },
+      (_, index) => `${String.fromCharCode(97 + index).repeat(16_000)} activity-${index}`,
+    );
+    childMessages[0] = `${childMessages[0]} oldest-marker`;
+    childMessages[19] = `${childMessages[19]} newest-marker`;
+    for (const [index, text] of childMessages.entries()) {
+      asInternals(session).handleNotification("item/completed", {
+        threadId: "bounded-child-thread",
+        item: {
+          type: "agentMessage",
+          id: `bounded-child-message-${index}`,
+          text,
+        },
+      });
+    }
+    asInternals(session).handleNotification("turn/completed", {
+      threadId: "bounded-child-thread",
+      turn: { status: "completed" },
+    });
+
+    const parentSnapshots = events.flatMap((event) =>
+      event.type === "timeline" &&
+      event.item.type === "tool_call" &&
+      event.item.callId === "spawn-bounded-child" &&
+      event.item.detail.type === "sub_agent"
+        ? [event.item]
+        : [],
+    );
+    expect(parentSnapshots.length).toBeGreaterThan(1);
+    expect(
+      parentSnapshots.every((item) => Buffer.byteLength(item.detail.log, "utf8") <= 32_000),
+    ).toBe(true);
+    expect(parentSnapshots.at(-1)).toMatchObject({ status: "completed" });
+    expect(parentSnapshots.at(-1)?.detail.log).not.toContain("oldest-marker");
+    expect(parentSnapshots.at(-1)?.detail.log).toContain("newest-marker");
+
+    const canonicalMessages = events.flatMap((event) =>
+      event.type === "provider_subagent" &&
+      event.event.type === "timeline" &&
+      event.event.id === "bounded-child-thread" &&
+      event.event.item.type === "assistant_message"
+        ? [event.event.item.text]
+        : [],
+    );
+    expect(canonicalMessages).toEqual(childMessages);
+  });
+
+  test("bounds a root sub-agent prompt in both retained state and emitted snapshots", () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    const prompt = `${"p".repeat(1_000_000)} newest-prompt-marker`;
+
+    asInternals(session).handleNotification("item/completed", {
+      threadId: "test-thread",
+      item: {
+        type: "collabAgentToolCall",
+        id: "spawn-large-prompt-child",
+        tool: "spawnAgent",
+        status: "inProgress",
+        prompt,
+        receiverThreadIds: [],
+        agentsStates: {},
+      },
+    });
+
+    const rootSnapshot = events.find(
+      (event) =>
+        event.type === "timeline" &&
+        event.item.type === "tool_call" &&
+        event.item.callId === "spawn-large-prompt-child",
+    );
+    if (rootSnapshot?.type !== "timeline" || rootSnapshot.item.type !== "tool_call") {
+      throw new Error("Expected root sub-agent snapshot");
+    }
+    expect(Buffer.byteLength(JSON.stringify(rootSnapshot.item), "utf8")).toBeLessThanOrEqual(
+      MAX_SERIALIZED_PARENT_SUB_AGENT_SNAPSHOT_BYTES,
+    );
+    expect(rootSnapshot.item.detail).toMatchObject({
+      type: "sub_agent",
+      description: expect.stringContaining("newest-prompt-marker"),
+    });
+    const retainedState = asInternals(session).subAgentCallsByCallId.get(
+      "spawn-large-prompt-child",
+    );
+    expect(Buffer.byteLength(JSON.stringify(retainedState?.toolCall), "utf8")).toBeLessThanOrEqual(
+      MAX_SERIALIZED_PARENT_SUB_AGENT_SNAPSHOT_BYTES,
+    );
+  });
+
+  test("retains only the latest parent-preview child items", () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals(session).handleNotification("item/completed", {
+      threadId: "test-thread",
+      item: {
+        type: "subAgentActivity",
+        id: "spawn-many-child-items",
+        kind: "started",
+        agentThreadId: "many-child-items-thread",
+        agentPath: "/root/many-child-items",
+      },
+    });
+    const childMessages = Array.from({ length: 205 }, (_, index) => `activity-${index}`);
+    childMessages[0] = `${childMessages[0]} oldest-marker`;
+    childMessages[204] = `${childMessages[204]} newest-marker`;
+    for (const [index, text] of childMessages.entries()) {
+      asInternals(session).handleNotification("item/completed", {
+        threadId: "many-child-items-thread",
+        item: { type: "agentMessage", id: `many-child-message-${index}`, text },
+      });
+    }
+
+    const childState = asInternals(session).subAgentCallsByCallId.get("spawn-many-child-items");
+    expect(childState?.childItems.size).toBe(200);
+    const finalParentSnapshot = events.findLast(
+      (event) =>
+        event.type === "timeline" &&
+        event.item.type === "tool_call" &&
+        event.item.callId === "spawn-many-child-items",
+    );
+    expect(finalParentSnapshot).toMatchObject({
+      type: "timeline",
+      item: { detail: { log: expect.stringContaining("newest-marker") } },
+    });
+    if (
+      finalParentSnapshot?.type !== "timeline" ||
+      finalParentSnapshot.item.type !== "tool_call" ||
+      finalParentSnapshot.item.detail.type !== "sub_agent"
+    ) {
+      throw new Error("Expected a final parent sub-agent snapshot");
+    }
+    expect(finalParentSnapshot.item.detail.log).not.toContain("oldest-marker");
+
+    const canonicalMessages = events.filter(
+      (event) =>
+        event.type === "provider_subagent" &&
+        event.event.type === "timeline" &&
+        event.event.id === "many-child-items-thread" &&
+        event.event.item.type === "assistant_message",
+    );
+    expect(canonicalMessages).toHaveLength(205);
   });
 
   test("keeps a settled child completed until Codex starts another child turn", async () => {
