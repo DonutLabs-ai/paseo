@@ -10,6 +10,14 @@ import {
 } from "../src/server/pid-lock.js";
 import { resolvePaseoHome } from "../src/server/paseo-home.js";
 import { loadPersistedConfig } from "../src/server/persisted-config.js";
+import {
+  createPackagedWorkerSpawnSpec,
+  DAEMON_ELECTRON_MAX_OLD_SPACE_SIZE_MB,
+  DAEMON_NODE_MAX_OLD_SPACE_SIZE_MB,
+  type PackagedWorkerRuntime,
+  resolvePackagedNodeWorkerRuntime,
+  resolveWorkerExecArgv,
+} from "./daemon-worker-launch.js";
 import { runSupervisor } from "./supervisor.js";
 import { resolveSupervisorLogFile } from "./supervisor-log-config.js";
 import { applySherpaLoaderEnv } from "../src/server/speech/providers/local/sherpa/sherpa-runtime-env.js";
@@ -67,24 +75,6 @@ function resolveDevWorkerEntry(): string {
   return candidate;
 }
 
-function resolveWorkerExecArgv(workerEntry: string, devMode: boolean): string[] {
-  const execArgv = workerEntry.endsWith(".ts") ? ["--import", "tsx"] : [];
-  if (!devMode) {
-    return execArgv;
-  }
-  const devArgs = [
-    "--heapsnapshot-near-heap-limit=3",
-    "--max-old-space-size=3072",
-    "--report-on-fatalerror",
-    "--report-directory=/tmp/paseo-reports",
-  ];
-  const inspectArg = process.env.PASEO_NODE_INSPECT ?? "--inspect";
-  if (inspectArg !== "0" && inspectArg !== "false" && inspectArg !== "off") {
-    devArgs.push(inspectArg);
-  }
-  return [...devArgs, ...execArgv];
-}
-
 function resolvePackagedNodeEntrypointRunnerPath(currentScriptPath: string): string | null {
   const packageMarker = `${path.sep}node_modules${path.sep}@getpaseo${path.sep}server${path.sep}`;
   const markerIndex = currentScriptPath.lastIndexOf(packageMarker);
@@ -100,12 +90,28 @@ function resolvePackagedNodeEntrypointRunnerPath(currentScriptPath: string): str
 async function main(): Promise<void> {
   const config = parseConfig(process.argv.slice(2));
   const workerEntry = config.devMode ? resolveDevWorkerEntry() : resolveWorkerEntry();
-  const workerExecArgv = resolveWorkerExecArgv(workerEntry, config.devMode);
   const workerEnv: NodeJS.ProcessEnv = { ...process.env };
+  const currentScriptPath = fileURLToPath(import.meta.url);
   const packagedNodeEntrypointRunner =
     process.env.ELECTRON_RUN_AS_NODE === "1"
-      ? resolvePackagedNodeEntrypointRunnerPath(fileURLToPath(import.meta.url))
+      ? resolvePackagedNodeEntrypointRunnerPath(currentScriptPath)
       : null;
+  const packagedWorkerRuntime: PackagedWorkerRuntime | null = packagedNodeEntrypointRunner
+    ? (resolvePackagedNodeWorkerRuntime({ currentScriptPath, workerEntry }) ?? {
+        kind: "electron",
+        execPath: process.execPath,
+        runnerPath: packagedNodeEntrypointRunner,
+        workerEntry,
+      })
+    : null;
+  const resolvedWorkerEntry = packagedWorkerRuntime?.workerEntry ?? workerEntry;
+  const workerExecArgv = resolveWorkerExecArgv(
+    resolvedWorkerEntry,
+    config.devMode,
+    packagedWorkerRuntime?.kind === "electron"
+      ? DAEMON_ELECTRON_MAX_OLD_SPACE_SIZE_MB
+      : DAEMON_NODE_MAX_OLD_SPACE_SIZE_MB,
+  );
 
   applySherpaLoaderEnv(workerEnv);
 
@@ -153,24 +159,21 @@ async function main(): Promise<void> {
   const supervisor = runSupervisor({
     name: "DaemonRunner",
     startupMessage: "Starting daemon worker (IPC restart and crash restart enabled)",
-    resolveWorkerEntry: () => workerEntry,
+    resolveWorkerEntry: () => resolvedWorkerEntry,
     workerArgs: config.workerArgs,
     workerEnv,
     workerExecArgv,
-    resolveWorkerSpawnSpec: packagedNodeEntrypointRunner
-      ? (resolvedWorkerEntry) => ({
-          command: process.execPath,
-          args: [
-            packagedNodeEntrypointRunner,
-            "node-script",
-            resolvedWorkerEntry,
-            ...config.workerArgs,
-          ],
-          env: {
-            ...workerEnv,
-            ELECTRON_RUN_AS_NODE: "1",
-          },
-        })
+    resolveWorkerSpawnSpec: packagedWorkerRuntime
+      ? (spawnWorkerEntry) =>
+          createPackagedWorkerSpawnSpec({
+            runtime: {
+              ...packagedWorkerRuntime,
+              workerEntry: spawnWorkerEntry,
+            },
+            workerArgs: config.workerArgs,
+            workerEnv,
+            workerExecArgv,
+          })
       : undefined,
     restartOnCrash: true,
     logFile: supervisorLogFile,

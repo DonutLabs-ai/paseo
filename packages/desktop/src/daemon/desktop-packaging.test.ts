@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import {
   chmodSync,
   copyFileSync,
@@ -14,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const esmRequire = createRequire(import.meta.url);
 
 function writeExecutable(filePath: string, contents: string): void {
   writeFileSync(filePath, contents, "utf8");
@@ -117,6 +119,19 @@ describe("desktop packaging", () => {
     expect(serverPackage).toContain("fs.rmSync('dist/server/skills',{recursive:true,force:true})");
     expect(serverPackage).toContain("fs.cpSync('../../skills','dist/server/skills'");
     expect(runtimeTrace).toContain('"packages/server/dist/server/skills/**"');
+  });
+
+  it("packages a real Node runtime and unpacked dependencies for Donut daemon workers", () => {
+    const config = esmRequire(join(packageRoot, "electron-builder.donut-paseo.cjs")) as {
+      asarUnpack?: string[];
+      extraResources?: Array<{ from?: string; to?: string }>;
+    };
+
+    expect(config.asarUnpack).toContain("node_modules/**/*");
+    expect(config.extraResources).toContainEqual({
+      from: process.execPath,
+      to: `node-runtime/${process.platform === "win32" ? "node.exe" : "node"}`,
+    });
   });
 
   it("registers Paseo agent links with the operating system", () => {
