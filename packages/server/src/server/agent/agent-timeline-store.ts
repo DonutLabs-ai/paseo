@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { gunzipSync, gzipSync } from "node:zlib";
+import { AgentTimelineItemPayloadSchema } from "@getpaseo/protocol/messages";
 import type { AgentTimelineItem } from "./agent-sdk-types.js";
 import type {
   AgentTimelineFetchOptions,
@@ -17,8 +19,20 @@ export interface SeedAgentTimelineOptions {
 interface AgentTimelineState {
   epoch: string;
   rows: AgentTimelineRow[];
+  compressedRowChunks: CompressedTimelineRows[];
   nextSeq: number;
   toolCallSeqBounds: Map<string, ToolCallSeqBounds>;
+}
+
+interface CompressedTimelineRows {
+  rowCount: number;
+  data: Buffer;
+}
+
+export interface AgentTimelineResidency {
+  residentRowCount: number;
+  compressedRowCount: number;
+  compressedBytes: number;
 }
 
 export interface ToolCallSeqBounds {
@@ -27,6 +41,30 @@ export interface ToolCallSeqBounds {
 }
 
 const DEFAULT_TIMELINE_FETCH_LIMIT = 200;
+const IDLE_TIMELINE_COMPRESSION_LEVEL = 1;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isAgentTimelineRow(value: unknown): value is AgentTimelineRow {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.seq === "number" &&
+    Number.isSafeInteger(value.seq) &&
+    value.seq >= 0 &&
+    typeof value.timestamp === "string" &&
+    AgentTimelineItemPayloadSchema.safeParse(value.item).success &&
+    (value.turnId === undefined || typeof value.turnId === "string") &&
+    (value.providerMessageId === undefined || typeof value.providerMessageId === "string")
+  );
+}
+
+function isAgentTimelineRows(value: unknown): value is AgentTimelineRow[] {
+  return Array.isArray(value) && value.every(isAgentTimelineRow);
+}
 
 function cloneRow(row: AgentTimelineRow): AgentTimelineRow {
   return { ...row };
@@ -44,6 +82,44 @@ function indexToolCallRow(
     minSeq: previous ? Math.min(previous.minSeq, row.seq) : row.seq,
     maxSeq: previous ? Math.max(previous.maxSeq, row.seq) : row.seq,
   });
+}
+
+function rebuildToolCallIndex(state: AgentTimelineState): void {
+  state.toolCallSeqBounds.clear();
+  for (const row of state.rows) {
+    indexToolCallRow(state.toolCallSeqBounds, row);
+  }
+}
+
+function compressTimelineRows(rows: readonly AgentTimelineRow[]): CompressedTimelineRows {
+  return {
+    rowCount: rows.length,
+    data: gzipSync(JSON.stringify(rows), { level: IDLE_TIMELINE_COMPRESSION_LEVEL }),
+  };
+}
+
+function decompressTimelineRows(chunk: CompressedTimelineRows): AgentTimelineRow[] {
+  const parsed: unknown = JSON.parse(gunzipSync(chunk.data).toString("utf8"));
+  if (!isAgentTimelineRows(parsed)) {
+    throw new Error("Compressed timeline contains invalid canonical rows");
+  }
+  if (parsed.length !== chunk.rowCount) {
+    throw new Error(
+      `Compressed timeline row count mismatch: expected ${chunk.rowCount}, received ${parsed.length}`,
+    );
+  }
+  return parsed;
+}
+
+function restoreCompressedRows(state: AgentTimelineState): number {
+  if (state.compressedRowChunks.length === 0) {
+    return 0;
+  }
+  const restoredRows = state.compressedRowChunks.flatMap(decompressTimelineRows);
+  state.rows = [...restoredRows, ...state.rows];
+  state.compressedRowChunks = [];
+  rebuildToolCallIndex(state);
+  return restoredRows.length;
 }
 
 interface FetchContext {
@@ -173,6 +249,7 @@ export class InMemoryAgentTimelineStore {
     this.states.set(agentId, {
       epoch: options?.epoch ?? randomUUID(),
       rows,
+      compressedRowChunks: [],
       nextSeq,
       toolCallSeqBounds,
     });
@@ -182,16 +259,52 @@ export class InMemoryAgentTimelineStore {
     this.states.delete(agentId);
   }
 
+  retainTail(agentId: string, maxRows: number): number {
+    const state = this.requireState(agentId);
+    const retainedRowCount = Math.max(0, Math.floor(maxRows));
+    const removedRowCount = Math.max(0, state.rows.length - retainedRowCount);
+    if (removedRowCount === 0) {
+      return 0;
+    }
+
+    const rowsToCompress = state.rows.slice(0, removedRowCount);
+    state.compressedRowChunks.push(compressTimelineRows(rowsToCompress));
+    state.rows = retainedRowCount === 0 ? [] : state.rows.slice(-retainedRowCount);
+    rebuildToolCallIndex(state);
+    return removedRowCount;
+  }
+
+  getResidency(agentId: string): AgentTimelineResidency {
+    const state = this.requireState(agentId);
+    return {
+      residentRowCount: state.rows.length,
+      compressedRowCount: state.compressedRowChunks.reduce(
+        (total, chunk) => total + chunk.rowCount,
+        0,
+      ),
+      compressedBytes: state.compressedRowChunks.reduce(
+        (total, chunk) => total + chunk.data.byteLength,
+        0,
+      ),
+    };
+  }
+
   getItems(agentId: string): AgentTimelineItem[] {
-    return this.requireState(agentId).rows.map((row) => row.item);
+    const state = this.requireState(agentId);
+    restoreCompressedRows(state);
+    return state.rows.map((row) => row.item);
   }
 
   getRows(agentId: string): AgentTimelineRow[] {
-    return this.requireState(agentId).rows.map(cloneRow);
+    const state = this.requireState(agentId);
+    restoreCompressedRows(state);
+    return state.rows.map(cloneRow);
   }
 
   getSubmittedUserMessage(agentId: string, clientMessageId: string): AgentTimelineRow | null {
-    const row = this.requireState(agentId).rows.find(
+    const state = this.requireState(agentId);
+    restoreCompressedRows(state);
+    const row = state.rows.find(
       (candidate) =>
         candidate.item.type === "user_message" &&
         candidate.item.clientMessageId === clientMessageId,
@@ -205,6 +318,7 @@ export class InMemoryAgentTimelineStore {
     providerMessageId: string,
   ): AgentTimelineRow | null {
     const state = this.requireState(agentId);
+    restoreCompressedRows(state);
     const index = state.rows.findIndex(
       (candidate) =>
         candidate.item.type === "user_message" &&
@@ -228,12 +342,15 @@ export class InMemoryAgentTimelineStore {
    * canonical span. Bounded consumers use this index to expand only pages that cross that span.
    */
   getToolCallSeqBounds(agentId: string, callId: string): ToolCallSeqBounds | null {
-    const bounds = this.requireState(agentId).toolCallSeqBounds.get(callId);
+    const state = this.requireState(agentId);
+    restoreCompressedRows(state);
+    const bounds = state.toolCallSeqBounds.get(callId);
     return bounds ? { ...bounds } : null;
   }
 
   fetch(agentId: string, options?: AgentTimelineFetchOptions): AgentTimelineFetchResult {
     const state = this.requireState(agentId);
+    restoreCompressedRows(state);
     const direction = options?.direction ?? "tail";
     const requestedLimit = options?.limit;
     const limit =
@@ -318,8 +435,23 @@ export class InMemoryAgentTimelineStore {
   }
 
   getLastAssistantMessage(agentId: string): string | null {
-    const rows = this.requireState(agentId).rows;
+    const state = this.requireState(agentId);
+    const result = this.getLastAssistantMessageFromResidentRows(state.rows);
+    if (
+      state.compressedRowChunks.length > 0 &&
+      (result === null || result.startsAtResidentBeginning)
+    ) {
+      restoreCompressedRows(state);
+      return this.getLastAssistantMessageFromResidentRows(state.rows)?.text ?? null;
+    }
+    return result?.text ?? null;
+  }
+
+  private getLastAssistantMessageFromResidentRows(
+    rows: readonly AgentTimelineRow[],
+  ): { text: string; startsAtResidentBeginning: boolean } | null {
     const chunks: string[] = [];
+    let earliestChunkIndex = -1;
     for (let i = rows.length - 1; i >= 0; i -= 1) {
       const item = rows[i].item;
       if (item.type !== "assistant_message") {
@@ -329,13 +461,17 @@ export class InMemoryAgentTimelineStore {
         continue;
       }
       chunks.push(item.text);
+      earliestChunkIndex = i;
     }
 
     if (chunks.length === 0) {
       return null;
     }
 
-    return chunks.toReversed().join("");
+    return {
+      text: chunks.toReversed().join(""),
+      startsAtResidentBeginning: earliestChunkIndex === 0,
+    };
   }
 
   private requireState(agentId: string): AgentTimelineState {

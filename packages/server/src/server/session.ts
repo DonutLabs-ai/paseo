@@ -7524,12 +7524,14 @@ export class Session {
         }
       : undefined;
 
+    const releaseTimelineHistory = this.agentManager.retainTimelineHistory([msg.agentId]);
     try {
       const snapshot = await ensureAgentLoaded(msg.agentId, {
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
+      await this.agentManager.hydrateTimelineFromProvider(msg.agentId);
       const agentPayload = await this.buildAgentPayload(snapshot);
 
       const fetchedControlTimeline = this.agentManager.fetchTimeline(msg.agentId, {
@@ -7631,6 +7633,8 @@ export class Session {
         },
         source,
       );
+    } finally {
+      releaseTimelineHistory();
     }
   }
 
@@ -7654,12 +7658,14 @@ export class Session {
     msg: Extract<SessionInboundMessage, { type: "agent.timeline.list_prompts.request" }>,
     source?: object,
   ): Promise<void> {
+    const releaseTimelineHistory = this.agentManager.retainTimelineHistory([msg.agentId]);
     try {
       await ensureAgentLoaded(msg.agentId, {
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
+      await this.agentManager.hydrateTimelineFromProvider(msg.agentId);
       const rows = await this.agentManager.getTimelineRows(msg.agentId);
       const timeline = this.agentManager.fetchTimeline(msg.agentId, {
         direction: "tail",
@@ -7696,6 +7702,8 @@ export class Session {
         },
         source,
       );
+    } finally {
+      releaseTimelineHistory();
     }
   }
 
@@ -7810,12 +7818,14 @@ export class Session {
   private async handleAgentForkContextRequest(
     msg: Extract<SessionInboundMessage, { type: "agent.fork_context.request" }>,
   ): Promise<void> {
+    const releaseTimelineHistory = this.agentManager.retainTimelineHistory([msg.agentId]);
     try {
       const snapshot = await ensureAgentLoaded(msg.agentId, {
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
       });
+      await this.agentManager.hydrateTimelineFromProvider(msg.agentId);
       const agentPayload = await this.buildAgentPayload(snapshot);
       const timeline = this.agentManager.fetchTimeline(msg.agentId, {
         direction: "tail",
@@ -7860,6 +7870,8 @@ export class Session {
           error: error instanceof Error ? error.message : String(error),
         },
       });
+    } finally {
+      releaseTimelineHistory();
     }
   }
 

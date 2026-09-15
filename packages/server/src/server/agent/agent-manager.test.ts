@@ -743,6 +743,106 @@ test("retries provider history hydration after a stream failure", async () => {
   }
 });
 
+test("compresses idle history between read leases and restores it without provider replay", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-idle-history-"));
+  let historyReadCount = 0;
+  const historyEvents = Array.from({ length: 250 }, (_, index) => ({
+    type: "timeline" as const,
+    provider: "codex" as const,
+    item: { type: "assistant_message" as const, text: `history-${index + 1}` },
+  }));
+  let retainedHistorySession: RetainedHistorySession | null = null;
+  class RetainedHistorySession extends TestAgentSession {
+    override async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+      historyReadCount += 1;
+      yield* historyEvents;
+    }
+  }
+  const manager = new AgentManager({
+    clients: {
+      codex: new (class extends TestAgentClient {
+        override async resumeSession(
+          _handle: AgentPersistenceHandle,
+          config?: Partial<AgentSessionConfig>,
+        ): Promise<AgentSession> {
+          retainedHistorySession = new RetainedHistorySession({
+            provider: "codex",
+            cwd: config?.cwd ?? workdir,
+          });
+          return retainedHistorySession;
+        }
+      })(),
+    },
+    logger,
+  });
+  let agentId: string | null = null;
+  try {
+    const agent = await manager.resumeAgentFromPersistence(
+      { provider: "codex", sessionId: "idle-history" },
+      { cwd: workdir },
+    );
+    agentId = agent.id;
+    const releaseFirstViewer = manager.retainTimelineHistory([agent.id]);
+    const releaseSecondViewer = manager.retainTimelineHistory([agent.id]);
+    await manager.hydrateTimelineFromProvider(agent.id);
+    const fullTimeline = manager.fetchTimeline(agent.id, { limit: 0 });
+    expect(fullTimeline.rows).toHaveLength(250);
+
+    releaseFirstViewer();
+    expect(manager.getTimelineResidency(agent.id)).toMatchObject({
+      residentRowCount: 250,
+      compressedRowCount: 0,
+    });
+
+    releaseSecondViewer();
+    expect(manager.getTimelineResidency(agent.id)).toMatchObject({
+      residentRowCount: 200,
+      compressedRowCount: 50,
+    });
+    expect(manager.getAgent(agent.id)?.historyPrimed).toBe(true);
+
+    const releaseRunningViewer = manager.retainTimelineHistory([agent.id]);
+    const restoredTimeline = manager.fetchTimeline(agent.id, { limit: 0 });
+    expect(restoredTimeline.epoch).toBe(fullTimeline.epoch);
+    expect(restoredTimeline.rows).toHaveLength(250);
+    expect(restoredTimeline.rows[0]?.item).toEqual({
+      type: "assistant_message",
+      text: "history-1",
+    });
+    expect(manager.getAgent(agent.id)?.historyPrimed).toBe(true);
+    expect(historyReadCount).toBe(1);
+
+    if (!retainedHistorySession) throw new Error("Expected resumed provider session");
+    const running = waitForAgentLifecycle(manager, agent.id, "running");
+    retainedHistorySession.pushEvent({
+      type: "turn_started",
+      provider: "codex",
+      turnId: "autonomous-turn",
+    });
+    await running;
+    releaseRunningViewer();
+    expect(manager.getTimelineResidency(agent.id)).toMatchObject({
+      residentRowCount: 250,
+      compressedRowCount: 0,
+    });
+    const idle = waitForAgentLifecycle(manager, agent.id, "idle");
+    retainedHistorySession.pushEvent({
+      type: "turn_completed",
+      provider: "codex",
+      turnId: "autonomous-turn",
+    });
+    await idle;
+    expect(manager.getTimelineResidency(agent.id)).toMatchObject({
+      residentRowCount: 200,
+      compressedRowCount: 50,
+    });
+    expect(manager.getAgent(agent.id)?.historyPrimed).toBe(true);
+  } finally {
+    if (agentId) await manager.closeAgent(agentId).catch(() => undefined);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("unavailable steer interrupts once and starts one replacement turn", async () => {
   const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
   session.steerResult = "unavailable";

@@ -8,6 +8,13 @@ Agent chat delivery has two paths:
 The daemon keeps canonical rows only for its runtime. Provider history is the durable transcript
 authority and repopulates those rows when an agent resumes.
 
+Once an agent is idle, the daemon retains only the latest 200 canonical rows as live objects and
+gzip compresses the older rows. Timeline subscriptions continue receiving live events without
+pinning complete transcripts in heap. A timeline fetch temporarily expands the complete history,
+with its original epoch, sequence numbers, and daemon-only items intact, then returns it to the
+compressed idle representation after the response is built. Provider history remains the durable
+authority across daemon restarts.
+
 The invariants are:
 
 > A continuously subscribed client applies every committed row in order. Opening or resuming an

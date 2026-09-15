@@ -112,6 +112,14 @@ class InMemoryAgentManager {
     return this.timeline.fetch("agent-1", options);
   }
 
+  hydrateTimelineFromProvider(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  retainTimelineHistory(): () => void {
+    return () => undefined;
+  }
+
   listAgents() {
     return [];
   }

@@ -59,6 +59,7 @@ import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
   InMemoryAgentTimelineStore,
+  type AgentTimelineResidency,
   type SeedAgentTimelineOptions,
 } from "./agent-timeline-store.js";
 import type {
@@ -604,6 +605,7 @@ interface SteerEventBarrier {
 }
 
 const BUSY_STATUSES: Set<AgentLifecycleStatus> = new Set(["initializing", "running"]);
+const IDLE_TIMELINE_RETAINED_ROWS = 200;
 const AgentIdSchema = z.guid();
 
 function isAgentBusy(status: AgentLifecycleStatus): boolean {
@@ -762,6 +764,7 @@ export class AgentManager {
   private readonly registry?: AgentStorage;
   private readonly durableTimelineStore?: AgentTimelineStore;
   private readonly previousStatuses = new Map<string, AgentLifecycleStatus>();
+  private readonly timelineHistoryDemand = new Map<string, number>();
   private readonly backgroundTasks = new Set<Promise<void>>();
   private readonly agentRegistrationTasks = new Set<Promise<void>>();
   private readonly inFlightAgentCloses = new Map<string, Promise<void>>();
@@ -1207,20 +1210,55 @@ export class AgentManager {
 
   getTimeline(id: string): AgentTimelineItem[] {
     this.requireAgent(id);
-    return this.timelineStore.getItems(id);
+    const timeline = this.timelineStore.getItems(id);
+    this.hibernateIdleTimelineIfUnleased(id);
+    return timeline;
   }
 
   async getTimelineRows(id: string): Promise<AgentTimelineRow[]> {
     this.requireAgent(id);
-    if (this.durableTimelineStore) {
-      return await this.durableTimelineStore.getCommittedRows(id);
-    }
-    return this.timelineStore.getRows(id);
+    const rows = this.durableTimelineStore
+      ? await this.durableTimelineStore.getCommittedRows(id)
+      : this.timelineStore.getRows(id);
+    this.hibernateIdleTimelineIfUnleased(id);
+    return rows;
   }
 
   fetchTimeline(id: string, options?: AgentTimelineFetchOptions): AgentTimelineFetchResult {
     this.requireAgent(id);
-    return this.timelineStore.fetch(id, options);
+    const timeline = this.timelineStore.fetch(id, options);
+    this.hibernateIdleTimelineIfUnleased(id);
+    return timeline;
+  }
+
+  getTimelineResidency(id: string): AgentTimelineResidency {
+    this.requireAgent(id);
+    return this.timelineStore.getResidency(id);
+  }
+
+  /** Keeps an idle timeline expanded only while a request is reading its canonical rows. */
+  retainTimelineHistory(agentIds: readonly string[]): () => void {
+    const retainedAgentIds = [...new Set(agentIds)];
+    for (const agentId of retainedAgentIds) {
+      this.timelineHistoryDemand.set(agentId, (this.timelineHistoryDemand.get(agentId) ?? 0) + 1);
+    }
+
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      for (const agentId of retainedAgentIds) {
+        const remaining = (this.timelineHistoryDemand.get(agentId) ?? 1) - 1;
+        if (remaining > 0) {
+          this.timelineHistoryDemand.set(agentId, remaining);
+          continue;
+        }
+        this.timelineHistoryDemand.delete(agentId);
+        this.hibernateIdleTimelineIfUnleased(agentId);
+      }
+    };
   }
 
   listProviderSubagents(parentAgentId: string): ProviderSubagentDescriptor[] {
@@ -3165,6 +3203,7 @@ export class AgentManager {
   ): Promise<void> {
     const agent = this.requireSessionAgent(agentId);
     await this.hydrateTimelineFromLegacyProviderHistory(agent, options);
+    this.hibernateIdleTimelineIfUnleased(agentId);
   }
 
   async rewind(agentId: string, messageId: string, mode: RewindMode): Promise<void> {
@@ -3240,7 +3279,9 @@ export class AgentManager {
       return null;
     }
 
-    return await this.getLastAssistantMessageFromStores(agentId);
+    const message = await this.getLastAssistantMessageFromStores(agentId);
+    this.hibernateIdleTimelineIfUnleased(agentId);
+    return message;
   }
 
   private getLastAssistantMessageFromTimeline(
@@ -3278,11 +3319,11 @@ export class AgentManager {
   }
 
   private async getLastAssistantMessageFromStores(agentId: string): Promise<string | null> {
+    if (!this.durableTimelineStore) {
+      return this.timelineStore.getLastAssistantMessage(agentId);
+    }
     const liveTimeline = this.timelineStore.getItems(agentId);
     const liveSegment = this.getLastAssistantMessageSegmentFromTimeline(liveTimeline);
-    if (!this.durableTimelineStore) {
-      return liveSegment?.text ?? null;
-    }
     if (!liveSegment) {
       return await this.durableTimelineStore.getLastAssistantMessage(agentId);
     }
@@ -4861,6 +4902,7 @@ export class AgentManager {
   }
 
   private emitState(agent: ManagedAgent, options?: { persist?: boolean }): void {
+    const previousStatus = this.previousStatuses.get(agent.id);
     // Keep attention as an edge-triggered unread signal, not a level signal.
     this.checkAndSetAttention(agent);
     if (options?.persist !== false) {
@@ -4887,6 +4929,32 @@ export class AgentManager {
       type: "agent_state",
       agent: { ...agent },
     });
+
+    if (previousStatus === "running" && agent.lifecycle === "idle") {
+      this.hibernateIdleTimelineIfUnleased(agent.id);
+    }
+  }
+
+  private hibernateIdleTimelineIfUnleased(agentId: string): void {
+    if ((this.timelineHistoryDemand.get(agentId) ?? 0) > 0) {
+      return;
+    }
+    const agent = this.agents.get(agentId);
+    if (!agent || agent.lifecycle !== "idle" || !agent.historyPrimed) {
+      return;
+    }
+
+    this.agentStreamCoalescer.flushFor(agentId);
+    const removedRowCount = this.timelineStore.retainTail(agentId, IDLE_TIMELINE_RETAINED_ROWS);
+    if (removedRowCount === 0) {
+      return;
+    }
+
+    const residency = this.timelineStore.getResidency(agentId);
+    this.logger.debug(
+      { agentId, removedRowCount, ...residency },
+      "Compressed idle agent timeline history",
+    );
   }
 
   private syncFeaturesFromSession(agent: ManagedAgent): void {
