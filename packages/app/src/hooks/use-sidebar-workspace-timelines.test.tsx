@@ -16,6 +16,7 @@ function createTimelineBridge() {
   const replaceVisibleAgentIds = vi.fn<(sourceId: string, agentIds: string[]) => void>();
   const bridge: ViewedTimelineOwner = {
     replaceVisibleAgentIds,
+    replaceOpenAgentIds: () => undefined,
     subscribe: () => () => undefined,
     getAgentTimelineStatus: () => "ready",
     getAgentTimelineError: () => null,

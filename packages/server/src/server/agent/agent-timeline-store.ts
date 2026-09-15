@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { AgentTimelineItemPayloadSchema } from "@getpaseo/protocol/messages";
+import {
+  TimelineProjection,
+  selectProjectedTimelinePage,
+  type ProjectedTimelineRow,
+} from "./timeline-projection.js";
 import type { AgentTimelineItem } from "./agent-sdk-types.js";
 import type {
   AgentTimelineFetchOptions,
@@ -18,10 +23,10 @@ export interface SeedAgentTimelineOptions {
 
 interface AgentTimelineState {
   epoch: string;
-  rows: AgentTimelineRow[];
+  projection: TimelineProjection;
   compressedRowChunks: CompressedTimelineRows[];
+  minSeq: number;
   nextSeq: number;
-  toolCallSeqBounds: Map<string, ToolCallSeqBounds>;
 }
 
 interface CompressedTimelineRows {
@@ -35,73 +40,77 @@ export interface AgentTimelineResidency {
   compressedBytes: number;
 }
 
-export interface ToolCallSeqBounds {
-  minSeq: number;
-  maxSeq: number;
-}
-
 const DEFAULT_TIMELINE_FETCH_LIMIT = 200;
 const IDLE_TIMELINE_COMPRESSION_LEVEL = 1;
+const TIMELINE_PROJECTION_KINDS = new Set([
+  "assistant_merge",
+  "reasoning_merge",
+  "tool_lifecycle",
+  "identity",
+]);
+
+function cloneRow<T extends AgentTimelineRow>(row: T): T {
+  return { ...row };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isAgentTimelineRow(value: unknown): value is AgentTimelineRow {
+function isSafeSequence(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isProjectedTimelineRow(value: unknown): value is ProjectedTimelineRow {
   if (!isRecord(value)) {
     return false;
   }
   return (
-    typeof value.seq === "number" &&
-    Number.isSafeInteger(value.seq) &&
-    value.seq >= 0 &&
+    isSafeSequence(value.seq) &&
+    isSafeSequence(value.seqStart) &&
+    isSafeSequence(value.seqEnd) &&
+    value.seqStart <= value.seqEnd &&
+    value.seq === value.seqEnd &&
     typeof value.timestamp === "string" &&
     AgentTimelineItemPayloadSchema.safeParse(value.item).success &&
     (value.turnId === undefined || typeof value.turnId === "string") &&
-    (value.providerMessageId === undefined || typeof value.providerMessageId === "string")
+    (value.providerMessageId === undefined || typeof value.providerMessageId === "string") &&
+    Array.isArray(value.sourceSeqRanges) &&
+    value.sourceSeqRanges.every(
+      (range) =>
+        isRecord(range) &&
+        isSafeSequence(range.startSeq) &&
+        isSafeSequence(range.endSeq) &&
+        range.startSeq <= range.endSeq,
+    ) &&
+    Array.isArray(value.collapsed) &&
+    value.collapsed.every((kind) => typeof kind === "string" && TIMELINE_PROJECTION_KINDS.has(kind))
   );
 }
 
-function isAgentTimelineRows(value: unknown): value is AgentTimelineRow[] {
-  return Array.isArray(value) && value.every(isAgentTimelineRow);
+function isProjectedTimelineRows(value: unknown): value is ProjectedTimelineRow[] {
+  return Array.isArray(value) && value.every(isProjectedTimelineRow);
 }
 
-function cloneRow(row: AgentTimelineRow): AgentTimelineRow {
-  return { ...row };
-}
-
-function indexToolCallRow(
-  boundsByCall: Map<string, ToolCallSeqBounds>,
-  row: AgentTimelineRow,
-): void {
-  if (row.item.type !== "tool_call") {
-    return;
+function buildProjection(rows: readonly AgentTimelineRow[]): TimelineProjection {
+  const projection = new TimelineProjection();
+  for (const row of rows) {
+    projection.append(row);
   }
-  const previous = boundsByCall.get(row.item.callId);
-  boundsByCall.set(row.item.callId, {
-    minSeq: previous ? Math.min(previous.minSeq, row.seq) : row.seq,
-    maxSeq: previous ? Math.max(previous.maxSeq, row.seq) : row.seq,
-  });
+  return projection;
 }
 
-function rebuildToolCallIndex(state: AgentTimelineState): void {
-  state.toolCallSeqBounds.clear();
-  for (const row of state.rows) {
-    indexToolCallRow(state.toolCallSeqBounds, row);
-  }
-}
-
-function compressTimelineRows(rows: readonly AgentTimelineRow[]): CompressedTimelineRows {
+function compressTimelineRows(rows: readonly ProjectedTimelineRow[]): CompressedTimelineRows {
   return {
     rowCount: rows.length,
     data: gzipSync(JSON.stringify(rows), { level: IDLE_TIMELINE_COMPRESSION_LEVEL }),
   };
 }
 
-function decompressTimelineRows(chunk: CompressedTimelineRows): AgentTimelineRow[] {
+function decompressTimelineRows(chunk: CompressedTimelineRows): ProjectedTimelineRow[] {
   const parsed: unknown = JSON.parse(gunzipSync(chunk.data).toString("utf8"));
-  if (!isAgentTimelineRows(parsed)) {
-    throw new Error("Compressed timeline contains invalid canonical rows");
+  if (!isProjectedTimelineRows(parsed)) {
+    throw new Error("Compressed timeline contains invalid projected rows");
   }
   if (parsed.length !== chunk.rowCount) {
     throw new Error(
@@ -116,117 +125,9 @@ function restoreCompressedRows(state: AgentTimelineState): number {
     return 0;
   }
   const restoredRows = state.compressedRowChunks.flatMap(decompressTimelineRows);
-  state.rows = [...restoredRows, ...state.rows];
+  state.projection = buildProjection([...restoredRows, ...state.projection.getRows()]);
   state.compressedRowChunks = [];
-  rebuildToolCallIndex(state);
   return restoredRows.length;
-}
-
-interface FetchContext {
-  state: AgentTimelineState;
-  direction: NonNullable<AgentTimelineFetchOptions["direction"]>;
-  limit: number;
-  selectAll: boolean;
-  cursor: AgentTimelineFetchOptions["cursor"];
-  minSeq: number;
-  maxSeq: number;
-  window: { minSeq: number; maxSeq: number; nextSeq: number };
-}
-
-function fetchTail(ctx: FetchContext): AgentTimelineFetchResult {
-  const { state, direction, limit, selectAll, minSeq, window } = ctx;
-  const selected =
-    selectAll || limit >= state.rows.length
-      ? state.rows
-      : state.rows.slice(state.rows.length - limit);
-  return {
-    epoch: state.epoch,
-    direction,
-    reset: false,
-    staleCursor: false,
-    gap: false,
-    window,
-    hasOlder: selected.length > 0 && selected[0].seq > minSeq,
-    hasNewer: false,
-    rows: selected.map(cloneRow),
-  };
-}
-
-function fetchAfter(ctx: FetchContext): AgentTimelineFetchResult {
-  const { state, direction, limit, selectAll, cursor, minSeq, maxSeq, window } = ctx;
-  const baseSeq = cursor?.seq ?? 0;
-  const startIdx = state.rows.findIndex((row) => row.seq > baseSeq);
-  if (startIdx < 0) {
-    return {
-      epoch: state.epoch,
-      direction,
-      reset: false,
-      staleCursor: false,
-      gap: false,
-      window,
-      hasOlder: baseSeq >= minSeq,
-      hasNewer: false,
-      rows: [],
-    };
-  }
-
-  const selected = selectAll
-    ? state.rows.slice(startIdx)
-    : state.rows.slice(startIdx, startIdx + limit);
-  const lastSelected = selected[selected.length - 1];
-  return {
-    epoch: state.epoch,
-    direction,
-    reset: false,
-    staleCursor: false,
-    gap: false,
-    window,
-    hasOlder: selected[0].seq > minSeq,
-    hasNewer: lastSelected !== null && lastSelected !== undefined && lastSelected.seq < maxSeq,
-    rows: selected.map(cloneRow),
-  };
-}
-
-function fetchBefore(ctx: FetchContext): AgentTimelineFetchResult {
-  const { state, direction, limit, selectAll, cursor, minSeq, window } = ctx;
-  const beforeSeq = cursor?.seq ?? state.nextSeq;
-  const endExclusive = state.rows.findIndex((row) => row.seq >= beforeSeq);
-  const boundedLength = endExclusive < 0 ? state.rows.length : endExclusive;
-  const startInclusive = selectAll ? 0 : Math.max(0, boundedLength - limit);
-  const selected = state.rows.slice(startInclusive, boundedLength);
-  return {
-    epoch: state.epoch,
-    direction,
-    reset: false,
-    staleCursor: false,
-    gap: false,
-    window,
-    hasOlder: selected.length > 0 && selected[0].seq > minSeq,
-    hasNewer: endExclusive >= 0,
-    rows: selected.map(cloneRow),
-  };
-}
-
-function fetchReset(
-  ctx: FetchContext,
-  flags: { staleCursor: boolean; gap: boolean },
-): AgentTimelineFetchResult {
-  const { state, direction, limit, selectAll, minSeq, window } = ctx;
-  const rows =
-    selectAll || limit >= state.rows.length
-      ? state.rows.map(cloneRow)
-      : state.rows.slice(state.rows.length - limit).map(cloneRow);
-  return {
-    epoch: state.epoch,
-    direction,
-    reset: true,
-    staleCursor: flags.staleCursor,
-    gap: flags.gap,
-    window,
-    hasOlder: rows.length > 0 && rows[0].seq > minSeq,
-    hasNewer: false,
-    rows,
-  };
 }
 
 export class InMemoryAgentTimelineStore {
@@ -241,17 +142,14 @@ export class InMemoryAgentTimelineStore {
     const rows = options?.rows?.length
       ? options.rows.map(cloneRow)
       : this.buildRowsFromItems(options?.items ?? [], options?.nextSeq ?? 1, timestamp);
-    const nextSeq = options?.nextSeq ?? (rows.length ? rows[rows.length - 1].seq + 1 : 1);
-    const toolCallSeqBounds = new Map<string, ToolCallSeqBounds>();
-    for (const row of rows) {
-      indexToolCallRow(toolCallSeqBounds, row);
-    }
+    const nextSeq = rows.reduce((next, row) => Math.max(next, row.seq + 1), options?.nextSeq ?? 1);
+    const projection = buildProjection(rows);
     this.states.set(agentId, {
       epoch: options?.epoch ?? randomUUID(),
-      rows,
+      projection,
       compressedRowChunks: [],
+      minSeq: projection.getRows()[0]?.seqStart ?? 0,
       nextSeq,
-      toolCallSeqBounds,
     });
   }
 
@@ -261,23 +159,22 @@ export class InMemoryAgentTimelineStore {
 
   retainTail(agentId: string, maxRows: number): number {
     const state = this.requireState(agentId);
+    const rows = state.projection.getRows();
     const retainedRowCount = Math.max(0, Math.floor(maxRows));
-    const removedRowCount = Math.max(0, state.rows.length - retainedRowCount);
+    const removedRowCount = Math.max(0, rows.length - retainedRowCount);
     if (removedRowCount === 0) {
       return 0;
     }
 
-    const rowsToCompress = state.rows.slice(0, removedRowCount);
-    state.compressedRowChunks.push(compressTimelineRows(rowsToCompress));
-    state.rows = retainedRowCount === 0 ? [] : state.rows.slice(-retainedRowCount);
-    rebuildToolCallIndex(state);
+    state.compressedRowChunks.push(compressTimelineRows(rows.slice(0, removedRowCount)));
+    state.projection = buildProjection(retainedRowCount === 0 ? [] : rows.slice(-retainedRowCount));
     return removedRowCount;
   }
 
   getResidency(agentId: string): AgentTimelineResidency {
     const state = this.requireState(agentId);
     return {
-      residentRowCount: state.rows.length,
+      residentRowCount: state.projection.getRows().length,
       compressedRowCount: state.compressedRowChunks.reduce(
         (total, chunk) => total + chunk.rowCount,
         0,
@@ -292,23 +189,25 @@ export class InMemoryAgentTimelineStore {
   getItems(agentId: string): AgentTimelineItem[] {
     const state = this.requireState(agentId);
     restoreCompressedRows(state);
-    return state.rows.map((row) => row.item);
+    return state.projection.getRows().map((row) => row.item);
   }
 
-  getRows(agentId: string): AgentTimelineRow[] {
+  getRows(agentId: string): ProjectedTimelineRow[] {
     const state = this.requireState(agentId);
     restoreCompressedRows(state);
-    return state.rows.map(cloneRow);
+    return state.projection.getRows().map(cloneRow);
   }
 
   getSubmittedUserMessage(agentId: string, clientMessageId: string): AgentTimelineRow | null {
     const state = this.requireState(agentId);
     restoreCompressedRows(state);
-    const row = state.rows.find(
-      (candidate) =>
-        candidate.item.type === "user_message" &&
-        candidate.item.clientMessageId === clientMessageId,
-    );
+    const row = state.projection
+      .getRows()
+      .find(
+        (candidate) =>
+          candidate.item.type === "user_message" &&
+          candidate.item.clientMessageId === clientMessageId,
+      );
     return row ? cloneRow(row) : null;
   }
 
@@ -319,95 +218,48 @@ export class InMemoryAgentTimelineStore {
   ): AgentTimelineRow | null {
     const state = this.requireState(agentId);
     restoreCompressedRows(state);
-    const index = state.rows.findIndex(
-      (candidate) =>
-        candidate.item.type === "user_message" &&
-        candidate.item.clientMessageId === clientMessageId,
-    );
-    const row = state.rows[index];
-    if (!row || row.item.type !== "user_message") {
-      return null;
-    }
-    const enriched: AgentTimelineRow = { ...row, providerMessageId };
-    state.rows[index] = enriched;
-    return cloneRow(enriched);
+    return state.projection.enrichSubmittedUserMessage(clientMessageId, providerMessageId);
   }
 
   getEpoch(agentId: string): string {
     return this.requireState(agentId).epoch;
   }
 
-  /**
-   * Projected tool calls remain anchored at their first row while later lifecycle rows extend the
-   * canonical span. Bounded consumers use this index to expand only pages that cross that span.
-   */
-  getToolCallSeqBounds(agentId: string, callId: string): ToolCallSeqBounds | null {
-    const state = this.requireState(agentId);
-    restoreCompressedRows(state);
-    const bounds = state.toolCallSeqBounds.get(callId);
-    return bounds ? { ...bounds } : null;
-  }
-
   fetch(agentId: string, options?: AgentTimelineFetchOptions): AgentTimelineFetchResult {
     const state = this.requireState(agentId);
     restoreCompressedRows(state);
     const direction = options?.direction ?? "tail";
-    const requestedLimit = options?.limit;
-    const limit =
-      requestedLimit === undefined
-        ? DEFAULT_TIMELINE_FETCH_LIMIT
-        : Math.max(0, Math.floor(requestedLimit));
     const cursor = options?.cursor;
-    const minSeq = state.rows.length ? state.rows[0].seq : 0;
-    const maxSeq = state.rows.length ? state.rows[state.rows.length - 1].seq : 0;
-    const selectAll = limit === 0;
-
-    const window = {
-      minSeq,
-      maxSeq,
-      nextSeq: state.nextSeq,
-    };
-
-    const ctx: FetchContext = {
-      state,
+    const rows = state.projection.getRows();
+    const window = { minSeq: state.minSeq, maxSeq: state.nextSeq - 1, nextSeq: state.nextSeq };
+    const staleCursor = cursor !== undefined && cursor.epoch !== state.epoch;
+    const gap =
+      !staleCursor &&
+      direction === "after" &&
+      cursor !== undefined &&
+      rows.length > 0 &&
+      cursor.seq < state.minSeq - 1;
+    const reset = staleCursor || gap;
+    const page = selectProjectedTimelinePage({
+      rows,
+      bounds: window,
+      direction: reset ? "tail" : direction,
+      cursorSeq: cursor?.seq,
+      limit: options?.limit ?? DEFAULT_TIMELINE_FETCH_LIMIT,
+    });
+    return {
+      epoch: state.epoch,
       direction,
-      limit,
-      selectAll,
-      cursor,
-      minSeq,
-      maxSeq,
+      reset,
+      staleCursor,
+      gap,
       window,
+      hasOlder: page.hasOlder,
+      hasNewer: page.hasNewer,
+      startSeq: page.startSeq,
+      endSeq: page.endSeq,
+      rows: page.entries.map((entry) => Object.assign({ seq: entry.seqEnd }, entry)),
     };
-
-    if (cursor && typeof cursor.epoch === "string" && cursor.epoch !== state.epoch) {
-      return fetchReset(ctx, { staleCursor: true, gap: false });
-    }
-
-    if (direction === "after" && cursor && state.rows.length > 0 && cursor.seq < minSeq - 1) {
-      return fetchReset(ctx, { staleCursor: false, gap: true });
-    }
-
-    if (state.rows.length === 0) {
-      return {
-        epoch: state.epoch,
-        direction,
-        reset: false,
-        staleCursor: false,
-        gap: false,
-        window,
-        hasOlder: false,
-        hasNewer: false,
-        rows: [],
-      };
-    }
-
-    if (direction === "tail") {
-      return fetchTail(ctx);
-    }
-    if (direction === "after") {
-      return fetchAfter(ctx);
-    }
-    return fetchBefore(ctx);
   }
 
   append(
@@ -416,6 +268,7 @@ export class InMemoryAgentTimelineStore {
     options?: { timestamp?: string; providerMessageId?: string; turnId?: string },
   ): AgentTimelineRow {
     const state = this.requireState(agentId);
+    restoreCompressedRows(state);
     const row: AgentTimelineRow = {
       seq: state.nextSeq,
       timestamp: options?.timestamp ?? new Date().toISOString(),
@@ -424,54 +277,35 @@ export class InMemoryAgentTimelineStore {
       ...(options?.providerMessageId ? { providerMessageId: options.providerMessageId } : {}),
     };
     state.nextSeq += 1;
-    state.rows.push(row);
-    indexToolCallRow(state.toolCallSeqBounds, row);
+    if (state.minSeq === 0) state.minSeq = row.seq;
+    state.projection.append(row);
     return cloneRow(row);
   }
 
   getLastItem(agentId: string): AgentTimelineItem | null {
     const state = this.requireState(agentId);
-    return state.rows[state.rows.length - 1]?.item ?? null;
+    let row = state.projection
+      .getRows()
+      .find((candidate) => candidate.seqEnd === state.nextSeq - 1);
+    if (!row && state.compressedRowChunks.length > 0) {
+      restoreCompressedRows(state);
+      row = state.projection.getRows().find((candidate) => candidate.seqEnd === state.nextSeq - 1);
+    }
+    return row?.item ?? null;
   }
 
   getLastAssistantMessage(agentId: string): string | null {
     const state = this.requireState(agentId);
-    const result = this.getLastAssistantMessageFromResidentRows(state.rows);
-    if (
-      state.compressedRowChunks.length > 0 &&
-      (result === null || result.startsAtResidentBeginning)
-    ) {
+    let row = state.projection
+      .getRows()
+      .findLast((candidate) => candidate.item.type === "assistant_message");
+    if (!row && state.compressedRowChunks.length > 0) {
       restoreCompressedRows(state);
-      return this.getLastAssistantMessageFromResidentRows(state.rows)?.text ?? null;
+      row = state.projection
+        .getRows()
+        .findLast((candidate) => candidate.item.type === "assistant_message");
     }
-    return result?.text ?? null;
-  }
-
-  private getLastAssistantMessageFromResidentRows(
-    rows: readonly AgentTimelineRow[],
-  ): { text: string; startsAtResidentBeginning: boolean } | null {
-    const chunks: string[] = [];
-    let earliestChunkIndex = -1;
-    for (let i = rows.length - 1; i >= 0; i -= 1) {
-      const item = rows[i].item;
-      if (item.type !== "assistant_message") {
-        if (chunks.length > 0) {
-          break;
-        }
-        continue;
-      }
-      chunks.push(item.text);
-      earliestChunkIndex = i;
-    }
-
-    if (chunks.length === 0) {
-      return null;
-    }
-
-    return {
-      text: chunks.toReversed().join(""),
-      startsAtResidentBeginning: earliestChunkIndex === 0,
-    };
+    return row?.item.type === "assistant_message" ? row.item.text : null;
   }
 
   private requireState(agentId: string): AgentTimelineState {

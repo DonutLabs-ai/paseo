@@ -137,6 +137,10 @@ export class AgentStreamCoalescer {
     this.flushBuffer(agentId);
   }
 
+  hasPending(agentId: string): boolean {
+    return (this.buffers.get(agentId)?.entries.length ?? 0) > 0;
+  }
+
   flushAll(): void {
     for (const agentId of Array.from(this.buffers.keys())) {
       this.flushBuffer(agentId);

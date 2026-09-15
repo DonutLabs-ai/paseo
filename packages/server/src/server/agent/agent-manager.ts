@@ -1,3 +1,4 @@
+import { projectTimelineRows } from "./timeline-projection.js";
 import type { PluginLifecycle } from "../plugins/lifecycle/index.js";
 import { describeHookAgent, publishAgentStream } from "../plugins/lifecycle/index.js";
 import type { PluginSessionOpenRequest } from "@getpaseo/plugin/server";
@@ -1218,7 +1219,10 @@ export class AgentManager {
   async getTimelineRows(id: string): Promise<AgentTimelineRow[]> {
     this.requireAgent(id);
     const rows = this.durableTimelineStore
-      ? await this.durableTimelineStore.getCommittedRows(id)
+      ? projectTimelineRows({
+          rows: await this.durableTimelineStore.getCommittedRows(id),
+          mode: "projected",
+        }).map((entry) => Object.assign({ seq: entry.seqEnd }, entry))
       : this.timelineStore.getRows(id);
     this.hibernateIdleTimelineIfUnleased(id);
     return rows;
@@ -4943,8 +4947,9 @@ export class AgentManager {
     if (!agent || agent.lifecycle !== "idle" || !agent.historyPrimed) {
       return;
     }
-
-    this.agentStreamCoalescer.flushFor(agentId);
+    if (this.agentStreamCoalescer.hasPending(agentId)) {
+      return;
+    }
     const removedRowCount = this.timelineStore.retainTail(agentId, IDLE_TIMELINE_RETAINED_ROWS);
     if (removedRowCount === 0) {
       return;
