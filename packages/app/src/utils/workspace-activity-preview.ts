@@ -151,8 +151,33 @@ function selectLatestMessage(input: {
   return tailMessage;
 }
 
+function findLatestRawMessage(
+  items: readonly StreamItem[],
+  kind: "user_message" | "assistant_message",
+): PreviewMessage | null {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item?.kind !== kind || item.text.trim().length === 0) continue;
+    return { id: item.id, text: item.text, timestamp: item.timestamp };
+  }
+  return null;
+}
+
+function selectLatestRawMessage(input: {
+  tail: readonly StreamItem[];
+  head: readonly StreamItem[];
+  kind: "user_message" | "assistant_message";
+}): PreviewMessage | null {
+  const headMessage = findLatestRawMessage(input.head, input.kind);
+  const tailMessage = findLatestRawMessage(input.tail, input.kind);
+  if (headMessage === null) return tailMessage;
+  if (tailMessage === null || headMessage.timestamp >= tailMessage.timestamp) return headMessage;
+  return tailMessage;
+}
+
 /**
- * Returns the last user/assistant conversation message across the authoritative tail and live head.
+ * Returns the raw last user/assistant conversation message across the authoritative tail and live
+ * head. Action classifiers need the complete text; `activityPreview` is normalized and truncated.
  * This is deliberately distinct from `activityPreview`: completed workspaces keep showing their
  * latest reply even when a newer user prompt exists, while recovery actions must never act on a
  * stale reply after the user has already sent another prompt.
@@ -161,8 +186,8 @@ export function selectLatestWorkspaceConversationMessage(input: {
   tail: readonly StreamItem[];
   head: readonly StreamItem[];
 }): WorkspaceConversationMessage | null {
-  const prompt = selectLatestMessage({ ...input, kind: "user_message" });
-  const reply = selectLatestMessage({ ...input, kind: "assistant_message" });
+  const prompt = selectLatestRawMessage({ ...input, kind: "user_message" });
+  const reply = selectLatestRawMessage({ ...input, kind: "assistant_message" });
   if (prompt === null && reply === null) return null;
   if (reply === null || (prompt !== null && prompt.timestamp > reply.timestamp)) {
     return prompt ? { kind: "prompt", text: prompt.text, timestamp: prompt.timestamp } : null;
