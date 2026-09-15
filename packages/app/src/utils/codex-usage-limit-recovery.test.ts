@@ -9,6 +9,9 @@ const usageLimitError =
   "[System Error] You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 16th, 2026 3:58 PM.";
 const usageLimitUpgradeError =
   "[System Error] You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 9:13 PM.";
+const partialReplyBeforeUsageLimit =
+  "18 分钟，仍无错误。当前最重要的是不把长构建误判成失败或重复发起；我继续守这条 runo. " +
+  "[System Error] You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 22nd, 2026 11:29 AM.";
 
 function message(
   kind: "user_message" | "assistant_message",
@@ -27,6 +30,7 @@ describe("Codex usage-limit recovery", () => {
   it("matches the Codex usage-limit system error family", () => {
     expect(isCodexUsageLimitError(usageLimitError)).toBe(true);
     expect(isCodexUsageLimitError(usageLimitUpgradeError)).toBe(true);
+    expect(isCodexUsageLimitError(partialReplyBeforeUsageLimit)).toBe(true);
     expect(
       isCodexUsageLimitError(
         "[System Error] Selected model is at capacity. Please try a different model.",
@@ -65,6 +69,21 @@ describe("Codex usage-limit recovery", () => {
       isLatestConversationMessageCodexUsageLimit({
         tail: [message("assistant_message", usageLimitError, 3)],
         head: [message("assistant_message", "Older live reply", 2)],
+      }),
+    ).toBe(true);
+  });
+
+  it("uses the complete latest reply instead of the truncated sidebar preview", () => {
+    expect(
+      isLatestConversationMessageCodexUsageLimit({
+        tail: [
+          message(
+            "assistant_message",
+            `${"Still monitoring the run. ".repeat(50)}${usageLimitError}`,
+            1,
+          ),
+        ],
+        head: [],
       }),
     ).toBe(true);
   });

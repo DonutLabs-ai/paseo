@@ -22,6 +22,7 @@ const PROMPT = "Build the cockpit workspace overview";
 const REPLY = "Cockpit summary Implemented workspace cards and live progress summaries.";
 const USAGE_LIMIT_ERROR =
   "[System Error] You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 16th, 2026 3:58 PM.";
+const PARTIAL_REPLY_BEFORE_USAGE_LIMIT = `Still watching the long-running build. ${USAGE_LIMIT_ERROR}`;
 
 test("shows the latest agent activity in the sidebar and cockpit cards", async ({ page }) => {
   const workspace = await seedMockAgentWorkspace({
@@ -100,7 +101,7 @@ test("continues every usage-limited session from its project header action", asy
       model: "e2e-fast-stream",
       initialPrompt: "Run the second task",
       featureValues: {
-        mockStreamingAssistantResponse: USAGE_LIMIT_ERROR,
+        mockStreamingAssistantResponse: PARTIAL_REPLY_BEFORE_USAGE_LIMIT,
         mockStreamingAssistantIntervalMs: 250,
       },
     });

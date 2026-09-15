@@ -12,12 +12,15 @@ const CODEX_USAGE_LIMIT_ACTIONS = [
 ] as const;
 
 export function isCodexUsageLimitError(message: string): boolean {
-  if (!message.startsWith(CODEX_USAGE_LIMIT_PREFIX) || !message.endsWith(".")) return false;
+  const normalizedMessage = message.trimEnd();
+  const errorStart = normalizedMessage.lastIndexOf(CODEX_USAGE_LIMIT_PREFIX);
+  if (errorStart === -1 || !normalizedMessage.endsWith(".")) return false;
+  const errorMessage = normalizedMessage.slice(errorStart);
   const action = CODEX_USAGE_LIMIT_ACTIONS.find((candidate) =>
-    message.startsWith(candidate, CODEX_USAGE_LIMIT_PREFIX.length),
+    errorMessage.startsWith(candidate, CODEX_USAGE_LIMIT_PREFIX.length),
   );
   if (action === undefined) return false;
-  const retryAt = message.slice(CODEX_USAGE_LIMIT_PREFIX.length + action.length, -1).trim();
+  const retryAt = errorMessage.slice(CODEX_USAGE_LIMIT_PREFIX.length + action.length, -1).trim();
   return retryAt.length > 0;
 }
 
