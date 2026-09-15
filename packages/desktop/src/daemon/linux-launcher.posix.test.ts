@@ -20,19 +20,21 @@ async function launch(
     args?: string[];
     symlink?: boolean;
     rerun?: boolean;
+    executableName?: string;
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "paseo-launcher-"));
   try {
     const app = join(root, "app with spaces");
     const commands = join(root, "commands");
+    const executableName = options.executableName ?? "Paseo";
     mkdirSync(app);
     mkdirSync(commands);
     writeFileSync(
-      join(app, "Paseo"),
+      join(app, executableName),
       `#!${process.execPath}\nconsole.log(JSON.stringify(process.argv.slice(2)));\n`,
     );
-    chmodSync(join(app, "Paseo"), 0o755);
+    chmodSync(join(app, executableName), 0o755);
     // The command interface represents the host's userns policy, independent of CI's host.
     writeFileSync(join(commands, "unshare"), `#!/bin/sh\nexit ${options.namespaces ? 0 : 1}\n`);
     chmodSync(join(commands, "unshare"), 0o755);
@@ -45,10 +47,16 @@ async function launch(
     }
     writeFileSync(join(app, "chrome-sandbox"), "helper");
     chmodSync(join(app, "chrome-sandbox"), 0o755);
-    await afterPack({ appOutDir: app, electronPlatformName: "linux", arch: 1 });
-    if (options.rerun) await afterPack({ appOutDir: app, electronPlatformName: "linux", arch: 1 });
-    const executablePath = options.symlink ? join(root, "paseo") : join(app, "Paseo");
-    if (options.symlink) symlinkSync(join(app, "Paseo"), executablePath);
+    const afterPackContext = {
+      appOutDir: app,
+      electronPlatformName: "linux",
+      arch: 1,
+      packager: { executableName },
+    };
+    await afterPack(afterPackContext);
+    if (options.rerun) await afterPack(afterPackContext);
+    const executablePath = options.symlink ? join(root, "paseo") : join(app, executableName);
+    if (options.symlink) symlinkSync(join(app, executableName), executablePath);
     const args = options.args ?? ["path with spaces", "$(touch never)", "semi;colon", "*.txt"];
     const result = spawnSync(executablePath, args, {
       encoding: "utf8",
@@ -105,6 +113,11 @@ it("reports an explicit user override without injecting a duplicate", async () =
 
 it("resolves symlink launches and keeps the real executable intact on repeated packaging", async () => {
   const result = await launch({ symlink: true, rerun: true });
+  expect(result.args).toEqual(["--no-sandbox", ...result.input]);
+});
+
+it("supports branded Linux executable names", async () => {
+  const result = await launch({ executableName: "donut-paseo" });
   expect(result.args).toEqual(["--no-sandbox", ...result.input]);
 });
 
