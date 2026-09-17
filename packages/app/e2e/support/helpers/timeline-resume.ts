@@ -6,9 +6,9 @@ import { expectReconnectingToastGone, expectReconnectingToastVisible } from "./w
 type DaemonWebSocketGate = Awaited<ReturnType<typeof installDaemonWebSocketGate>>;
 
 export interface TimelineRequestCounts {
+  agentId?: string;
   after: number;
   tail: number;
-  agentId?: string;
 }
 
 export interface BackgroundTimelineTurns {
@@ -39,9 +39,9 @@ export function rememberTimelineRequestCounts(
   agentId?: string,
 ): TimelineRequestCounts {
   return {
+    agentId,
     after: gate.getTimelineRequestCount("after", agentId),
     tail: gate.getTimelineRequestCount("tail", agentId),
-    agentId,
   };
 }
 
@@ -76,6 +76,8 @@ export async function restoreViewedTimelineWithHeldResponse(
   gate.holdNextServerMessage("fetch_agent_timeline_response");
   gate.restore();
   await gate.waitForHeldServerMessage();
-  gate.releaseHeldServerMessage();
   await expectReconnectingToastGone(page);
+  await expect(page.getByRole("alert").filter({ hasText: "Updating messages" })).toBeVisible();
+  gate.releaseHeldServerMessage();
+  await expect(page.getByRole("alert").filter({ hasText: "Updating messages" })).toHaveCount(0);
 }

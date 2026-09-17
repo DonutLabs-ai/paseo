@@ -63,7 +63,7 @@ describe("ProviderSubagentStore", () => {
         updatedAt: "2026-07-12T10:00:02.000Z",
       }),
     ]);
-    expect(subagents.fetchTimeline("parent-a", "child-1").rows).toEqual([
+    expect(subagents.fetchTimeline("parent-a", "child-1").rows).toMatchObject([
       {
         seq: 1,
         timestamp: "2026-07-12T10:00:01.000Z",
@@ -116,8 +116,11 @@ describe("ProviderSubagentStore", () => {
       direction: "tail",
       limit: 1,
     });
-    expect(page.rows).toHaveLength(101);
-    expect(page.rows[0]?.seq).toBe(1);
+    expect(page.rows).toHaveLength(1);
+    expect(page.rows[0]?.seqStart).toBe(1);
+    expect(page.rows[0]?.item).toMatchObject({
+      text: Array.from({ length: 101 }, (_, i) => String(i)).join(""),
+    });
     expect(page.rows.at(-1)?.seq).toBe(101);
     expect(page.hasOlder).toBe(false);
   });
@@ -151,7 +154,7 @@ describe("ProviderSubagentStore", () => {
     ).toEqual([{ direction: "tail", limit: 100, rowCount: 100 }]);
   });
 
-  test("expands a bounded fetch to include a projected tool lifecycle", () => {
+  test("keeps a projected tool lifecycle whole inside a bounded fetch", () => {
     const timelines = new RecordingTimelineStore();
     const subagents = new ProviderSubagentStore(timelines);
     for (let index = 1; index <= 194; index += 1) {
@@ -188,18 +191,17 @@ describe("ProviderSubagentStore", () => {
       limit: 10,
     });
 
-    expect(page.rows.map((row) => row.seq)).toEqual(
-      Array.from({ length: 11 }, (_, index) => index + 190),
-    );
+    // The running/completed pair collapses into one projected entry keyed by its end sequence,
+    // so a bounded page can never split a tool lifecycle and needs no follow-up fetch.
+    expect(page.rows.map((row) => row.seq)).toEqual([
+      190, 191, 192, 193, 194, 196, 197, 198, 199, 200,
+    ]);
     expect(
       timelines.fetches.map(({ options, result }) => ({
         direction: options?.direction,
         limit: options?.limit,
         rowCount: result.rows.length,
       })),
-    ).toEqual([
-      { direction: "tail", limit: 10, rowCount: 10 },
-      { direction: "before", limit: 10, rowCount: 10 },
-    ]);
+    ).toEqual([{ direction: "tail", limit: 10, rowCount: 10 }]);
   });
 });
