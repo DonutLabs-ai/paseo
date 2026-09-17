@@ -11,6 +11,17 @@ const it = test.runIf(process.platform === "linux");
 const require = createRequire(import.meta.url);
 const afterPack = require("../../scripts/after-pack.js").default;
 
+// `installLinuxLauncher` wraps the binary electron-builder packed, whose name comes from the
+// builder's `executableName`. The official package uses `Paseo`.
+function packagedContext(appOutDir: string) {
+  return {
+    appOutDir,
+    electronPlatformName: "linux",
+    arch: 1,
+    packager: { executableName: "Paseo" },
+  };
+}
+
 async function launch(
   options: {
     namespaces?: boolean;
@@ -45,8 +56,8 @@ async function launch(
     }
     writeFileSync(join(app, "chrome-sandbox"), "helper");
     chmodSync(join(app, "chrome-sandbox"), 0o755);
-    await afterPack({ appOutDir: app, electronPlatformName: "linux", arch: 1 });
-    if (options.rerun) await afterPack({ appOutDir: app, electronPlatformName: "linux", arch: 1 });
+    await afterPack(packagedContext(app));
+    if (options.rerun) await afterPack(packagedContext(app));
     const executablePath = options.symlink ? join(root, "paseo") : join(app, "Paseo");
     if (options.symlink) symlinkSync(join(app, "Paseo"), executablePath);
     const args = options.args ?? ["path with spaces", "$(touch never)", "semi;colon", "*.txt"];
