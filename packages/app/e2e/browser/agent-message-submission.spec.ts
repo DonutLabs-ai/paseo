@@ -463,7 +463,6 @@ async function expectHiddenStreamingSubmissionOrderAfterWorkspaceEviction(
       }),
     ),
   );
-  const sidebarAgentIds = [target.agentId, ...evictionAgents.map((agent) => agent.agentId)];
   const prompt = "Keep this hidden image prompt before its streaming output.";
   const targetDeckEntry = workspaceDeckEntryLocator(page, getServerId(), target.workspaceId);
   const openAgentIds = [target.agentId, ...evictionAgents.map((agent) => agent.agentId)];

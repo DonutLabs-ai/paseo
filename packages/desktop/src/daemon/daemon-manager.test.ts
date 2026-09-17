@@ -1,18 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { DEFAULT_DESKTOP_SETTINGS } from "../settings/desktop-settings";
-import { getBundledCliShimPath } from "../integrations/cli-install";
-import { createDaemonCommandHandlers, isolateDetachedDaemonInvocation } from "./daemon-manager";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_DESKTOP_SETTINGS } from "../settings/desktop-settings";
-import { createDaemonCommandHandlers } from "./daemon-manager";
+import { getBundledCliShimPath } from "../integrations/cli-install";
+import { createDaemonCommandHandlers, isolateDetachedDaemonInvocation } from "./daemon-manager";
 
 const mocks = vi.hoisted(() => ({
   paseoHome: "",
@@ -84,6 +79,38 @@ vi.mock("./cli/external.js", () => ({
   runExternalCliJsonCommand: mocks.runExternalCliJsonCommand,
   runExternalCliTextCommand: mocks.runExternalCliTextCommand,
 }));
+
+function desktopSettingsWithManagement(enabled: boolean) {
+  return {
+    ...DEFAULT_DESKTOP_SETTINGS,
+    daemon: {
+      ...DEFAULT_DESKTOP_SETTINGS.daemon,
+      manageBuiltInDaemon: enabled,
+    },
+  };
+}
+
+type MockChildProcess = EventEmitter & {
+  pid: number;
+  spawnfile: string;
+  spawnargs: string[];
+  unref: ReturnType<typeof vi.fn>;
+};
+
+function createMockChildProcess(): MockChildProcess {
+  const child = new EventEmitter() as MockChildProcess;
+  child.pid = 1234;
+  child.spawnfile = "node";
+  child.spawnargs = ["node", "daemon.js"];
+  child.unref = vi.fn();
+  return child;
+}
+
+function scheduleFailedStartup(child: MockChildProcess): void {
+  setImmediate(() => {
+    child.emit("exit", 1, null);
+  });
+}
 
 describe("daemon-manager commands", () => {
   let fixtureRoot: string;

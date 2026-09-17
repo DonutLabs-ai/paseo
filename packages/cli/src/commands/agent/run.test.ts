@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Command } from "commander";
 import {
   buildRunWorkspaceSource,
   resolveExistingRunWorkspace,

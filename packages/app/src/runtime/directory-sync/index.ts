@@ -147,6 +147,7 @@ export class DirectorySync {
   private agentSubscription: OwnedSubscription<FetchAgentsPayload> | null = null;
   private workspaceSubscription: OwnedSubscription<FetchWorkspacesPayload> | null = null;
   private eventSubscription: ReturnType<DaemonClient["observeEvents"]> | null = null;
+  private unsubscribe: (() => void) | null = null;
   private readonly abortSessionWaits = new Set<() => void>();
   private cacheLoad: Promise<void> | null = null;
   private cacheAccepted = false;
@@ -194,76 +195,21 @@ export class DirectorySync {
     if (!connection.client || connection.status !== "online") return true;
     const client = connection.client;
     const source = connection.source;
-    const subscriptions = [
-      client.on("agent_update", (message) => {
-        if (message.type !== "agent_update" || !this.isCurrent(client, source)) return;
-        this.revision += 1;
-        const recorded = this.agentTransactions.record(source, message.payload);
-        if (!recorded) {
-          this.agents.applyDelta(message.payload);
-          this.noteLiveCursor("agents", message.payload);
-          this.persistCheckpoint();
-        }
-      }),
-      client.on("workspace_update", (message) => {
-        if (message.type !== "workspace_update" || !this.isCurrent(client, source)) return;
-        this.revision += 1;
-        this.workspaceRevision += 1;
-        this.advanceWorkspaceVersion(
-          message.payload.kind === "upsert" ? message.payload.workspace.id : message.payload.id,
-        );
-        const recorded = this.workspaceTransactions.record(source, message.payload);
-        if (!recorded) {
-          this.applyWorkspaceDelta(message.payload);
-          this.noteLiveCursor("workspaces", message.payload);
-          this.persistCheckpoint();
-        }
-      }),
-      client.on("project.update", (message) => {
-        if (message.type !== "project.update" || !this.isCurrent(client, source)) return;
-        this.revision += 1;
-        this.workspaceRevision += 1;
-        this.projectRevision += 1;
-        const recorded = this.workspaceTransactions.record(source, message.payload);
-        if (!recorded) {
-          this.applyWorkspaceDelta(message.payload);
-          this.noteLiveCursor("projects", message.payload);
-          this.persistCheckpoint();
-        }
-      }),
-      client.on("script_status_update", (message) => {
-        if (message.type !== "script_status_update" || !this.isCurrent(client, source)) return;
-        this.revision += 1;
-        this.workspaceRevision += 1;
-        this.advanceWorkspaceVersion(message.payload.workspaceId);
-        const delta: WorkspaceDirectoryDelta = {
-          kind: "script_status",
-          update: message.payload,
-        };
-        const recorded = this.workspaceTransactions.record(source, delta);
-        if (!recorded) {
-          this.applyWorkspaceDelta(delta);
-          this.persistCheckpoint();
-        }
-      }),
-      client.on("agent_deleted", (message) => {
-        if (message.type === "agent_deleted" && this.isCurrent(client, source)) {
-          this.revision += 1;
-          this.agents.remove(message.payload.agentId);
-          this.persistCheckpoint();
-        }
-      }),
-      client.on("agent_archived", (message) => {
-        if (message.type === "agent_archived" && this.isCurrent(client, source)) {
-          this.revision += 1;
-          this.agents.archive(message.payload.agentId, message.payload.archivedAt);
-          this.persistCheckpoint();
-        }
-      }),
-    ];
-    this.unsubscribe = () => {
-      for (const unsubscribe of subscriptions) unsubscribe();
-    };
+    // Turn-transition reconciliation compares the snapshot it fetched against a workspace status
+    // pushed while that fetch was in flight, so workspace pushes are observed even before any
+    // demand subscribes. Every other directory event stays demand-gated.
+    this.unsubscribe = client.on("workspace_update", (message) => {
+      if (message.type !== "workspace_update" || !this.isCurrent(client, source)) return;
+      this.revision += 1;
+      this.workspaceRevision += 1;
+      this.advanceWorkspaceVersion(
+        message.payload.kind === "upsert" ? message.payload.workspace.id : message.payload.id,
+      );
+      if (this.workspaceTransactions.record(source, message.payload)) return;
+      this.applyWorkspaceDelta(message.payload);
+      this.noteLiveCursor("workspaces", message.payload);
+      this.persistCheckpoint();
+    });
     if (this.hasDemand()) void this.requestDemandRefresh().catch(() => undefined);
     return true;
   }
@@ -305,6 +251,8 @@ export class DirectorySync {
   }
 
   private releaseSubscriptions(): void {
+    this.unsubscribe?.();
+    this.unsubscribe = null;
     for (const subscription of [
       this.agentSubscription,
       this.workspaceSubscription,

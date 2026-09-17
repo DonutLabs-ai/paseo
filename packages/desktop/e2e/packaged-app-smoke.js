@@ -82,10 +82,20 @@ function getLaunchCommand(executablePath, args) {
   };
 }
 
-function launchPackagedGui({ executablePath, env }) {
+async function reserveDistinctTcpPort(excludedPorts, failureMessage) {
+  for (let attempt = 0; attempt < 11; attempt += 1) {
+    const port = await reserveLocalTcpPort();
+    if (!excludedPorts.includes(port)) {
+      return port;
+    }
+  }
+  throw new Error(failureMessage);
+}
+
+function launchPackagedGui({ executablePath, env, args = [] }) {
   const stdout = [];
   const stderr = [];
-  const launch = getLaunchCommand(executablePath);
+  const launch = getLaunchCommand(executablePath, args);
   console.log(`Packaged desktop smoke: launching ${launch.command} ${launch.args.join(" ")}`);
   const child = spawn(launch.command, launch.args, {
     detached: process.platform !== "win32",
@@ -923,13 +933,10 @@ async function smokePackagedDesktopApp({
   const userData = createTempDir("paseo-smoke-user-data-");
   const daemonHome = createTempDir("paseo-smoke-daemon-home-");
   const daemonPort = await reserveLocalTcpPort();
-  let firstCdpPort = await reserveLocalTcpPort();
-  for (let attempt = 0; firstCdpPort === daemonPort && attempt < 10; attempt += 1) {
-    firstCdpPort = await reserveLocalTcpPort();
-  }
-  if (firstCdpPort === daemonPort) {
-    throw new Error("Failed to reserve distinct TCP ports for the daemon and CDP");
-  }
+  const firstCdpPort = await reserveDistinctTcpPort(
+    [daemonPort],
+    "Failed to reserve distinct TCP ports for the daemon and CDP",
+  );
   const listen = `127.0.0.1:${daemonPort}`;
   configureIsolatedDaemonHome(daemonHome, listen);
   const firstEnv = createIsolatedDesktopEnv({
@@ -941,7 +948,7 @@ async function smokePackagedDesktopApp({
   const deadline = Date.now() + SMOKE_TIMEOUT_MS;
 
   const launches = [];
-  let currentLaunch = launchPackagedGui({ executablePath, env: firstEnv });
+  let currentLaunch = launchPackagedGui({ executablePath, env: firstEnv, args: launchArgs });
   launches.push(currentLaunch);
   let browser = null;
   let page = null;
@@ -995,17 +1002,10 @@ async function smokePackagedDesktopApp({
     await assertPersistedDesktopDaemon({ appPath, env: firstEnv, expectedStatus: status });
     console.log("Packaged desktop smoke: desktop-managed daemon survived GUI exit");
 
-    let secondCdpPort = await reserveLocalTcpPort();
-    for (
-      let attempt = 0;
-      (secondCdpPort === daemonPort || secondCdpPort === firstCdpPort) && attempt < 10;
-      attempt += 1
-    ) {
-      secondCdpPort = await reserveLocalTcpPort();
-    }
-    if (secondCdpPort === daemonPort || secondCdpPort === firstCdpPort) {
-      throw new Error("Failed to reserve a distinct CDP port for packaged GUI relaunch");
-    }
+    const secondCdpPort = await reserveDistinctTcpPort(
+      [daemonPort, firstCdpPort],
+      "Failed to reserve a distinct CDP port for packaged GUI relaunch",
+    );
 
     const secondEnv = createIsolatedDesktopEnv({
       home: daemonHome,
@@ -1013,7 +1013,7 @@ async function smokePackagedDesktopApp({
       userData,
       cdpPort: secondCdpPort,
     });
-    currentLaunch = launchPackagedGui({ executablePath, env: secondEnv });
+    currentLaunch = launchPackagedGui({ executablePath, env: secondEnv, args: launchArgs });
     launches.push(currentLaunch);
     const relaunchDeadline = Date.now() + SMOKE_TIMEOUT_MS;
     browser = await connectToPackagedApp({

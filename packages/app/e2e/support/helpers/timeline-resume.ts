@@ -9,7 +9,6 @@ export interface TimelineRequestCounts {
   agentId?: string;
   after: number;
   tail: number;
-  agentId?: string;
 }
 
 export interface BackgroundTimelineTurns {

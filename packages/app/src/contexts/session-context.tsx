@@ -50,7 +50,6 @@ import { toErrorMessage } from "@/utils/error-messages";
 import { showProviderNoticeToast } from "@/utils/provider-notice-toast";
 import { applyCheckoutStatusUpdateFromEvent } from "@/git/checkout-status-cache";
 import { useProviderSubagentStore } from "@/subagents/provider-store";
-import { revalidateSessionAfterResume } from "@/contexts/session-resume-revalidation";
 import {
   shouldSuppressSnoozedAttentionNotification,
   useCockpitSnoozeStore,
@@ -274,22 +273,10 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   }, [isAppVisible]);
 
   // Client activity tracking (heartbeat, push token registration)
-  const handleAppResumed = useCallback(
-    (awayMs: number) => {
-      void revalidateSessionAfterResume({
-        awayMs,
-        serverId,
-        bumpHistorySyncGeneration,
-      });
-    },
-    [bumpHistorySyncGeneration, serverId],
-  );
-
   useClientActivity({
     client,
     focusedAgentId,
     focusedTerminalId,
-    onAppResumed: handleAppResumed,
   });
   useEffect(() => startPushNotifications({ client, serverId }), [client, serverId]);
 
@@ -577,11 +564,6 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           if (message.type === type) handler(message);
         },
       });
-
-      // NOTE: We don't update lastActivityAt on every stream event to prevent
-      // cascading rerenders. The agent_update handler updates agent.lastActivityAt
-      // on status changes, which is sufficient for sorting and display purposes.
-    });
 
     const unsubAgentAttention = onFeed("agent_attention_required", (message) => {
       if (message.type !== "agent_attention_required") return;

@@ -94,8 +94,6 @@ export function useChatOutline({
     -1,
   );
 
-  useEffect(() => setIndex(null), [agentId, enabled, serverId, timelineEpoch]);
-
   useEffect(() => {
     if (!enabled) {
       setScopedIndex(null);

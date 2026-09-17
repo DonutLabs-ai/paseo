@@ -164,12 +164,10 @@ export class TerminalSessionController {
   private readonly clientSupportsWrapReflow: (source: object) => boolean;
   private readonly getClientBufferedAmount: (source: object) => number | null;
   private readonly utilityTerminalService: UtilityTerminalService | null;
-  private readonly terminalSizeOwner = {};
 
   private readonly subscribedDirectories = new Map<string, TerminalDirectorySubscription>();
   private unsubscribeTerminalsChanged: (() => void) | null = null;
   private unsubscribeUtilityTerminalsChanged: (() => void) | null = null;
-  private readonly exitSubscriptions = new Map<string, () => void>();
   private readonly activeStreams = new Map<number, ActiveTerminalStream>();
   private nextSlot = 0;
 
@@ -341,49 +339,6 @@ export class TerminalSessionController {
           this.sessionLogger.warn({ err: error }, "Failed to release terminal stream"),
         );
     }
-    this.exitSubscriptions.clear();
-
-    for (const terminalId of Array.from(this.idToSlot.keys())) {
-      this.detachStream(terminalId, { emitExit: false });
-    }
-  }
-
-  private ensureExitSubscription(terminal: TerminalSession): void {
-    if (this.exitSubscriptions.has(terminal.id)) {
-      return;
-    }
-    const unsubscribeExit = terminal.onExit(() => {
-      this.handleTerminalExited(terminal.id);
-    });
-    this.exitSubscriptions.set(terminal.id, unsubscribeExit);
-  }
-
-  private handleTerminalExited(terminalId: string): void {
-    const unsubscribeExit = this.exitSubscriptions.get(terminalId);
-    if (unsubscribeExit) {
-      unsubscribeExit();
-      this.exitSubscriptions.delete(terminalId);
-    }
-    this.detachStream(terminalId, { emitExit: true });
-  }
-
-  private emitTerminalsChangedSnapshot(input: {
-    cwd: string;
-    terminals: Array<{
-      id: string;
-      name: string;
-      workspaceId?: string;
-      title?: string;
-      activity: TerminalActivity | null;
-    }>;
-  }): void {
-    this.emit({
-      type: "terminals_changed",
-      payload: {
-        cwd: input.cwd,
-        terminals: input.terminals,
-      },
-    });
   }
 
   private toTerminalInfo(

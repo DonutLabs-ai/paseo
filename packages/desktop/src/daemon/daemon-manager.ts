@@ -54,8 +54,6 @@ import {
 import { tailFile } from "../diagnostics/tail-file.js";
 
 const DAEMON_LOG_FILENAME = "daemon.log";
-const STARTUP_POLL_INTERVAL_MS = 200;
-const STARTUP_POLL_MAX_ATTEMPTS = 150;
 const BASH_CLOSE_INHERITED_FILE_DESCRIPTORS = `
 if [ -d /proc/self/fd ]; then
   fd_root=/proc/self/fd
@@ -290,6 +288,27 @@ function assertBuiltInDaemonManagementEnabled(settings: DesktopSettings): void {
   }
 }
 
+export function isolateDetachedDaemonInvocation(
+  command: string,
+  args: readonly string[],
+  platform: NodeJS.Platform = process.platform,
+): { command: string; args: string[] } {
+  if (platform === "win32") {
+    return { command, args: [...args] };
+  }
+
+  return {
+    command: "bash",
+    args: [
+      "-c",
+      BASH_CLOSE_INHERITED_FILE_DESCRIPTORS,
+      "paseo-daemon-fd-boundary",
+      command,
+      ...args,
+    ],
+  };
+}
+
 async function startDaemon(): Promise<DesktopDaemonStatus> {
   assertBuiltInDaemonManagementEnabled(await getDesktopSettingsStore().get());
 
@@ -315,8 +334,9 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
   }
 
   const home = getPaseoHome();
+  const daemonRunner = resolveDaemonRunnerEntrypoint();
   const invocation = createNodeEntrypointInvocation({
-    entrypoint: resolveDaemonRunnerEntrypoint(),
+    entrypoint: daemonRunner,
     argvMode: "node-script",
     args: [],
     baseEnv: process.env,
@@ -349,9 +369,6 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
       env: { ...invocation.env, PASEO_CLI: getBundledCliShimPath() },
       mode: "managed",
       desktopManaged: true,
-      onAcquired: (instance) => {
-        ownedLaunch = { home, instance };
-      },
       onAcquired: (instance) => {
         ownedLaunch = { home, instance };
       },

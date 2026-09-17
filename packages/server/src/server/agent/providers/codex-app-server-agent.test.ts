@@ -1441,12 +1441,9 @@ describe("Codex app-server provider", () => {
       purpose: "history",
     });
 
-    expect(threadRequests).toEqual([
-      "thread/loaded/list",
-      "thread/resume",
-      "thread/read",
-      "thread/read",
-    ]);
+    // History mode never probes or resumes the native thread: the archived thread is read
+    // directly (metadata, then turns).
+    expect(threadRequests).toEqual(["thread/read", "thread/read"]);
     await session.close();
     appServer.assertNoErrors();
   });
@@ -4234,7 +4231,7 @@ describe("Codex app-server provider", () => {
       }),
     };
 
-    await asInternals(session).loadPersistedHistory();
+    await asInternals(session).loadPersistedHistory(session.client);
 
     const history: AgentStreamEvent[] = [];
     for await (const event of session.streamHistory()) {
