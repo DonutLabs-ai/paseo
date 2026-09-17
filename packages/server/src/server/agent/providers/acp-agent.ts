@@ -83,6 +83,7 @@ import {
   type AgentSlashCommand,
   type AgentStreamEvent,
   type AgentTimelineItem,
+  type AgentTurnFailureReason,
   type AgentUsage,
   type FetchCatalogOptions,
   type ProviderRefreshContext,
@@ -183,6 +184,30 @@ export function summarizeACPRequestError(error: unknown): {
   }
 
   return { message: String(error) };
+}
+
+// An ACP server reports a provider-side request failure as a JSON-RPC internal error
+// whose message names the upstream call. DeepSeek Harness reports its own API call
+// this way, and that failure is transient — the same call usually succeeds on the next
+// turn — so it earns the automatic retry Codex already gets for a lost response stream.
+const TRANSIENT_ACP_REQUEST_FAILURE_PATTERNS = [/\bDeepSeek API request to \S+ failed\b/];
+
+// Auth, quota, and balance rejections are permanent for the current credentials.
+// Retrying them every minute would loop forever instead of surfacing the real problem.
+const PERMANENT_ACP_REQUEST_FAILURE_PATTERN =
+  /\b(401|403|unauthorized|authentication|invalid api key|insufficient balance|quota)\b/i;
+
+export function classifyACPRequestFailure(summary: {
+  message: string;
+  code?: string;
+}): AgentTurnFailureReason | undefined {
+  const message = summary.message.trim();
+  if (PERMANENT_ACP_REQUEST_FAILURE_PATTERN.test(message)) {
+    return undefined;
+  }
+  return TRANSIENT_ACP_REQUEST_FAILURE_PATTERNS.some((pattern) => pattern.test(message))
+    ? "transient_transport"
+    : undefined;
 }
 
 function toACPRequestError(error: unknown): Error {
@@ -1874,6 +1899,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
           error: summary.message,
           code: summary.code,
           diagnostic: this.collectDiagnostic(summary.diagnostic ?? summary.message),
+          failureReason: classifyACPRequestFailure(summary),
           turnId,
         });
       });
