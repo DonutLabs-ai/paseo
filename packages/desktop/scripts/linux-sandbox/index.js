@@ -2,8 +2,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 // Keep one pre-Chromium entrypoint for AppRun, desktop entries, updates, and tarballs.
-exports.installLinuxLauncher = function installLinuxLauncher(appOutDir) {
-  const launcher = path.join(appOutDir, "Paseo");
+// The packed binary is named by the builder's executableName, which forks may override.
+exports.installLinuxLauncher = function installLinuxLauncher(appOutDir, executableName) {
+  const launcher = path.join(appOutDir, executableName);
   if (!fs.existsSync(`${launcher}.bin`)) {
     fs.renameSync(launcher, `${launcher}.bin`);
   }
