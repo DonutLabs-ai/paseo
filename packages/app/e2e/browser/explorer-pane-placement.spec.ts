@@ -234,7 +234,9 @@ async function closeOnlyDraft(page: Page): Promise<void> {
 
 async function moveOnlyDraftIntoRightSplit(page: Page): Promise<void> {
   await page.getByRole("button", { name: "More actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Split pane right", exact: true }).click();
+  // Non-Mac builds install a Ctrl+\ chord for this action, so the accessible name carries a
+  // shortcut badge and an exact-name match no longer resolves. Target the item by test id.
+  await page.getByTestId("workspace-split-pane-right").click();
   const target = await emptyPaneBox(page);
   await dragChipTo(page, draftTabChip(page), {
     x: target.x + target.width / 2,
