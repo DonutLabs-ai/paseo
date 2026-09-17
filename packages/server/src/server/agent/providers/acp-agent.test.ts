@@ -28,6 +28,7 @@ import {
   resolveACPModeSelection,
   resolveACPModelSelection,
   summarizeACPRequestError,
+  classifyACPRequestFailure,
 } from "./acp-agent.js";
 import type { ProcessTerminator, TreeKillTarget } from "../../../utils/tree-kill.js";
 import {
@@ -830,6 +831,44 @@ describe("mapACPUsage", () => {
       outputTokens: 7,
       cachedInputTokens: 5,
     });
+  });
+});
+
+describe("classifyACPRequestFailure", () => {
+  test("retries a failed DeepSeek API request reported as an ACP internal error", () => {
+    expect(
+      classifyACPRequestFailure({
+        message:
+          "Internal error: turn failed: DeepSeek API request to https://api.deepseek.com failed",
+        code: "-32603",
+      }),
+    ).toBe("transient_transport");
+  });
+
+  test("retries the same failure when the ACP server appends error data", () => {
+    expect(
+      classifyACPRequestFailure({
+        message:
+          "Internal error: turn failed: DeepSeek API request to https://api.deepseek.com failed | data=upstream reset",
+        code: "-32603",
+      }),
+    ).toBe("transient_transport");
+  });
+
+  test("does not retry permanent credential and quota rejections", () => {
+    for (const message of [
+      "DeepSeek API request to https://api.deepseek.com failed: 401 Unauthorized",
+      "DeepSeek API request to https://api.deepseek.com failed: invalid api key",
+      "DeepSeek API request to https://api.deepseek.com failed: insufficient balance",
+    ]) {
+      expect(classifyACPRequestFailure({ message, code: "-32603" })).toBeUndefined();
+    }
+  });
+
+  test("does not retry unrelated ACP failures", () => {
+    expect(
+      classifyACPRequestFailure({ message: "ACP agent exited unexpectedly (1)", code: "-32000" }),
+    ).toBeUndefined();
   });
 });
 
