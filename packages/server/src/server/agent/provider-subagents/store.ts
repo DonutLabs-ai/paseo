@@ -6,7 +6,6 @@ import type {
   AgentTimelineFetchResult,
   AgentTimelineRow,
 } from "../agent-timeline-store-types.js";
-import { selectTimelineWindowByProjectedLimit } from "../timeline-projection.js";
 
 export type ProviderSubagentStatus = "running" | "completed" | "failed" | "canceled";
 

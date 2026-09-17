@@ -21,6 +21,7 @@ interface ClientRequest {
   mode?: unknown;
   path?: unknown;
   agentId?: unknown;
+  messageId?: unknown;
   text?: unknown;
   activeTurnBehavior?: unknown;
 }
@@ -851,7 +852,7 @@ export async function installDaemonWebSocketGate(page: Page) {
     getTimelineRequestCount(direction: "tail" | "before" | "after", agentId?: string): number {
       if (agentId) {
         return (clientRequests.get("fetch_agent_timeline_request") ?? []).filter(
-          (request) => request.direction === direction && request.agentId === agentId,
+          (request) => request.agentId === agentId && request.direction === direction,
         ).length;
       }
       return timelineRequestCounts.get(direction) ?? 0;

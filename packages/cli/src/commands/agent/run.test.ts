@@ -8,6 +8,8 @@ import {
   type AgentRunOptions,
 } from "./run";
 
+const daemonTarget = { kind: "endpoint" as const, host: "example.test:12345" };
+
 describe("managed agent caller context", () => {
   it("propagates a trimmed PASEO_AGENT_ID", () => {
     expect(resolveRunCallerAgentId({ PASEO_AGENT_ID: "  parent-agent  " })).toBe("parent-agent");
@@ -90,8 +92,13 @@ describe("runRunCommand option validation", () => {
     }
   });
 
-  async function expectInvalidOptions(options: AgentRunOptions, messageMatch: RegExp) {
-    await expect(runRunCommand("do something", options, new Command())).rejects.toMatchObject({
+  async function expectInvalidOptions(
+    options: Omit<AgentRunOptions, "daemonTarget">,
+    messageMatch: RegExp,
+  ) {
+    await expect(
+      runRunCommand("do something", { ...options, daemonTarget }, {} as never),
+    ).rejects.toMatchObject({
       code: "INVALID_OPTIONS",
       message: expect.stringMatching(messageMatch),
     });
@@ -125,8 +132,8 @@ describe("runRunCommand option validation", () => {
     await expect(
       runRunCommand(
         "do something",
-        { newWorkspace: "worktree", provider: undefined },
-        new Command(),
+        { newWorkspace: "worktree", provider: undefined, daemonTarget },
+        {} as never,
       ),
     ).rejects.not.toMatchObject({ code: "INVALID_OPTIONS" });
   });

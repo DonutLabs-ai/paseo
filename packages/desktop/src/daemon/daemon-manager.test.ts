@@ -6,9 +6,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_DESKTOP_SETTINGS } from "../settings/desktop-settings";
 import { getBundledCliShimPath } from "../integrations/cli-install";
 import { createDaemonCommandHandlers, isolateDetachedDaemonInvocation } from "./daemon-manager";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { DEFAULT_DESKTOP_SETTINGS } from "../settings/desktop-settings";
+import { createDaemonCommandHandlers } from "./daemon-manager";
 
 const mocks = vi.hoisted(() => ({
-  paseoHome: "/tmp/paseo-desktop-daemon-manager-test-home",
+  paseoHome: "",
   settings: {
     releaseChannel: "stable",
     daemon: {
@@ -26,13 +33,13 @@ const mocks = vi.hoisted(() => ({
   spawnProcess: vi.fn(),
   logInfo: vi.fn(),
   logError: vi.fn(),
-  appLogPath: "/tmp/paseo-desktop-daemon-manager-test-main.log",
+  appLogPath: "",
   getElectronLogFile: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
   app: {
-    getPath: vi.fn(() => "/tmp/paseo-user-data"),
+    getPath: vi.fn(() => mocks.paseoHome),
     getVersion: vi.fn(() => "1.2.3"),
     isPackaged: true,
   },
@@ -68,7 +75,7 @@ vi.mock("../settings/desktop-settings-electron.js", () => ({
 vi.mock("./runtime-paths.js", () => ({
   createNodeEntrypointInvocation: mocks.createNodeEntrypointInvocation,
   resolveDaemonRunnerEntrypoint: vi.fn(() => ({
-    entryPath: "/tmp/daemon.js",
+    entryPath: path.join(mocks.paseoHome, "daemon.js"),
     execArgv: [],
   })),
 }));
@@ -78,40 +85,13 @@ vi.mock("./cli/external.js", () => ({
   runExternalCliTextCommand: mocks.runExternalCliTextCommand,
 }));
 
-function desktopSettingsWithManagement(enabled: boolean) {
-  return {
-    ...DEFAULT_DESKTOP_SETTINGS,
-    daemon: {
-      ...DEFAULT_DESKTOP_SETTINGS.daemon,
-      manageBuiltInDaemon: enabled,
-    },
-  };
-}
-
-type MockChildProcess = EventEmitter & {
-  pid: number;
-  spawnfile: string;
-  spawnargs: string[];
-  unref: ReturnType<typeof vi.fn>;
-};
-
-function createMockChildProcess(): MockChildProcess {
-  const child = new EventEmitter() as MockChildProcess;
-  child.pid = 1234;
-  child.spawnfile = "node";
-  child.spawnargs = ["node", "daemon.js"];
-  child.unref = vi.fn();
-  return child;
-}
-
-function scheduleFailedStartup(child: MockChildProcess): void {
-  setImmediate(() => {
-    child.emit("exit", 1, null);
-  });
-}
-
 describe("daemon-manager commands", () => {
+  let fixtureRoot: string;
+
   beforeEach(() => {
+    fixtureRoot = mkdtempSync(path.join(tmpdir(), "paseo daemon manager "));
+    mocks.paseoHome = path.join(fixtureRoot, "home");
+    mocks.appLogPath = path.join(fixtureRoot, "main.log");
     mocks.settings = DEFAULT_DESKTOP_SETTINGS;
     mocks.runExternalCliJsonCommand.mockReset();
     mocks.runExternalCliTextCommand.mockReset();
@@ -122,12 +102,10 @@ describe("daemon-manager commands", () => {
     mocks.logError.mockReset();
     mocks.getElectronLogFile.mockReset();
     mocks.getElectronLogFile.mockReturnValue({ path: mocks.appLogPath });
-    rmSync(mocks.paseoHome, { recursive: true, force: true });
-    rmSync(mocks.appLogPath, { force: true });
   });
 
   afterEach(() => {
-    rmSync(mocks.paseoHome, { recursive: true, force: true });
+    rmSync(fixtureRoot, { recursive: true, force: true });
     rmSync(mocks.appLogPath, { force: true });
   });
 
