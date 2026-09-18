@@ -536,6 +536,42 @@ container. When delegating filesystem operations to Paseo (`fs.readTextFile: tru
 or `fs.writeTextFile: true`), ensure the agent and Paseo share equivalent
 absolute workspace paths.
 
+### Resume history for agents without session/load
+
+ACP replays history through `session/load`. An agent that advertises only
+`session/resume` restores its own state without re-sending updates, so a resumed
+agent shows an empty timeline. When that agent keeps a readable session log on
+disk, point Paseo at it with `params.historySource`:
+
+```json
+{
+  "agents": {
+    "providers": {
+      "deepseek-harness": {
+        "extends": "acp",
+        "label": "DeepSeek Harness",
+        "command": ["dsh", "--profile", "acp"],
+        "params": {
+          "historySource": "dsh-session-log"
+        }
+      }
+    }
+  }
+}
+```
+
+`dsh-session-log` reads DeepSeek Harness sessions under `$DSH_HOME/sessions`
+(`~/.dsh` by default) and replays them through the same translation as live
+updates, so replayed history renders exactly like it did when it was first
+streamed.
+
+`historySource` only applies to agents that resume without `session/load`; an
+agent that advertises `loadSession` already replays its own history. A missing or
+unreadable log leaves the agent resumable with an empty timeline and logs
+`provider.acp.local_history_failed`.
+
+Supported values: `dsh-session-log`.
+
 ### Generic ACP diagnostics
 
 Paseo diagnostics for `extends: "acp"` providers report the configured command, resolved launcher binary, version output, ACP `initialize`, ACP `session/new`, model count, modes, and final status.

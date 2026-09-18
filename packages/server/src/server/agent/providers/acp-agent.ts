@@ -466,7 +466,21 @@ interface ACPAgentClientOptions {
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   terminateProcess?: ProcessTerminator;
+  localHistorySource?: ACPLocalHistorySource;
   now?: () => number;
+}
+
+/**
+ * Supplies conversation history for an ACP agent that can resume a session but
+ * cannot replay it.
+ *
+ * ACP exposes history through `session/load`. An agent that implements only
+ * `session/resume` restores its own state without re-sending updates, which
+ * leaves the client timeline empty. A source reads whatever durable record the
+ * agent keeps and returns the updates the agent would have streamed, in order.
+ */
+export interface ACPLocalHistorySource {
+  collect(params: { cwd: string; sessionId: string }): Promise<SessionUpdate[]>;
 }
 
 interface ACPAgentSessionOptions {
@@ -500,6 +514,7 @@ interface ACPAgentSessionOptions {
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   terminateProcess?: ProcessTerminator;
+  localHistorySource?: ACPLocalHistorySource;
 }
 
 export interface SpawnedACPProcess {
@@ -926,6 +941,7 @@ export class ACPAgentClient implements AgentClient {
   private readonly waitForInitialCommands: boolean;
   private readonly initialCommandsWaitTimeoutMs: number;
   private readonly extensionCommandsParser?: ACPExtensionCommandsParser;
+  private readonly localHistorySource?: ACPLocalHistorySource;
   private readonly importPromptCache = new Map<string, ACPImportPromptCacheEntry>();
   private readonly now: () => number;
   protected readonly terminateProcess: ProcessTerminator;
@@ -956,6 +972,7 @@ export class ACPAgentClient implements AgentClient {
     this.waitForInitialCommands = options.waitForInitialCommands ?? false;
     this.initialCommandsWaitTimeoutMs = options.initialCommandsWaitTimeoutMs ?? 1500;
     this.extensionCommandsParser = options.extensionCommandsParser;
+    this.localHistorySource = options.localHistorySource;
     this.now = options.now ?? Date.now;
   }
 
@@ -989,6 +1006,7 @@ export class ACPAgentClient implements AgentClient {
         extensionCommandsParser: this.extensionCommandsParser,
         waitForInitialCommands: this.waitForInitialCommands,
         initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
+        localHistorySource: this.localHistorySource,
       },
     );
     await session.initializeNewSession();
@@ -1040,6 +1058,7 @@ export class ACPAgentClient implements AgentClient {
       extensionCommandsParser: this.extensionCommandsParser,
       waitForInitialCommands: this.waitForInitialCommands,
       initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
+      localHistorySource: this.localHistorySource,
     });
     await session.initializeResumedSession();
     return session;
@@ -1705,6 +1724,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private waitForInitialCommands: boolean;
   private initialCommandsWaitTimeoutMs: number;
   private readonly extensionCommandsParser?: ACPExtensionCommandsParser;
+  private readonly localHistorySource?: ACPLocalHistorySource;
   private currentTurnUsage: AgentUsage | undefined;
   private activeForegroundTurnId: string | null = null;
   private fallbackAssistantMessageId: string | null = null;
@@ -1745,6 +1765,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.waitForInitialCommands = options.waitForInitialCommands ?? false;
     this.initialCommandsWaitTimeoutMs = options.initialCommandsWaitTimeoutMs ?? 1500;
     this.extensionCommandsParser = options.extensionCommandsParser;
+    this.localHistorySource = options.localHistorySource;
   }
 
   get id(): string | null {
@@ -1817,6 +1838,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
           }),
         );
         this.applySessionState(response);
+        await this.replayLocalHistory(handle.sessionId);
       } else {
         throw new Error(`${this.provider} does not support ACP session resume`);
       }
@@ -2569,6 +2591,52 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     for (const event of events) {
       this.pushEvent(event);
     }
+  }
+
+  /**
+   * Fill `persistedHistory` from a local history source after a resume that
+   * replayed nothing.
+   *
+   * The collected updates go through the same translation as live ones, so
+   * replayed history renders exactly like it did when it was first streamed.
+   * A source that fails is reported and skipped: an unreadable history log must
+   * not fail the resume, because the agent itself is already usable.
+   */
+  private async replayLocalHistory(sessionId: string): Promise<void> {
+    const source = this.localHistorySource;
+    if (!source) {
+      return;
+    }
+    let updates: SessionUpdate[];
+    try {
+      updates = await source.collect({ cwd: this.config.cwd, sessionId });
+    } catch (error) {
+      this.logger.warn(
+        { err: error, agentId: this.agentId, provider: this.provider, sessionId },
+        "provider.acp.local_history_failed",
+      );
+      return;
+    }
+    this.replayingHistory = true;
+    try {
+      for (const update of updates) {
+        this.deliverTranslatedEvents(this.translateSessionUpdate(update));
+      }
+      this.deliverTranslatedEvents(this.flushPendingUserMessage());
+    } finally {
+      this.replayingHistory = false;
+    }
+    this.historyPending = this.persistedHistory.length > 0;
+    this.logger.debug(
+      {
+        agentId: this.agentId,
+        provider: this.provider,
+        sessionId,
+        updates: updates.length,
+        timelineItems: this.persistedHistory.length,
+      },
+      "provider.acp.local_history_replayed",
+    );
   }
 
   async extNotification(method: string, params: Record<string, unknown>): Promise<void> {
