@@ -10,7 +10,9 @@ import {
   type ACPConfigFeatureOption,
   DEFAULT_ACP_CAPABILITIES,
   type ACPExtensionCommandsParser,
+  type ACPLocalHistorySource,
 } from "./acp-agent.js";
+import { createDshSessionHistorySource } from "./dsh-session-history.js";
 import {
   buildBinaryDiagnosticRows,
   formatProviderDiagnostic,
@@ -32,6 +34,14 @@ export const GenericACPProviderParamsSchema = z
         terminal: z.boolean().optional(),
       })
       .optional(),
+    /**
+     * Durable history for an agent that resumes but cannot replay.
+     *
+     * `dsh-session-log` reads DeepSeek Harness session logs: that agent answers
+     * `session/resume` without `session/load`, so without a source the timeline
+     * of a resumed session stays empty.
+     */
+    historySource: z.enum(["dsh-session-log"]).optional(),
   })
   .passthrough();
 
@@ -77,6 +87,7 @@ export class GenericACPAgentClient extends ACPAgentClient {
       configFeatureOptions: options.configFeatureOptions,
       extensionCommandsParser: options.extensionCommandsParser,
       catalogModelResolver: options.catalogModelResolver,
+      localHistorySource: resolveHistorySource(providerParams.historySource),
       now: options.now,
     });
 
@@ -191,6 +202,12 @@ function formatProviderName(label: string | undefined, providerId: string | unde
 
 function formatCommand(command: string, args: string[]): string {
   return [command, ...args].join(" ");
+}
+
+function resolveHistorySource(
+  historySource: GenericACPProviderParams["historySource"],
+): ACPLocalHistorySource | undefined {
+  return historySource === "dsh-session-log" ? createDshSessionHistorySource() : undefined;
 }
 
 export function buildVersionProbeCommand(command: [string, ...string[]]): CommandInvocation {

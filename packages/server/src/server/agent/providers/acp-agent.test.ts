@@ -18,6 +18,7 @@ import {
 import {
   ACPAgentClient,
   ACPAgentSession,
+  type ACPLocalHistorySource,
   type SpawnedACPProcess,
   type SessionStateResponse,
   buildACPClientCapabilities,
@@ -4197,5 +4198,156 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
       cwd: "/tmp/paseo-acp-test",
       mcpServers: [],
     });
+  });
+});
+
+describe("ACPAgentSession resume with a local history source", () => {
+  /**
+   * A resumed session whose agent advertises `session/resume` but not
+   * `session/load` replays nothing, so the timeline is only populated when a
+   * local history source supplies the conversation.
+   */
+  function makeResumeSession(args: {
+    capabilities?: AgentCapabilityFlags;
+    localHistorySource?: ACPLocalHistorySource;
+  }) {
+    class TestSession extends ACPAgentSession {
+      protected override async spawnProcess(): Promise<SpawnedACPProcess> {
+        return {
+          child: createProbeChildStub(),
+          connection: {
+            prompt: vi.fn(),
+            unstable_resumeSession: vi.fn().mockResolvedValue({
+              sessionId: "session-1",
+              modes: null,
+              models: null,
+              configOptions: [],
+            }),
+          } as unknown as ClientSideConnection,
+          initialize: { agentCapabilities: args.capabilities ?? {} },
+        } as SpawnedACPProcess;
+      }
+    }
+
+    return new TestSession(
+      { provider: "dsh", cwd: "/tmp/paseo-acp-test" },
+      {
+        provider: "dsh",
+        logger: createTestLogger(),
+        defaultCommand: ["dsh", "--profile", "acp"],
+        defaultModes: [],
+        capabilities: {
+          supportsStreaming: true,
+          supportsSessionPersistence: true,
+          supportsDynamicModes: true,
+          supportsMcpServers: true,
+          supportsReasoningStream: true,
+          supportsToolInvocations: true,
+        },
+        handle: { sessionId: "session-1", provider: "dsh" },
+        ...(args.localHistorySource ? { localHistorySource: args.localHistorySource } : {}),
+      },
+    );
+  }
+
+  const collectedUpdates: SessionUpdate[] = [
+    {
+      sessionUpdate: "user_message_chunk",
+      content: { type: "text", text: "review this" },
+      messageId: "m1",
+    },
+    { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "thinking" } },
+    {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "on it" },
+      messageId: "dsh-2",
+    },
+    {
+      sessionUpdate: "tool_call",
+      toolCallId: "call-1",
+      title: "bash",
+      status: "in_progress",
+      rawInput: { command: "ls" },
+    },
+    {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call-1",
+      status: "completed",
+      rawOutput: "a.ts",
+      content: [{ type: "content", content: { type: "text", text: "a.ts" } }],
+    },
+  ];
+
+  test("replays the source's updates into streamHistory", async () => {
+    const collect = vi.fn().mockResolvedValue(collectedUpdates);
+    const session = makeResumeSession({
+      capabilities: { sessionCapabilities: { resume: {} } },
+      localHistorySource: { collect },
+    });
+
+    await session.initializeResumedSession();
+
+    expect(collect).toHaveBeenCalledWith({ cwd: "/tmp/paseo-acp-test", sessionId: "session-1" });
+    const history: AgentStreamEvent[] = [];
+    for await (const event of session.streamHistory()) {
+      history.push(event);
+    }
+    expect(history).toEqual([
+      {
+        type: "timeline",
+        provider: "dsh",
+        item: { type: "user_message", text: "review this", messageId: "m1" },
+      },
+      {
+        type: "timeline",
+        provider: "dsh",
+        item: { type: "reasoning", text: "thinking" },
+      },
+      {
+        type: "timeline",
+        provider: "dsh",
+        item: { type: "assistant_message", text: "on it", messageId: "dsh-2" },
+      },
+      {
+        type: "timeline",
+        provider: "dsh",
+        item: expect.objectContaining({ type: "tool_call", callId: "call-1", name: "bash" }),
+      },
+      {
+        type: "timeline",
+        provider: "dsh",
+        item: expect.objectContaining({ type: "tool_call", callId: "call-1", status: "completed" }),
+      },
+    ]);
+  });
+
+  test("replays nothing when no source is configured", async () => {
+    const session = makeResumeSession({ capabilities: { sessionCapabilities: { resume: {} } } });
+
+    await session.initializeResumedSession();
+
+    const history: AgentStreamEvent[] = [];
+    for await (const event of session.streamHistory()) {
+      history.push(event);
+    }
+    expect(history).toEqual([]);
+  });
+
+  test("keeps the resumed session usable when the source fails", async () => {
+    const session = makeResumeSession({
+      capabilities: { sessionCapabilities: { resume: {} } },
+      localHistorySource: {
+        collect: vi.fn().mockRejectedValue(new Error("corrupt session log")),
+      },
+    });
+
+    await session.initializeResumedSession();
+
+    expect(session.id).toBe("session-1");
+    const history: AgentStreamEvent[] = [];
+    for await (const event of session.streamHistory()) {
+      history.push(event);
+    }
+    expect(history).toEqual([]);
   });
 });

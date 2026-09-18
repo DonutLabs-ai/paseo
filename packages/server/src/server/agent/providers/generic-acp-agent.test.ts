@@ -82,4 +82,33 @@ describe("GenericACPAgentClient", () => {
       },
     });
   });
+
+  test("passes no local history source unless the provider opts in", () => {
+    const _client = new GenericACPAgentClient({
+      logger: createTestLogger(),
+      command: ["plain-acp", "serve"],
+    });
+    void _client;
+
+    expect(mockState.superConstructorOptions.at(-1)).toMatchObject({
+      localHistorySource: undefined,
+    });
+  });
+
+  test("builds the session-log history source for the dsh-session-log param", () => {
+    const _client = new GenericACPAgentClient({
+      logger: createTestLogger(),
+      command: ["dsh-paseo-acp"],
+      providerParams: {
+        historySource: "dsh-session-log",
+      },
+    });
+    void _client;
+
+    expect(mockState.superConstructorOptions.at(-1)).toMatchObject({
+      localHistorySource: {
+        collect: expect.any(Function),
+      },
+    });
+  });
 });
