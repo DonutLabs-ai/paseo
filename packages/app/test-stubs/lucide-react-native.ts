@@ -37,6 +37,7 @@ export const Copy = StubIcon;
 export const CornerDownLeft = StubIcon;
 export const Download = StubIcon;
 export const ExternalLink = StubIcon;
+export const FishSymbol = StubIcon;
 export const Eye = StubIcon;
 export const EyeOff = StubIcon;
 export const File = StubIcon;

@@ -20,7 +20,7 @@ function createTimelineBridge() {
     getAgentTimelineStatus: () => "ready",
     getAgentTimelineError: () => null,
     retryVisibleAgentTimeline: () => undefined,
-    replaceOpenAgentIds: () => undefined,
+    replaceOpenTabAgentIds: () => undefined,
     setActive: () => undefined,
     setConnected: () => undefined,
     recoverGap: () => undefined,

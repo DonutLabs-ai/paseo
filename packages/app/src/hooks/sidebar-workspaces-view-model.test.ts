@@ -494,8 +494,26 @@ describe("shared sidebar workspace model", () => {
       ],
     ]);
     const workspaceAgentActivity = new Map([
-      ["one", { agentId: "agent-one", status: "running" as const, enteredAt: null }],
-      ["two", { agentId: "agent-two", status: "running" as const, enteredAt: null }],
+      [
+        "one",
+        {
+          agentId: "agent-one",
+          provider: "codex",
+          model: "gpt-5.6",
+          status: "running" as const,
+          enteredAt: null,
+        },
+      ],
+      [
+        "two",
+        {
+          agentId: "agent-two",
+          provider: "grok",
+          model: "grok-code-fast-1",
+          status: "running" as const,
+          enteredAt: null,
+        },
+      ],
     ]);
     const initialTail = new Map<string, StreamItem[]>([
       ["agent-one", [assistantMessage("One is unchanged", "2026-06-10T00:00:00.000Z")]],
@@ -533,6 +551,14 @@ describe("shared sidebar workspace model", () => {
     expect(nextEntries.get("srv:one")).toBe(previousEntries.get("srv:one"));
     expect(nextEntries.get("srv:two")).not.toBe(previousEntries.get("srv:two"));
     expect(nextEntries.get("srv:two")?.activityPreview).toBe("Two after");
+    expect(nextEntries.get("srv:one")).toMatchObject({
+      agentProvider: "codex",
+      agentModel: "gpt-5.6",
+    });
+    expect(nextEntries.get("srv:two")).toMatchObject({
+      agentProvider: "grok",
+      agentModel: "grok-code-fast-1",
+    });
   });
 
   it("keeps a structurally disambiguated project key in status entries", () => {

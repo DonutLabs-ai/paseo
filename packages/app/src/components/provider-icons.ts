@@ -4,6 +4,7 @@ import { SvgXml } from "react-native-svg";
 import { ClaudeIcon } from "@/components/icons/claude-icon";
 import { CodexIcon } from "@/components/icons/codex-icon";
 import { CopilotIcon } from "@/components/icons/copilot-icon";
+import { DeepSeekIcon } from "@/components/icons/deepseek-icon";
 import { MiniMaxIcon } from "@/components/icons/minimax-icon";
 import { OpenCodeIcon } from "@/components/icons/opencode-icon";
 import { OmpIcon } from "@/components/icons/omp-icon";
@@ -70,6 +71,25 @@ function getSnapshotProviderIcon(provider: string, svg: string): ProviderIconCom
   return component;
 }
 
+function providerBelongsToFamily(provider: string, family: string): boolean {
+  const normalized = provider.trim().toLowerCase();
+  return (
+    normalized === family ||
+    normalized.startsWith(`${family}-`) ||
+    normalized.startsWith(`${family}_`) ||
+    normalized.startsWith(`${family}/`)
+  );
+}
+
+function getProviderFamilyFallbackIcon(provider: string): ProviderIconComponent | null {
+  if (providerBelongsToFamily(provider, "deepseek")) return DeepSeekIcon;
+  if (providerBelongsToFamily(provider, "openai") || providerBelongsToFamily(provider, "chatgpt")) {
+    return BUILTIN_PROVIDER_ICONS.codex;
+  }
+  if (providerBelongsToFamily(provider, "xai")) return getCatalogProviderIcon("grok");
+  return null;
+}
+
 export function getProviderIcon(provider: string, serverId?: string | null): ProviderIconComponent {
   const name = resolveProviderIconName(provider, serverId);
   if (name.kind === "builtin") {
@@ -81,5 +101,5 @@ export function getProviderIcon(provider: string, serverId?: string | null): Pro
   if (name.kind === "svg") {
     return getSnapshotProviderIcon(`${serverId}:${provider}`, name.svg);
   }
-  return Bot;
+  return getProviderFamilyFallbackIcon(provider) ?? Bot;
 }

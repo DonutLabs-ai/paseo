@@ -14,11 +14,14 @@ function agent(input: {
   pendingPermissionCount?: number;
   archivedAt?: string | null;
   parentAgentId?: string | null;
+  provider?: string;
+  model?: string | null;
+  runtimeInfo?: Agent["runtimeInfo"];
 }): Agent {
   return {
     serverId: "host-a",
     id: input.id,
-    provider: "codex",
+    provider: input.provider ?? "codex",
     status: input.status ?? "idle",
     turn:
       input.turn ??
@@ -55,7 +58,8 @@ function agent(input: {
     title: null,
     cwd: "/repo",
     workspaceId: input.workspaceId,
-    model: null,
+    model: input.model ?? null,
+    runtimeInfo: input.runtimeInfo,
     requiresAttention: input.requiresAttention,
     attentionReason: input.attentionReason,
     attentionTimestamp: input.attentionTimestamp ? new Date(input.attentionTimestamp) : null,
@@ -142,6 +146,8 @@ describe("workspace agent activity index", () => {
           "workspace-a",
           {
             agentId: "permission",
+            provider: "codex",
+            model: null,
             status: "needs_input",
             enteredAt: new Date("2026-06-01T10:01:00.000Z"),
           },
@@ -150,6 +156,8 @@ describe("workspace agent activity index", () => {
           "workspace-b",
           {
             agentId: "attention",
+            provider: "codex",
+            model: null,
             status: "attention",
             enteredAt: new Date("2026-06-01T10:02:00.000Z"),
           },
@@ -196,6 +204,8 @@ describe("workspace agent activity index", () => {
 
     expect(index.get("workspace-a")).toEqual({
       agentId: "root",
+      provider: "codex",
+      model: null,
       status: "running",
       enteredAt: new Date("2026-06-01T10:00:00.000Z"),
     });
@@ -231,6 +241,8 @@ describe("workspace agent activity index", () => {
           "workspace-a",
           {
             agentId: "parent",
+            provider: "codex",
+            model: null,
             status: "done",
             enteredAt: new Date("2026-06-01T10:00:00.000Z"),
           },
@@ -239,6 +251,8 @@ describe("workspace agent activity index", () => {
           "workspace-b",
           {
             agentId: "child",
+            provider: "codex",
+            model: null,
             status: "running",
             enteredAt: new Date("2026-06-01T10:03:00.000Z"),
           },
@@ -315,7 +329,58 @@ describe("workspace agent activity index", () => {
     expect(next).not.toBe(previous);
     expect(next.get("workspace-a")).toEqual({
       agentId: "root",
+      provider: "codex",
+      model: null,
       status: "needs_input",
+      enteredAt: new Date("2026-06-01T10:05:00.000Z"),
+    });
+  });
+
+  it("carries runtime provider and model changes into the workspace activity", () => {
+    const previous = buildWorkspaceAgentActivityIndex(
+      new Map([
+        [
+          "root",
+          agent({
+            id: "root",
+            workspaceId: "workspace-a",
+            status: "running",
+            provider: "deepseek-harness",
+            model: "deepseek/v4",
+            updatedAt: "2026-06-01T10:00:00.000Z",
+          }),
+        ],
+      ]),
+    );
+
+    const next = buildWorkspaceAgentActivityIndex(
+      new Map([
+        [
+          "root",
+          agent({
+            id: "root",
+            workspaceId: "workspace-a",
+            status: "running",
+            provider: "deepseek-harness",
+            model: "deepseek/v4",
+            runtimeInfo: {
+              provider: "deepseek-harness",
+              sessionId: "session-1",
+              model: "deepseek/v4.1-flash",
+            },
+            updatedAt: "2026-06-01T10:05:00.000Z",
+          }),
+        ],
+      ]),
+      previous,
+    );
+
+    expect(next).not.toBe(previous);
+    expect(next.get("workspace-a")).toEqual({
+      agentId: "root",
+      provider: "deepseek-harness",
+      model: "deepseek/v4.1-flash",
+      status: "running",
       enteredAt: new Date("2026-06-01T10:05:00.000Z"),
     });
   });

@@ -56,7 +56,7 @@ vi.mock("electron-log/main", () => ({
   },
 }));
 
-vi.mock("@getpaseo/server", () => {
+vi.mock("@getpaseo/server/daemon-control", () => {
   class DaemonInstanceError extends Error {
     constructor(
       public readonly code: string,

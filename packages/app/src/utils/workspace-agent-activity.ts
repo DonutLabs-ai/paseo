@@ -1,9 +1,12 @@
 import type { Agent, WorkspaceDescriptor } from "@/stores/session-store";
 import { isWorkspaceRootAgent } from "@/subagents/policies";
 import { deriveSidebarStateBucket } from "./sidebar-agent-state";
+import { extractAgentModel } from "./extract-agent-model";
 
 export interface WorkspaceAgentActivity {
   agentId: string;
+  provider: string;
+  model: string | null;
   status: WorkspaceDescriptor["status"];
   enteredAt: Date | null;
 }
@@ -11,6 +14,11 @@ export interface WorkspaceAgentActivity {
 function workspaceAgentStatus(agent: Agent): Agent["status"] {
   if (agent.turn.phase === "open") return "running";
   return agent.status === "running" ? "idle" : agent.status;
+}
+
+function workspaceAgentProvider(agent: Agent): string {
+  if (agent.runtimeInfo) return agent.runtimeInfo.provider;
+  return agent.provider;
 }
 
 export function buildWorkspaceAgentActivityIndex(
@@ -41,6 +49,8 @@ export function buildWorkspaceAgentActivityIndex(
     });
     activityByWorkspaceId.set(agent.workspaceId, {
       agentId: agent.id,
+      provider: workspaceAgentProvider(agent),
+      model: extractAgentModel(agent),
       status,
       enteredAt,
     });
@@ -50,6 +60,8 @@ export function buildWorkspaceAgentActivityIndex(
     const previousActivity = previous?.get(workspaceId);
     if (
       previousActivity?.agentId === activity.agentId &&
+      previousActivity.provider === activity.provider &&
+      previousActivity.model === activity.model &&
       previousActivity.status === activity.status
     ) {
       activityByWorkspaceId.set(workspaceId, previousActivity);

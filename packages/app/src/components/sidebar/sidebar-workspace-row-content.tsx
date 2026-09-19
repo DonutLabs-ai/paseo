@@ -28,6 +28,11 @@ import { shouldRenderSyncedStatusLoader } from "@/utils/status-loader";
 import { StatusRing } from "@/components/status-ring";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
+import {
+  getProviderIcon,
+  type ProviderIconComponent,
+  type ProviderIconProps,
+} from "@/components/provider-icons";
 import { useWorkspaceLabelDefinitions } from "@/workspace-labels";
 
 const foregroundMutedColorMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
@@ -41,6 +46,16 @@ const ThemedMonitor = withUnistyles(Monitor);
 const ThemedFolder = withUnistyles(Folder);
 const ThemedFolderGit2 = withUnistyles(FolderGit2);
 const ThemedMoon = withUnistyles(Moon, foregroundMutedColorMapping);
+
+function ProviderIconGlyph({
+  icon: Icon,
+  size,
+  color,
+}: ProviderIconProps & { icon: ProviderIconComponent }) {
+  return <Icon size={size} color={color} />;
+}
+
+const ThemedProviderIconGlyph = withUnistyles(ProviderIconGlyph, foregroundMutedColorMapping);
 
 export function SidebarWorkspaceRowFrame({
   workspace,
@@ -144,24 +159,32 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
       testID={`sidebar-workspace-content-${workspace.workspaceKey}`}
     >
       <View style={styles.workspaceRowMain}>
-        {leadingProjectName ? (
-          <ProjectStatusIndicator
-            iconDataUri={leadingProjectIconDataUri}
-            displayName={leadingProjectName}
-            projectViewKey={workspace.projectViewKey}
-            statusBucket={workspace.statusBucket}
-            backdrop={backdrop}
-            loading={isLoading}
-            testID={`sidebar-row-project-icon-${workspace.workspaceKey}`}
+        <View style={styles.workspaceLeadingColumn}>
+          {leadingProjectName ? (
+            <ProjectStatusIndicator
+              iconDataUri={leadingProjectIconDataUri}
+              displayName={leadingProjectName}
+              projectViewKey={workspace.projectViewKey}
+              statusBucket={workspace.statusBucket}
+              backdrop={backdrop}
+              loading={isLoading}
+              testID={`sidebar-row-project-icon-${workspace.workspaceKey}`}
+            />
+          ) : (
+            <WorkspaceStatusIndicator
+              bucket={workspace.statusBucket}
+              workspaceKind={workspace.workspaceKind}
+              loading={isLoading}
+              reserveIdleSpace={reserveIdleStatusIndicatorSpace}
+            />
+          )}
+          <WorkspaceProviderIndicator
+            provider={workspace.agentProvider}
+            model={workspace.agentModel}
+            serverId={workspace.serverId}
+            workspaceKey={workspace.workspaceKey}
           />
-        ) : (
-          <WorkspaceStatusIndicator
-            bucket={workspace.statusBucket}
-            workspaceKind={workspace.workspaceKind}
-            loading={isLoading}
-            reserveIdleSpace={reserveIdleStatusIndicatorSpace}
-          />
-        )}
+        </View>
         <View style={styles.workspaceContentColumn}>
           <View style={styles.workspaceTitleRow}>
             <View style={styles.workspaceTitleMain}>
@@ -205,6 +228,33 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
     </View>
   );
 });
+
+function WorkspaceProviderIndicator({
+  provider,
+  model,
+  serverId,
+  workspaceKey,
+}: {
+  provider: string | null;
+  model: string | null;
+  serverId: string;
+  workspaceKey: string;
+}) {
+  if (!provider) return null;
+
+  const ProviderIcon = getProviderIcon(provider, serverId);
+  const label = model ? `${provider} · ${model}` : provider;
+  return (
+    <View
+      accessibilityRole="image"
+      accessibilityLabel={label}
+      style={styles.workspaceProviderIcon}
+      testID={`sidebar-workspace-provider-${workspaceKey}`}
+    >
+      <ThemedProviderIconGlyph icon={ProviderIcon} size={12} />
+    </View>
+  );
+}
 
 function WorkspaceStatusIndicator({
   bucket,
@@ -491,6 +541,19 @@ const styles = StyleSheet.create((theme) => ({
     alignItems: "flex-start",
     gap: theme.spacing[2],
     width: "100%",
+  },
+  workspaceLeadingColumn: {
+    width: theme.iconSize.md,
+    flexShrink: 0,
+    alignItems: "center",
+    gap: theme.spacing[0.5],
+  },
+  workspaceProviderIcon: {
+    width: theme.iconSize.md,
+    height: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    opacity: 0.88,
   },
   workspaceContentColumn: {
     flex: 1,
