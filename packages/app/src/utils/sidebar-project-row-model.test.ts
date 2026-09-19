@@ -39,6 +39,8 @@ function workspace(overrides: Partial<SidebarWorkspaceEntry> = {}): SidebarWorks
     activityPreviewKind: null,
     statusEnteredAt: null,
     ...overrides,
+    agentProvider: overrides.agentProvider ?? null,
+    agentModel: overrides.agentModel ?? null,
     archivingAt: overrides.archivingAt ?? null,
   };
 }

@@ -29,6 +29,8 @@ function workspace(workspaceId: string, projectViewKey: string): SidebarWorkspac
     scripts: [],
     hasRunningScripts: false,
     agentId: null,
+    agentProvider: null,
+    agentModel: null,
     latestPrompt: null,
     latestReply: null,
     recentReplies: [],

@@ -1,6 +1,7 @@
 import { Bot } from "lucide-react-native";
 import { SvgXml } from "react-native-svg";
 import { describe, expect, it } from "vitest";
+import { DeepSeekIcon } from "./icons/deepseek-icon";
 import { replaceProviderSnapshotIcons } from "./provider-icon-name";
 import { getProviderIcon, type ProviderIconComponent } from "./provider-icons";
 
@@ -29,5 +30,22 @@ describe("getProviderIcon", () => {
     replaceProviderSnapshotIcons("server-1", [{ provider: "plain-provider" }]);
 
     expect(getProviderIcon("plain-provider", "server-1")).toBe(Bot);
+  });
+
+  it("recognizes custom DeepSeek harness provider ids", () => {
+    expect(getProviderIcon("deepseek-harness", "server-1")).toBe(DeepSeekIcon);
+    expect(getProviderIcon("deepseek_tui", "server-1")).toBe(DeepSeekIcon);
+  });
+
+  it("lets an explicit provider snapshot icon override a family fallback", () => {
+    const svg = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /></svg>';
+    replaceProviderSnapshotIcons("server-2", [{ provider: "deepseek-harness", iconSvg: svg }]);
+
+    const rendered = renderIcon(getProviderIcon("deepseek-harness", "server-2"));
+
+    expect(rendered).toMatchObject({
+      type: SvgXml,
+      props: { xml: svg, width: 18, height: 18, color: "#123456" },
+    });
   });
 });

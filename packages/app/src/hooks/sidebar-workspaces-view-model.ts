@@ -56,6 +56,8 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   scripts: WorkspaceDescriptor["scripts"];
   hasRunningScripts: boolean;
   agentId: string | null;
+  agentProvider: string | null;
+  agentModel: string | null;
   latestPrompt: string | null;
   latestReply: string | null;
   recentReplies: WorkspaceReplyPreview[];
@@ -144,6 +146,21 @@ interface EffectiveWorkspaceStatus {
   enteredAt: Date | null;
 }
 
+function workspaceAgentIdentity(activity: WorkspaceAgentActivity | null): {
+  agentId: string | null;
+  agentProvider: string | null;
+  agentModel: string | null;
+} {
+  if (!activity) {
+    return { agentId: null, agentProvider: null, agentModel: null };
+  }
+  return {
+    agentId: activity.agentId,
+    agentProvider: activity.provider,
+    agentModel: activity.model,
+  };
+}
+
 function projectNameForWorkspace(workspace: WorkspaceDescriptor): string {
   return (
     workspace.projectCustomName ??
@@ -172,6 +189,7 @@ export function createSidebarWorkspaceEntry(input: {
   const projectViewKey = input.projectViewKey ?? input.workspace.projectId;
   const effectiveStatus = deriveEffectiveWorkspaceStatus(input);
   const rootAgentActivity = input.workspaceAgentActivity?.get(input.workspace.id) ?? null;
+  const agentIdentity = workspaceAgentIdentity(rootAgentActivity);
   const activityPreview = rootAgentActivity
     ? selectWorkspaceActivityPreview({
         tail: input.agentStreamTail?.get(rootAgentActivity.agentId) ?? [],
@@ -214,7 +232,7 @@ export function createSidebarWorkspaceEntry(input: {
     archiveUnpushedCommitCount: input.workspace.gitRuntime?.aheadOfOrigin ?? null,
     scripts: input.workspace.scripts,
     hasRunningScripts: input.workspace.scripts.some((script) => script.lifecycle === "running"),
-    agentId: rootAgentActivity?.agentId ?? null,
+    ...agentIdentity,
     ...activityPreview,
   };
 }

@@ -38,6 +38,8 @@ function workspace(workspaceKey: string, projectViewKey: string): SidebarWorkspa
     scripts: [],
     hasRunningScripts: false,
     agentId: workspaceId,
+    agentProvider: null,
+    agentModel: null,
     latestPrompt: null,
     latestReply: null,
     recentReplies: [],

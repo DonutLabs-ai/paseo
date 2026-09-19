@@ -32,6 +32,8 @@ function workspace(
     scripts: [],
     hasRunningScripts: false,
     agentId: input.agentId ?? "agent-1",
+    agentProvider: null,
+    agentModel: null,
     latestPrompt: null,
     latestReply: null,
     recentReplies: [],
