@@ -187,6 +187,7 @@ describe("workspace agent visibility", () => {
 
     expect(result.activeAgentIds).toEqual(new Set(["visible-agent"]));
     expect(result.autoOpenAgentIds).toEqual(new Set(["visible-agent"]));
+    expect(result.directoryAgentIds).toEqual(new Set(["visible-agent", "other-workspace-agent"]));
   });
 
   it("does not make historical details active", () => {
@@ -312,6 +313,7 @@ describe("workspace agent visibility", () => {
     const agentVisibility = {
       activeAgentIds: new Set(["active-agent"]),
       autoOpenAgentIds: new Set(["root-agent"]),
+      directoryAgentIds: new Set(["active-agent", "other-workspace-agent"]),
     };
 
     expect(
@@ -329,6 +331,7 @@ describe("workspace agent visibility", () => {
       terminalsHydrated: true,
       activeAgentIds: agentVisibility.activeAgentIds,
       autoOpenAgentIds: agentVisibility.autoOpenAgentIds,
+      directoryAgentIds: agentVisibility.directoryAgentIds,
       knownTerminalIds: ["terminal-1", "script-terminal"],
       standaloneTerminalIds: ["terminal-1"],
       hasActivePendingTerminalCreate: false,
@@ -341,10 +344,12 @@ describe("workspace agent visibility", () => {
       const a = {
         activeAgentIds: new Set(["a", "b"]),
         autoOpenAgentIds: new Set(["a"]),
+        directoryAgentIds: new Set(["a", "b"]),
       };
       const b = {
         activeAgentIds: new Set(["a", "b"]),
         autoOpenAgentIds: new Set(["a"]),
+        directoryAgentIds: new Set(["a", "b"]),
       };
       expect(workspaceAgentVisibilityEqual(a, b)).toBe(true);
     });
@@ -353,10 +358,12 @@ describe("workspace agent visibility", () => {
       const a = {
         activeAgentIds: new Set(["a"]),
         autoOpenAgentIds: new Set(["a"]),
+        directoryAgentIds: new Set(["a"]),
       };
       const b = {
         activeAgentIds: new Set(["b"]),
         autoOpenAgentIds: new Set(["a"]),
+        directoryAgentIds: new Set(["b"]),
       };
       expect(workspaceAgentVisibilityEqual(a, b)).toBe(false);
     });
@@ -365,10 +372,12 @@ describe("workspace agent visibility", () => {
       const a = {
         activeAgentIds: new Set(["a", "b"]),
         autoOpenAgentIds: new Set(["a"]),
+        directoryAgentIds: new Set(["a", "b"]),
       };
       const b = {
         activeAgentIds: new Set(["a", "b"]),
         autoOpenAgentIds: new Set(["b"]),
+        directoryAgentIds: new Set(["a", "b"]),
       };
       expect(workspaceAgentVisibilityEqual(a, b)).toBe(false);
     });
@@ -377,10 +386,12 @@ describe("workspace agent visibility", () => {
       const a = {
         activeAgentIds: new Set<string>(),
         autoOpenAgentIds: new Set<string>(),
+        directoryAgentIds: new Set<string>(),
       };
       const b = {
         activeAgentIds: new Set<string>(),
         autoOpenAgentIds: new Set<string>(),
+        directoryAgentIds: new Set<string>(),
       };
       expect(workspaceAgentVisibilityEqual(a, b)).toBe(true);
     });

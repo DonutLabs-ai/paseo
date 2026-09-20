@@ -4012,6 +4012,32 @@ describe("workspace-layout-store actions", () => {
     );
   });
 
+  it("removes a pinned agent once the active directory places it in another workspace", () => {
+    const workspaceKey = createWorkspaceKey();
+    const store = workspaceLayoutStore.getState();
+    store.openTab({
+      workspaceKey,
+      target: { kind: "agent", agentId: "other-workspace-agent" },
+      intent: "reveal",
+      pin: true,
+    });
+
+    store.reconcileTabs(workspaceKey, {
+      agentsHydrated: true,
+      terminalsHydrated: true,
+      activeAgentIds: [],
+      autoOpenAgentIds: [],
+      directoryAgentIds: ["other-workspace-agent"],
+      standaloneTerminalIds: [],
+    });
+
+    const state = workspaceLayoutStore.getState();
+    expect(state.pinnedAgentIdsByWorkspace[workspaceKey]).toBeUndefined();
+    expect(state.getWorkspaceTabs(workspaceKey).some((tab) => tab.target.kind === "agent")).toBe(
+      false,
+    );
+  });
+
   it("atomically reveals, focuses, and pins an archived agent against reconciliation", () => {
     const workspaceKey = createWorkspaceKey();
     const store = workspaceLayoutStore.getState();

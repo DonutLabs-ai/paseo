@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { StyleSheet, View } from "react-native";
-import { useGlobalSearchParams, useLocalSearchParams, useRootNavigationState } from "expo-router";
+import { useLocalSearchParams, useRootNavigationState } from "expo-router";
 import { HostRouteBootstrapBoundary } from "@/components/host-route-bootstrap-boundary";
 import { RetainedPanel } from "@/components/retained-panel";
 import {
@@ -36,6 +36,7 @@ import {
 import { prepareWorkspaceTab } from "@/utils/workspace-navigation";
 import { isNative, isWeb } from "@/constants/platform";
 import { RenderProfile } from "@/utils/render-profiler";
+import { resolveWorkspaceOpenIntentConsumption } from "@/navigation/workspace-open-intent-consumption";
 
 function getParamValue(value: string | string[] | undefined): string {
   if (typeof value === "string") {
@@ -98,12 +99,10 @@ function HostWorkspaceRouteContent() {
   const rootNavigationState = useRootNavigationState();
   const hasHydratedWorkspaceLayoutStore = useWorkspaceLayoutStoreHydrated();
   const consumedIntentRef = useRef<string | null>(null);
-  const [intentConsumed, setIntentConsumed] = useState(false);
+  const [consumedOpenValue, setConsumedOpenValue] = useState<string | null>(null);
   const params = useLocalSearchParams<{
     serverId?: string | string[];
     workspaceId?: string | string[];
-  }>();
-  const globalParams = useGlobalSearchParams<{
     open?: string | string[];
   }>();
   const serverId = getParamValue(params.serverId);
@@ -111,7 +110,7 @@ function HostWorkspaceRouteContent() {
   const workspaceId = workspaceValue
     ? (decodeWorkspaceIdFromPathSegment(workspaceValue) ?? "")
     : "";
-  const openValue = getParamValue(globalParams.open);
+  const openValue = getParamValue(params.open);
   const hasHydratedWorkspaces = useHasHydratedWorkspaces(serverId);
   const workspaceExists = useWorkspaceExists(serverId, workspaceId);
   const openIntent = useMemo(() => parseWorkspaceOpenIntent(openValue), [openValue]);
@@ -128,6 +127,8 @@ function HostWorkspaceRouteContent() {
 
   useEffect(() => {
     if (!openValue) {
+      consumedIntentRef.current = null;
+      setConsumedOpenValue(null);
       return;
     }
     if (!rootNavigationState?.key) {
@@ -140,17 +141,20 @@ function HostWorkspaceRouteContent() {
       return;
     }
 
-    const consumptionKey = `${serverId}:${workspaceId}:${openValue}`;
-    if (consumedIntentRef.current === consumptionKey) {
+    const consumption = resolveWorkspaceOpenIntentConsumption({
+      openValue,
+      consumedOpenValue: consumedIntentRef.current,
+    });
+    consumedIntentRef.current = consumption.nextConsumedOpenValue;
+    if (!consumption.shouldConsume) {
       clearConsumedOpenIntent({
         navigation: navigation as unknown as {
           setParams: (params: { open?: string | undefined }) => void;
         },
       });
-      setIntentConsumed(true);
+      setConsumedOpenValue(openValue);
       return;
     }
-    consumedIntentRef.current = consumptionKey;
 
     if (openIntent) {
       prepareWorkspaceTab({
@@ -170,7 +174,7 @@ function HostWorkspaceRouteContent() {
       },
     });
 
-    setIntentConsumed(true);
+    setConsumedOpenValue(openValue);
   }, [
     hasHydratedWorkspaceLayoutStore,
     isOpenIntentWaitingForWorkspace,
@@ -185,7 +189,7 @@ function HostWorkspaceRouteContent() {
   if (
     openValue &&
     !isOpenIntentWaitingForWorkspace &&
-    (!intentConsumed || !hasHydratedWorkspaceLayoutStore)
+    (consumedOpenValue !== openValue || !hasHydratedWorkspaceLayoutStore)
   ) {
     return null;
   }
