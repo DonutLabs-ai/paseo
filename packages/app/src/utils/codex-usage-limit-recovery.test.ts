@@ -9,6 +9,8 @@ const usageLimitError =
   "[System Error] You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 16th, 2026 3:58 PM.";
 const usageLimitUpgradeError =
   "[System Error] You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 9:13 PM.";
+const usageLimitCurlyApostropheError =
+  "[System Error] You’ve hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 26th, 2026 11:55 PM.";
 const partialReplyBeforeUsageLimit =
   "18 分钟，仍无错误。当前最重要的是不把长构建误判成失败或重复发起；我继续守这条 runo. " +
   "[System Error] You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 22nd, 2026 11:29 AM.";
@@ -30,6 +32,7 @@ describe("Codex usage-limit recovery", () => {
   it("matches the Codex usage-limit system error family", () => {
     expect(isCodexUsageLimitError(usageLimitError)).toBe(true);
     expect(isCodexUsageLimitError(usageLimitUpgradeError)).toBe(true);
+    expect(isCodexUsageLimitError(usageLimitCurlyApostropheError)).toBe(true);
     expect(isCodexUsageLimitError(partialReplyBeforeUsageLimit)).toBe(true);
     expect(
       isCodexUsageLimitError(

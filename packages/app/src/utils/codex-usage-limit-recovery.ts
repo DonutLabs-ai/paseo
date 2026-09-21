@@ -12,7 +12,7 @@ const CODEX_USAGE_LIMIT_ACTIONS = [
 ] as const;
 
 export function isCodexUsageLimitError(message: string): boolean {
-  const normalizedMessage = message.trimEnd();
+  const normalizedMessage = message.trimEnd().replaceAll("’", "'");
   const errorStart = normalizedMessage.lastIndexOf(CODEX_USAGE_LIMIT_PREFIX);
   if (errorStart === -1 || !normalizedMessage.endsWith(".")) return false;
   const errorMessage = normalizedMessage.slice(errorStart);
