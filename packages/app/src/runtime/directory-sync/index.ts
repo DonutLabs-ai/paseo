@@ -15,7 +15,7 @@ import {
   type WorkspaceDescriptor,
 } from "@/stores/session-store";
 import type { AgentDirectoryDelta } from "@/utils/agent-directory-sync";
-import { AgentDirectoryReplica } from "./agent-replica";
+import { AgentDirectoryReplica, type AgentTurnPhaseTransition } from "./agent-replica";
 import {
   WorkspaceDirectoryReplica,
   type WorkspaceDirectoryDelta,
@@ -269,7 +269,9 @@ export class DirectorySync {
   private receiveAgentDelta(source: DirectorySourceToken, delta: AgentDirectoryDelta): void {
     this.revision += 1;
     if (this.agentTransactions.record(source, delta)) return;
-    this.agents.applyDelta(delta);
+    const phaseTransition = this.agents.applyDelta(delta);
+    const agentId = delta.kind === "remove" ? delta.agentId : delta.agent.id;
+    this.reconcileWorkspaceAfterAgentTurnTransition(agentId, phaseTransition);
     this.noteLiveCursor("agents", delta);
     this.persistCheckpoint();
   }
@@ -412,6 +414,13 @@ export class DirectorySync {
     transition: TurnLivenessTransition | readonly TurnLivenessTransition[],
   ): void {
     const phaseTransition = this.agents.applyTurnLiveness(agentId, transition);
+    this.reconcileWorkspaceAfterAgentTurnTransition(agentId, phaseTransition);
+  }
+
+  private reconcileWorkspaceAfterAgentTurnTransition(
+    agentId: string,
+    phaseTransition: AgentTurnPhaseTransition,
+  ): void {
     if (!phaseTransition) return;
     if (phaseTransition === "started" && !this.startedAgentNeedsWorkspaceReconciliation(agentId)) {
       return;

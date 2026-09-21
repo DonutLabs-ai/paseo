@@ -13,7 +13,7 @@ import {
   normalizeWorkspaceDescriptor,
   useSessionStore,
 } from "@/stores/session-store";
-import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
+import { normalizeAgentSnapshot, projectAgentSnapshot } from "@/utils/agent-snapshots";
 import { selectWorkspaceDirectoryServerIds } from "@/stores/session-store-hooks/selectors";
 import type { DirectoryReplicaMutation } from "@/runtime/replica-cache";
 import {
@@ -312,6 +312,90 @@ describe("DirectorySync session readiness", () => {
     };
 
     directory.applyAgentTurnLiveness(agent.id, { type: "stream_close", turnId: "turn-1" });
+
+    await expect
+      .poll(
+        () => useSessionStore.getState().sessions[serverId]?.workspaces.get(workspace.id)?.status,
+      )
+      .toBe("done");
+    expect(client.lastWorkspaceOptions).toEqual({
+      filter: { query: workspace.id },
+      page: { limit: 200 },
+    });
+    directory.dispose();
+  });
+
+  it("reconciles the owning workspace when an unviewed agent update completes", async () => {
+    const serverId = "directory-agent-workspace-reconciliation";
+    const { client, directory } = createDirectory(serverId);
+    const workspacePayload = {
+      id: "workspace-directory-completed-turn",
+      projectId: "project-1",
+      projectDisplayName: "Paseo",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo",
+      projectKind: "git",
+      workspaceKind: "local_checkout",
+      name: "directory completed turn",
+      status: "running",
+      statusEnteredAt: "2026-09-11T04:30:00.000Z",
+      activityAt: "2026-09-11T04:30:00.000Z",
+      archivingAt: null,
+      diffStat: null,
+      scripts: [],
+    } satisfies WorkspaceFetchResult["entries"][number];
+    const workspace = normalizeWorkspaceDescriptor(workspacePayload);
+    const agent = {
+      ...createAgent(serverId, "agent-directory-completed-turn"),
+      workspaceId: workspace.id,
+      status: "running" as const,
+      turn: {
+        phase: "open" as const,
+        turnId: "turn-1",
+        startedAt: new Date("2026-09-11T04:30:00.000Z"),
+        cancellationRequestId: null,
+      },
+    };
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, client as unknown as DaemonClient, 1);
+    await directory.refreshAgents({ subscribe: {} });
+    directory.acceptWorkspaces([workspace]);
+    directory.acceptAgent(agent);
+    client.workspaceResult = {
+      requestId: "workspace-status-after-directory-turn",
+      entries: [
+        { ...workspacePayload, status: "done", statusEnteredAt: "2026-09-11T04:31:00.000Z" },
+      ],
+      emptyProjects: [],
+      pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+    };
+
+    client.emit({
+      type: "agent_update",
+      payload: {
+        kind: "upsert",
+        agent: projectAgentSnapshot({
+          ...agent,
+          status: "idle",
+          turn: { phase: "idle", cancellationRequestId: null },
+          updatedAt: new Date("2026-09-11T04:31:00.000Z"),
+        }),
+        project: {
+          projectKey: "/repo",
+          projectName: "Paseo",
+          workspaceName: workspace.name,
+          checkout: {
+            cwd: "/repo",
+            isGit: false,
+            currentBranch: null,
+            remoteUrl: null,
+            worktreeRoot: null,
+            isPaseoOwnedWorktree: false,
+            mainRepoRoot: null,
+          },
+        },
+      },
+    });
 
     await expect
       .poll(

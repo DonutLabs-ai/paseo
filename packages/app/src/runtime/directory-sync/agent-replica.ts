@@ -93,7 +93,10 @@ export class AgentDirectoryReplica {
     return true;
   }
 
-  applyDelta(delta: AgentDirectoryDelta): void {
+  applyDelta(delta: AgentDirectoryDelta): AgentTurnPhaseTransition {
+    const previousTurnPhase = this.storeProjection.get(
+      delta.kind === "remove" ? delta.agentId : delta.agent.id,
+    )?.turn.phase;
     const before = this.members.has(delta.kind === "remove" ? delta.agentId : delta.agent.id);
     const result = this.storeProjection.applyDelta(delta);
     if (delta.kind === "remove") {
@@ -109,6 +112,8 @@ export class AgentDirectoryReplica {
         ? [this.agentUpsert(result.agent)]
         : [{ kind: "agent", type: "delete", id: result.agentId }],
     );
+    if (result.stoppedRunning) return "stopped";
+    return previousTurnPhase !== "open" && result.agent?.turn.phase === "open" ? "started" : null;
   }
 
   accept(agent: Agent): Agent {
