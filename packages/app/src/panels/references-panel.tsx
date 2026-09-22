@@ -29,6 +29,16 @@ function providerLabel(reference: WorkspaceReference): string {
   return reference.provider === "linear" ? "Linear" : "Slack";
 }
 
+function uniqueReferences(references: readonly WorkspaceReference[]): WorkspaceReference[] {
+  const byKey = new Map<string, WorkspaceReference>();
+  for (const reference of references) byKey.set(reference.key, reference);
+  return [...byKey.values()].sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function normalizeSnapshot(snapshot: WorkspaceReferencesSnapshot): WorkspaceReferencesSnapshot {
+  return { ...snapshot, references: uniqueReferences(snapshot.references) };
+}
+
 function ReferenceCard({ reference }: { reference: WorkspaceReference }) {
   const open = useCallback(() => {
     void openExternalUrl(reference.url);
@@ -68,16 +78,21 @@ function ReferencesPanel() {
       loadingRef.current = true;
       setLoading(true);
       setError(null);
+      const onProgress = (progress: WorkspaceReferencesSnapshot) => {
+        setSnapshot(normalizeSnapshot(progress));
+      };
       const request = force
-        ? client.refreshWorkspaceReferences(workspaceId)
-        : client.getWorkspaceReferences(workspaceId);
+        ? client.refreshWorkspaceReferences(workspaceId, { onProgress })
+        : client.getWorkspaceReferences(workspaceId, { onProgress });
       void request
         .then((result) => {
-          setSnapshot({
-            workspaceId: result.workspaceId,
-            references: result.references,
-            scannedAt: result.scannedAt,
-          });
+          setSnapshot(
+            normalizeSnapshot({
+              workspaceId: result.workspaceId,
+              references: result.references,
+              scannedAt: result.scannedAt,
+            }),
+          );
           return undefined;
         })
         .catch((nextError) => {
@@ -96,6 +111,14 @@ function ReferencesPanel() {
   }, [load]);
 
   const refresh = useCallback(() => load(true), [load]);
+  let statusText = t("panels.references.notScanned");
+  if (loading) {
+    statusText = t("panels.references.scanning");
+  } else if (snapshot?.scannedAt) {
+    statusText = t("panels.references.updated", {
+      timestamp: new Date(snapshot.scannedAt).toLocaleString(),
+    });
+  }
 
   if (!connected || !client) {
     return (
@@ -105,7 +128,7 @@ function ReferencesPanel() {
     );
   }
 
-  if (loading && !snapshot) {
+  if (loading && !snapshot?.references.length) {
     return (
       <View style={styles.centerState}>
         <ThemedLoadingSpinner size="large" />
@@ -119,13 +142,7 @@ function ReferencesPanel() {
       <View style={styles.toolbar}>
         <View style={styles.toolbarText}>
           <Text style={styles.heading}>{t("panels.references.label")}</Text>
-          <Text style={styles.muted}>
-            {snapshot?.scannedAt
-              ? t("panels.references.updated", {
-                  timestamp: new Date(snapshot.scannedAt).toLocaleString(),
-                })
-              : t("panels.references.notScanned")}
-          </Text>
+          <Text style={styles.muted}>{statusText}</Text>
         </View>
         <Button variant="ghost" size="sm" disabled={loading} onPress={refresh} leftIcon={RefreshCw}>
           {t("panels.references.refresh")}

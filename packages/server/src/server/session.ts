@@ -2354,21 +2354,35 @@ export class Session {
         return Promise.resolve();
       }
       case "workspace.references.get.request":
-        return service.get(msg.workspaceId).then((result) => {
-          this.emit({
-            type: "workspace.references.get.response",
-            payload: { requestId: msg.requestId, ...result },
+        return service
+          .get(msg.workspaceId, (progress) => {
+            this.emit({
+              type: "workspace.references.progress",
+              payload: { requestId: msg.requestId, ...progress },
+            });
+          })
+          .then((result) => {
+            this.emit({
+              type: "workspace.references.get.response",
+              payload: { requestId: msg.requestId, ...result },
+            });
+            return undefined;
           });
-          return undefined;
-        });
       case "workspace.references.refresh.request":
-        return service.refresh(msg.workspaceId).then((result) => {
-          this.emit({
-            type: "workspace.references.refresh.response",
-            payload: { requestId: msg.requestId, ...result },
+        return service
+          .refresh(msg.workspaceId, (progress) => {
+            this.emit({
+              type: "workspace.references.progress",
+              payload: { requestId: msg.requestId, ...progress },
+            });
+          })
+          .then((result) => {
+            this.emit({
+              type: "workspace.references.refresh.response",
+              payload: { requestId: msg.requestId, ...result },
+            });
+            return undefined;
           });
-          return undefined;
-        });
       default:
         return undefined;
     }

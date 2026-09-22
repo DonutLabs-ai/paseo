@@ -26,6 +26,7 @@ import {
   WorkspaceIntegrationStatusResponseSchema,
   WorkspaceReferencesGetRequestSchema,
   WorkspaceReferencesGetResponseSchema,
+  WorkspaceReferencesProgressSchema,
   WorkspaceReferencesRefreshRequestSchema,
   WorkspaceReferencesRefreshResponseSchema,
 } from "./workspace-references.js";
@@ -6889,6 +6890,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceIntegrationSetCredentialResponseSchema,
   WorkspaceIntegrationRemoveCredentialResponseSchema,
   WorkspaceReferencesGetResponseSchema,
+  WorkspaceReferencesProgressSchema,
   WorkspaceReferencesRefreshResponseSchema,
   BrowserHostRegisterResponseSchema,
   SubscriptionReleaseResponseSchema,

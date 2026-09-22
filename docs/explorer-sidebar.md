@@ -55,8 +55,11 @@ The first References open for an existing workspace scans every current agent ti
 compare each agent's persisted timeline epoch and sequence, scanning only appended rows; **Refresh**
 forces a full rescan and source refresh. This keeps existing workspaces usable without a one-time
 global migration and avoids rescanning complete histories on every load. Reference refreshes use
-bounded concurrency and checkpoint each completed result. Failed fetches remain visible until an
-explicit refresh or credential change instead of automatically retrying whenever the panel opens.
+bounded concurrency, checkpoint each completed result, and stream the deduplicated snapshot to the
+requesting panel so each card appears as soon as its source fetch completes. Canonical Linear issue
+and Slack thread keys prevent repeated links from producing duplicate cards. Failed fetches remain
+visible until an explicit refresh or credential change instead of automatically retrying whenever
+the panel opens.
 
 Individual tab menus close instances or move compatible tabs to main. Explorer tabs
 can be reordered, but the dock cannot be split. Selecting an Explorer tab does not change workspace
