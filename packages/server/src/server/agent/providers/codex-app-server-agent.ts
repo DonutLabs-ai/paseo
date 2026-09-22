@@ -146,11 +146,20 @@ const CODEX_MODEL_AT_CAPACITY_MESSAGE =
 const CODEX_RESPONSE_STREAM_DISCONNECTED_MESSAGE =
   "stream disconnected before completion: error sending request for url " +
   "(https://chatgpt.com/backend-api/codex/responses)";
+const CODEX_RATE_LIMIT_ERROR_PATTERN =
+  /\b429\s+Too Many Requests\b|\b(?:last\s+)?status(?:\s+code)?\s*[:=]\s*429\b/i;
 
 function classifyCodexTurnFailure(message: string | null): AgentTurnFailureReason | undefined {
   const normalized = message?.trim();
   if (normalized === CODEX_MODEL_AT_CAPACITY_MESSAGE) return "model_at_capacity";
   if (normalized === CODEX_RESPONSE_STREAM_DISCONNECTED_MESSAGE) return "transient_transport";
+  // Codex app-server exhausts its own request retries before reporting a 429
+  // as a failed turn. It is still a transient upstream transport failure, so
+  // let AgentManager's automatic continuation path handle it instead of
+  // surfacing a permanent workspace error.
+  if (normalized && CODEX_RATE_LIMIT_ERROR_PATTERN.test(normalized)) {
+    return "transient_transport";
+  }
   return undefined;
 }
 // Codex treats most app-server client names as the model-request originator.
