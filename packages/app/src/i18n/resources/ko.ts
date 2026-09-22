@@ -1883,7 +1883,8 @@ export const ko: TranslationResources = {
       notScanned: "스캔하지 않음",
       refresh: "새로 고침",
       emptyTitle: "Slack 또는 Linear 참조를 찾지 못했습니다",
-      emptyDescription: "Paseo는 이 워크스페이스의 모든 Agent를 스캔하고 생성된 요약만 저장합니다.",
+      emptyDescription:
+        "Paseo는 워크스페이스의 표시된 메시지를 스캔하고 짧은 원문 발췌만 저장합니다.",
     },
     draft: {
       newAgent: "새 에이전트",
@@ -2426,10 +2427,17 @@ export const ko: TranslationResources = {
       },
       workspaceReferences: {
         title: "워크스페이스 참조",
-        info: "세션에 언급된 링크를 요약하는 서비스를 연결합니다. 자격 증명은 이 호스트에만 저장되며 App으로 반환되지 않습니다.",
+        info: "세션에 언급된 링크의 발췌를 가져오는 서비스를 연결합니다. 자격 증명은 이 호스트에만 저장되며 App으로 반환되지 않습니다.",
         linearHint: "Personal API key. Paseo는 이슈 description만 읽습니다.",
         slackHint:
           "OAuth user 또는 bot token. Paseo는 스레드 OP와 마지막 답글 5개를 읽으며 bot token에는 채널 접근 권한이 필요합니다.",
+        setupGuide: "설정 가이드",
+        linearGuide:
+          "Linear에서 Settings → Account → Security & Access → Personal API keys를 엽니다. Read 권한의 key를 만들고 필요하면 대상 team으로 제한한 다음 여기에 붙여 넣으세요.",
+        linearGuideLink: "Linear API key 가이드",
+        slackGuide:
+          "Slack app을 만들고 OAuth & Permissions의 Bot Token Scopes에 channels:history, groups:history, im:history, mpim:history를 추가합니다. App을 설치하거나 다시 설치한 뒤 xoxb- token을 여기에 붙여 넣고 읽어야 할 각 채널에 bot을 초대하세요. 동일한 User Token Scopes를 가진 xoxp- user token도 사용할 수 있습니다.",
+        slackGuideLink: "Slack app 만들기 또는 설정",
         connectedAs: "{{account}} 계정으로 연결됨",
         notConnected: "연결되지 않음",
         replaceCredential: "자격 증명 교체",

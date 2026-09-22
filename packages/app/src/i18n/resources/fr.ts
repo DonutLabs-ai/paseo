@@ -1929,7 +1929,7 @@ export const fr: TranslationResources = {
       refresh: "Actualiser",
       emptyTitle: "Aucune référence Slack ou Linear trouvée",
       emptyDescription:
-        "Paseo analyse tous les agents de cet espace de travail et ne conserve que les résumés générés.",
+        "Paseo analyse les messages visibles de cet espace de travail et ne conserve que de courts extraits des sources.",
     },
     draft: {
       newAgent: "Nouvel agent",
@@ -2478,10 +2478,17 @@ export const fr: TranslationResources = {
       },
       workspaceReferences: {
         title: "Références de l’espace de travail",
-        info: "Connectez les services utilisés pour résumer les liens mentionnés dans les sessions. Les identifiants restent sur cet hôte et ne sont jamais renvoyés à l’application.",
+        info: "Connectez les services utilisés pour récupérer des extraits des liens mentionnés dans les sessions. Les identifiants restent sur cet hôte et ne sont jamais renvoyés à l’application.",
         linearHint: "Clé API personnelle. Paseo lit uniquement la description des tickets.",
         slackHint:
           "Jeton OAuth utilisateur ou bot. Paseo lit le message initial et les 5 dernières réponses ; les bots doivent avoir accès au canal.",
+        setupGuide: "Guide de configuration",
+        linearGuide:
+          "Dans Linear, ouvrez Settings → Account → Security & Access → Personal API keys. Créez une clé avec l’accès Read, limitez-la si besoin aux équipes requises, puis collez-la ici.",
+        linearGuideLink: "Guide des clés API Linear",
+        slackGuide:
+          "Créez une app Slack, puis ajoutez channels:history, groups:history, im:history et mpim:history aux Bot Token Scopes dans OAuth & Permissions. Installez ou réinstallez l’app, collez ici son jeton xoxb-, puis invitez le bot dans chaque canal à lire. Un jeton utilisateur xoxp- avec les User Token Scopes équivalents fonctionne aussi.",
+        slackGuideLink: "Créer ou configurer une app Slack",
         connectedAs: "Connecté en tant que {{account}}",
         notConnected: "Non connecté",
         replaceCredential: "Remplacer l’identifiant",

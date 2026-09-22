@@ -1894,7 +1894,7 @@ export const ja: TranslationResources = {
       refresh: "更新",
       emptyTitle: "Slack または Linear の参照情報が見つかりません",
       emptyDescription:
-        "Paseo はこのワークスペース内のすべての Agent をスキャンし、生成した要約のみを保存します。",
+        "Paseo はワークスペース内の表示メッセージをスキャンし、短い原文の抜粋のみを保存します。",
     },
     draft: {
       newAgent: "新しいエージェント",
@@ -2439,10 +2439,17 @@ export const ja: TranslationResources = {
       },
       workspaceReferences: {
         title: "ワークスペースの参照情報",
-        info: "セッション内で言及されたリンクを要約するサービスに接続します。認証情報はこのホストにのみ保存され、App には返されません。",
+        info: "セッション内で言及されたリンクの抜粋を取得するサービスに接続します。認証情報はこのホストにのみ保存され、App には返されません。",
         linearHint: "Personal API key。Paseo は issue の description のみを読み取ります。",
         slackHint:
           "OAuth user または bot token。Paseo はスレッドの OP と最後の 5 件の返信を読み取ります。bot token にはチャンネルへのアクセス権が必要です。",
+        setupGuide: "設定ガイド",
+        linearGuide:
+          "Linear で Settings → Account → Security & Access → Personal API keys を開きます。Read 権限の key を作成し、必要に応じて対象 team に限定して、ここに貼り付けます。",
+        linearGuideLink: "Linear API key ガイド",
+        slackGuide:
+          "Slack app を作成し、OAuth & Permissions の Bot Token Scopes に channels:history、groups:history、im:history、mpim:history を追加します。App をインストールまたは再インストールし、xoxb- token をここに貼り付け、読み取る各チャンネルに bot を招待します。同等の User Token Scopes を持つ xoxp- user token も利用できます。",
+        slackGuideLink: "Slack app を作成または設定",
         connectedAs: "{{account}} として接続済み",
         notConnected: "未接続",
         replaceCredential: "認証情報を置き換え",

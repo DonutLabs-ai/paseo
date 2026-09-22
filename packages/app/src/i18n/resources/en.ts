@@ -1899,7 +1899,7 @@ export const en = {
       refresh: "Refresh",
       emptyTitle: "No Slack or Linear references found",
       emptyDescription:
-        "Paseo scans every agent in this workspace and stores only generated summaries.",
+        "Paseo scans visible workspace messages and stores only short source excerpts.",
     },
     draft: {
       newAgent: "New Agent",
@@ -2536,10 +2536,17 @@ export const en = {
       },
       workspaceReferences: {
         title: "Workspace references",
-        info: "Connect services used to summarize links mentioned in workspace sessions. Credentials stay on this host and are never returned to the app.",
+        info: "Connect services used to fetch excerpts for links mentioned in workspace sessions. Credentials stay on this host and are never returned to the app.",
         linearHint: "Personal API key. Paseo reads issue descriptions only.",
         slackHint:
           "OAuth user or bot token. Paseo reads the thread OP and last 5 replies; bot tokens need channel access.",
+        setupGuide: "How to configure",
+        linearGuide:
+          "In Linear, open Settings → Account → Security & Access → Personal API keys. Create a key with Read access, optionally limit it to the required teams, then paste it here.",
+        linearGuideLink: "Linear API key guide",
+        slackGuide:
+          "Create a Slack app, then under OAuth & Permissions add channels:history, groups:history, im:history, and mpim:history as Bot Token Scopes. Install or reinstall the app, paste its xoxb- token here, and invite the bot to every channel it should read. An xoxp- user token with the equivalent User Token Scopes also works.",
+        slackGuideLink: "Create or configure a Slack app",
         connectedAs: "Connected as {{account}}",
         notConnected: "Not connected",
         replaceCredential: "Replace credential",

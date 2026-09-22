@@ -1907,7 +1907,7 @@ export const ptBR: TranslationResources = {
       refresh: "Atualizar",
       emptyTitle: "Nenhuma referência do Slack ou Linear encontrada",
       emptyDescription:
-        "O Paseo verifica todos os agentes deste workspace e armazena apenas os resumos gerados.",
+        "O Paseo verifica as mensagens visíveis deste workspace e armazena apenas trechos curtos das fontes.",
     },
     draft: {
       newAgent: "Novo Agente",
@@ -2453,10 +2453,17 @@ export const ptBR: TranslationResources = {
       },
       workspaceReferences: {
         title: "Referências do workspace",
-        info: "Conecte os serviços usados para resumir links mencionados nas sessões. As credenciais permanecem neste host e nunca são retornadas ao app.",
+        info: "Conecte os serviços usados para buscar trechos dos links mencionados nas sessões. As credenciais permanecem neste host e nunca são retornadas ao app.",
         linearHint: "Chave de API pessoal. O Paseo lê apenas as descrições das issues.",
         slackHint:
           "Token OAuth de usuário ou bot. O Paseo lê a mensagem original e as últimas 5 respostas; bots precisam de acesso ao canal.",
+        setupGuide: "Guia de configuração",
+        linearGuide:
+          "No Linear, abra Settings → Account → Security & Access → Personal API keys. Crie uma chave com acesso Read, limite-a às equipes necessárias se quiser e cole-a aqui.",
+        linearGuideLink: "Guia de chaves da API do Linear",
+        slackGuide:
+          "Crie um app do Slack e, em OAuth & Permissions, adicione channels:history, groups:history, im:history e mpim:history aos Bot Token Scopes. Instale ou reinstale o app, cole o token xoxb- aqui e convide o bot para cada canal que ele deve ler. Um token de usuário xoxp- com User Token Scopes equivalentes também funciona.",
+        slackGuideLink: "Criar ou configurar um app do Slack",
         connectedAs: "Conectado como {{account}}",
         notConnected: "Não conectado",
         replaceCredential: "Substituir credencial",

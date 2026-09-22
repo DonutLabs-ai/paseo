@@ -1852,7 +1852,7 @@ export const zhCN: TranslationResources = {
       notScanned: "尚未扫描",
       refresh: "刷新",
       emptyTitle: "未找到 Slack 或 Linear 引用",
-      emptyDescription: "Paseo 会扫描此 Workspace 中的所有 Agent，并且只保存生成的摘要。",
+      emptyDescription: "Paseo 会扫描 Workspace 中的可见消息，并且只保存简短的来源摘录。",
     },
     draft: {
       newAgent: "新建 Agent",
@@ -2390,10 +2390,17 @@ export const zhCN: TranslationResources = {
       },
       workspaceReferences: {
         title: "Workspace 引用",
-        info: "连接相关服务，为 Workspace session 中提及的链接生成摘要。凭证只保存在此主机上，绝不会返回到 App。",
+        info: "连接相关服务，读取 Workspace session 中提及链接的内容摘录。凭证只保存在此主机上，绝不会返回到 App。",
         linearHint: "Personal API key。Paseo 只读取 issue description。",
         slackHint:
           "OAuth user 或 bot token。Paseo 读取线程 OP 和最后 5 条回复；bot token 需要有频道访问权限。",
+        setupGuide: "配置指南",
+        linearGuide:
+          "在 Linear 打开 Settings → Account → Security & Access → Personal API keys。创建具有 Read 权限的 key，可按需限制到指定 team，然后粘贴到这里。",
+        linearGuideLink: "Linear API key 指南",
+        slackGuide:
+          "创建 Slack app，在 OAuth & Permissions 的 Bot Token Scopes 中添加 channels:history、groups:history、im:history 和 mpim:history。安装或重新安装 app，将 xoxb- token 粘贴到这里，并邀请 bot 加入需要读取的每个频道。也支持具有对应 User Token Scopes 的 xoxp- user token。",
+        slackGuideLink: "创建或配置 Slack app",
         connectedAs: "已连接为 {{account}}",
         notConnected: "未连接",
         replaceCredential: "替换凭证",
