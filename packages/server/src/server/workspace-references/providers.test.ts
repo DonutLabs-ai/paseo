@@ -169,4 +169,61 @@ describe("workspace reference source boundaries", () => {
     }
     expect(source.excerpt.length).toBeLessThanOrEqual(800);
   });
+
+  it("uses attachment and block content and decodes Slack mrkdwn entities", async () => {
+    const messages = [
+      {
+        ts: "1700000000.000001",
+        text: "",
+        bot_profile: { name: "Turing" },
+        attachments: [
+          {
+            title: "*Alert &amp; recovery*",
+            text: [
+              "&gt; investigate <@U123> with <https://example.com/runbook|the runbook>",
+              "Mark :white_check_mark: when _ready_",
+            ].join("\n"),
+          },
+        ],
+      },
+      {
+        ts: "1700000001.000001",
+        text: "",
+        username: "Linear",
+        blocks: [{ text: { type: "mrkdwn", text: "Issue &lt;ready&gt; for review" } }],
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ ok: true, messages }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
+    );
+
+    const source = await fetchSlackReference(
+      {
+        provider: "slack",
+        key: "slack:acme:C1:1700000000.000001",
+        identifier: "C1:1700000000.000001",
+        channelId: "C1",
+        threadTs: "1700000000.000001",
+        url: "https://acme.slack.com/archives/C1/p1700000000000001",
+      },
+      "xoxp-token",
+    );
+
+    expect(source.title).toBe("Alert & recovery");
+    expect(source.excerpt).toContain(
+      "OP — Turing:\nAlert & recovery\n> investigate @U123 with the runbook",
+    );
+    expect(source.excerpt).toContain("Mark :white_check_mark: when ready");
+    expect(source.excerpt).toContain("Recent reply 1 — Linear:\nIssue <ready> for review");
+    expect(source.excerpt).not.toContain("&amp;");
+    expect(source.excerpt).not.toContain("*Alert");
+    expect(source.excerpt).not.toContain("(empty message)");
+  });
 });

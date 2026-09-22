@@ -58,6 +58,51 @@ const LinearIssueResponseSchema = z.object({
   errors: z.array(z.object({ message: z.string() }).passthrough()).optional(),
 });
 
+const SlackTextObjectSchema = z.object({ text: z.string() }).passthrough();
+
+interface SlackRichTextElement {
+  type?: string;
+  text?: string;
+  url?: string;
+  user_id?: string;
+  channel_id?: string;
+  name?: string;
+  range?: string;
+  elements?: SlackRichTextElement[];
+}
+
+const SlackRichTextElementSchema: z.ZodType<SlackRichTextElement> = z.lazy(() =>
+  z
+    .object({
+      type: z.string().optional(),
+      text: z.string().optional(),
+      url: z.string().optional(),
+      user_id: z.string().optional(),
+      channel_id: z.string().optional(),
+      name: z.string().optional(),
+      range: z.string().optional(),
+      elements: z.array(SlackRichTextElementSchema).optional(),
+    })
+    .passthrough(),
+);
+
+const SlackBlockSchema = z
+  .object({
+    text: SlackTextObjectSchema.optional(),
+    fields: z.array(SlackTextObjectSchema).optional(),
+    elements: z.array(SlackRichTextElementSchema).optional(),
+  })
+  .passthrough();
+
+const SlackAttachmentSchema = z
+  .object({
+    title: z.string().optional(),
+    pretext: z.string().optional(),
+    text: z.string().optional(),
+    fallback: z.string().optional(),
+  })
+  .passthrough();
+
 const SlackMessageSchema = z
   .object({
     ts: z.string(),
@@ -65,6 +110,8 @@ const SlackMessageSchema = z
     user: z.string().optional(),
     username: z.string().optional(),
     bot_profile: z.object({ name: z.string().optional() }).passthrough().optional(),
+    attachments: z.array(SlackAttachmentSchema).optional(),
+    blocks: z.array(SlackBlockSchema).optional(),
   })
   .passthrough();
 
@@ -244,8 +291,82 @@ function slackAuthor(message: z.infer<typeof SlackMessageSchema>): string {
   return message.username ?? message.bot_profile?.name ?? message.user ?? "Unknown author";
 }
 
+function decodeSlackEntities(text: string): string {
+  const replacements: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">" };
+  return text.replace(/&(amp|lt|gt);/g, (entity) => replacements[entity] ?? entity);
+}
+
+function renderSlackInlineSyntax(text: string): string {
+  const rendered = text.replace(/<([^>]+)>/g, (match, token: string) => {
+    if (token.startsWith("@")) return token;
+    if (token.startsWith("#")) {
+      const [channelId, label] = token.slice(1).split("|", 2);
+      return `#${label ?? channelId}`;
+    }
+    if (token.startsWith("!")) {
+      const [command, label] = token.split("|", 2);
+      return label ?? `@${command.slice(1)}`;
+    }
+    const [url, label] = token.split("|", 2);
+    if (url.startsWith("mailto:")) return label ?? url.slice("mailto:".length);
+    if (/^https?:\/\//.test(url)) return label ?? url;
+    return match;
+  });
+  return decodeSlackEntities(rendered)
+    .replace(/```([\s\S]*?)```/g, "$1")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/(^|[\s([{>])\*([^*\n]+)\*(?=$|[\s)\]},.!?:;])/gm, "$1$2")
+    .replace(/(^|[\s([{>])_([^_\n]+)_(?=$|[\s)\]},.!?:;])/gm, "$1$2")
+    .replace(/(^|[\s([{>])~([^~\n]+)~(?=$|[\s)\]},.!?:;])/gm, "$1$2");
+}
+
+function renderSlackRichTextElement(element: SlackRichTextElement): string {
+  if (element.type === "user" && element.user_id) return `@${element.user_id}`;
+  if (element.type === "channel" && element.channel_id) return `#${element.channel_id}`;
+  if (element.type === "emoji" && element.name) return `:${element.name}:`;
+  if (element.type === "broadcast" && element.range) return `@${element.range}`;
+  if (element.type === "link") return element.text ?? element.url ?? "";
+  if (element.text) return element.text;
+  return element.elements?.map(renderSlackRichTextElement).join("") ?? "";
+}
+
+function uniqueNonEmptyParts(parts: Array<string | undefined>): string[] {
+  const unique = new Set<string>();
+  for (const part of parts) {
+    const normalized = part?.trim();
+    if (normalized) unique.add(normalized);
+  }
+  return [...unique];
+}
+
+function slackAttachmentText(message: z.infer<typeof SlackMessageSchema>): string {
+  return (message.attachments ?? [])
+    .map((attachment) => {
+      const content = uniqueNonEmptyParts([attachment.title, attachment.pretext, attachment.text]);
+      return (content.length > 0 ? content : uniqueNonEmptyParts([attachment.fallback])).join("\n");
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function slackBlockText(message: z.infer<typeof SlackMessageSchema>): string {
+  const parts: string[] = [];
+  for (const block of message.blocks ?? []) {
+    if (block.text?.text.trim()) parts.push(block.text.text);
+    for (const field of block.fields ?? []) {
+      if (field.text.trim()) parts.push(field.text);
+    }
+    const richText = block.elements?.map(renderSlackRichTextElement).join("").trim();
+    if (richText) parts.push(richText);
+  }
+  return parts.join("\n");
+}
+
 function slackMessageText(message: z.infer<typeof SlackMessageSchema>): string {
-  const text = message.text.trim() || "(empty message)";
+  const text = renderSlackInlineSyntax(
+    message.text.trim() || slackAttachmentText(message) || slackBlockText(message),
+  ).trim();
+  if (!text) return "(empty message)";
   if (text.length <= MAX_SLACK_MESSAGE_CHARS) return text;
   return `${text.slice(0, MAX_SLACK_MESSAGE_CHARS - 1)}…`;
 }
@@ -284,7 +405,7 @@ export async function fetchSlackReference(
     return `${role} — ${slackAuthor(message)}:\n${slackMessageText(message)}`;
   });
   return {
-    title: root.text.trim().split("\n")[0]?.slice(0, 120) || "Slack thread",
+    title: slackMessageText(root).split("\n")[0]?.slice(0, 120) || "Slack thread",
     excerpt: balancedSections(rendered),
   };
 }
