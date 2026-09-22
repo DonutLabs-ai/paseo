@@ -15,8 +15,8 @@ fixed-target labels and icons from that registration, filter by host, and never 
 panel type for another. Tab moves reject unsupported destinations, and placement resolves only to
 a compatible pane.
 
-Files and Changes are the Explorer defaults and its singleton navigation views. Other compatible
-tabs, including agents, terminals, files, and diffs, can move between Explorer and main panes.
+Files, Changes, and References are the Explorer defaults and its singleton navigation views. Other
+compatible tabs, including agents, terminals, files, and diffs, can move between Explorer and main panes.
 Keep panel implementations independent of either shell. `WorkspacePanelHost` owns mounting and
 retention, while each shell owns its tabs, focus, dragging, resizing, and shortcuts.
 
@@ -43,7 +43,8 @@ literal `"explorer"` pane id and `explorerPaneIdByWorkspace` key for compatibili
 
 The tab rail has no inline add or close controls. Its context menu opens a New Tab launcher and
 toggles Files, Changes, References, and Explorer-compatible workspace-scoped plugin panels from the
-shared launch catalog. References discovers Linear issue and Slack thread URLs mentioned by any
+shared launch catalog. A persisted-layout migration adds References to workspaces created before it
+became a default without changing the selected Explorer tab. References discovers Linear issue and Slack thread URLs mentioned by any
 agent in the workspace, fetches the configured source fields on the daemon, and renders persisted
 generated summaries. Slack input is the thread OP plus its last five replies. Linear input is the
 issue title, status, and description; comments are not read.

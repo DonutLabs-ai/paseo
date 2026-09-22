@@ -185,7 +185,8 @@ interface WorkspaceFocusRestorationState {
 const MAX_TREE_DEPTH = 5;
 
 const LEGACY_EXPLORER_SIDEBAR_REFERENCE_WIDTH = 1440;
-const WORKSPACE_LAYOUT_PERSIST_VERSION = 2;
+const EXPLORER_SIDEBAR_PERSIST_VERSION = 2;
+const WORKSPACE_LAYOUT_PERSIST_VERSION = 3;
 
 function convertLegacyExplorerSidebarRatios(
   ratiosByWorkspace: Record<string, number>,
@@ -304,7 +305,8 @@ function migrateVersionOneWorkspaceLayout(input: {
     (tab) =>
       legacyExplorerPane.tabIds.includes(tab.tabId) &&
       tab.target.kind !== "files" &&
-      tab.target.kind !== "changes_tree",
+      tab.target.kind !== "changes_tree" &&
+      tab.target.kind !== "references",
   );
   const preservedSide = preserveVersionOneSideTabs({
     layout: strippedLayout,
@@ -347,27 +349,55 @@ function migrateWorkspaceLayoutPersistedState(
     return result.success ? result.data : { layoutByWorkspace: {} };
   }
 
-  const layoutByWorkspace: Record<string, WorkspaceLayout> = {};
-  const explorerPaneIdByWorkspace: Record<string, string | null> = {};
-  const sidePaneIdByWorkspace = { ...result.data.sidePaneIdByWorkspace };
-  for (const [workspaceKey, layout] of Object.entries(result.data.layoutByWorkspace)) {
-    const migrated = migrateVersionOneWorkspaceLayout({
-      layout,
-      legacyExplorerPaneId: result.data.explorerPaneIdByWorkspace?.[workspaceKey],
-      rememberedSidePaneId: result.data.sidePaneIdByWorkspace?.[workspaceKey],
-      ids,
-    });
-    layoutByWorkspace[workspaceKey] = migrated.layout;
-    explorerPaneIdByWorkspace[workspaceKey] = migrated.explorerPaneId;
-    sidePaneIdByWorkspace[workspaceKey] = migrated.sidePaneId;
+  let migratedState = result.data;
+  if (version < EXPLORER_SIDEBAR_PERSIST_VERSION) {
+    const layoutByWorkspace: Record<string, WorkspaceLayout> = {};
+    const explorerPaneIdByWorkspace: Record<string, string | null> = {};
+    const sidePaneIdByWorkspace = { ...migratedState.sidePaneIdByWorkspace };
+    for (const [workspaceKey, layout] of Object.entries(migratedState.layoutByWorkspace)) {
+      const migrated = migrateVersionOneWorkspaceLayout({
+        layout,
+        legacyExplorerPaneId: migratedState.explorerPaneIdByWorkspace?.[workspaceKey],
+        rememberedSidePaneId: migratedState.sidePaneIdByWorkspace?.[workspaceKey],
+        ids,
+      });
+      layoutByWorkspace[workspaceKey] = migrated.layout;
+      explorerPaneIdByWorkspace[workspaceKey] = migrated.explorerPaneId;
+      sidePaneIdByWorkspace[workspaceKey] = migrated.sidePaneId;
+    }
+    migratedState = {
+      ...migratedState,
+      layoutByWorkspace,
+      explorerPaneIdByWorkspace,
+      sidePaneIdByWorkspace,
+    };
   }
 
-  return {
-    ...result.data,
-    layoutByWorkspace,
-    explorerPaneIdByWorkspace,
-    sidePaneIdByWorkspace,
-  };
+  if (version < WORKSPACE_LAYOUT_PERSIST_VERSION) {
+    const layoutByWorkspace: Record<string, WorkspaceLayout> = {};
+    for (const [workspaceKey, layout] of Object.entries(migratedState.layoutByWorkspace)) {
+      const explorerSidebarPaneId = resolveExplorerSidebarPaneId(
+        layout,
+        migratedState.explorerSidebarPaneIdByWorkspace?.[workspaceKey] ??
+          migratedState.explorerPaneIdByWorkspace?.[workspaceKey],
+      );
+      if (!explorerSidebarPaneId) {
+        layoutByWorkspace[workspaceKey] = layout;
+        continue;
+      }
+      const migrated = openTabInLayoutBackground({
+        layout,
+        target: { kind: "references" },
+        now: Date.now(),
+        placement: { mode: "pane", paneId: explorerSidebarPaneId },
+        explorerSidebarPaneId,
+      });
+      layoutByWorkspace[workspaceKey] = migrated?.layout ?? layout;
+    }
+    migratedState = { ...migratedState, layoutByWorkspace };
+  }
+
+  return migratedState;
 }
 
 function trimNonEmpty(value: string | null | undefined): string | null {
