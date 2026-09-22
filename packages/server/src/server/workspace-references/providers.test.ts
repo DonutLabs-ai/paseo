@@ -41,9 +41,9 @@ describe("workspace reference URL discovery", () => {
     });
   });
 
-  it("finds and deduplicates references in visible messages", () => {
+  it("finds and deduplicates references in user messages", () => {
     const targets = extractWorkspaceReferenceTargets({
-      type: "assistant_message",
+      type: "user_message",
       text: [
         "See https://linear.app/donutbrowser/issue/ENG-9/example.",
         "https://linear.app/donutbrowser/issue/ENG-9/renamed",
@@ -57,9 +57,10 @@ describe("workspace reference URL discovery", () => {
     ]);
   });
 
-  it("ignores links in reasoning, tool calls, and tool output", () => {
+  it("ignores links in assistant messages, reasoning, tool calls, and tool output", () => {
     const incidentalUrl = "https://linear.app/donutbrowser/issue/ENG-999/incidental";
     const hiddenItems: AgentTimelineItem[] = [
+      { type: "assistant_message", text: incidentalUrl },
       { type: "reasoning", text: incidentalUrl },
       {
         type: "tool_call",

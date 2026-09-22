@@ -93,3 +93,8 @@ export const WorkspaceReferencesRefreshResponseSchema = z.object({
   type: z.literal("workspace.references.refresh.response"),
   payload: WorkspaceReferencesSnapshotSchema.extend({ requestId: z.string() }),
 });
+
+export const WorkspaceReferencesProgressSchema = z.object({
+  type: z.literal("workspace.references.progress"),
+  payload: WorkspaceReferencesSnapshotSchema.extend({ requestId: z.string() }),
+});

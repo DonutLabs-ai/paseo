@@ -45,9 +45,9 @@ The tab rail has no inline add or close controls. Its context menu opens a New T
 toggles Files, Changes, References, and Explorer-compatible workspace-scoped plugin panels from the
 shared launch catalog. A persisted-layout migration adds References to workspaces created before it
 became a default without changing the selected Explorer tab. References discovers Linear issue and
-Slack thread URLs mentioned by an agent or user in visible conversation messages, fetches the
-configured source fields on the daemon, and renders persisted bounded excerpts without invoking an
-AI model. Tool calls, tool output, reasoning, and errors are not reference sources. Slack input is
+Slack thread URLs sent by the user in visible conversation messages, fetches the configured source
+fields on the daemon, and renders persisted bounded excerpts without invoking an AI model. Assistant
+messages, tool calls, tool output, reasoning, and errors are not reference sources. Slack input is
 the thread OP plus its last five replies. Linear input is the issue title and first three description
 paragraphs; comments are not read.
 
@@ -55,8 +55,11 @@ The first References open for an existing workspace scans every current agent ti
 compare each agent's persisted timeline epoch and sequence, scanning only appended rows; **Refresh**
 forces a full rescan and source refresh. This keeps existing workspaces usable without a one-time
 global migration and avoids rescanning complete histories on every load. Reference refreshes use
-bounded concurrency and checkpoint each completed result. Failed fetches remain visible until an
-explicit refresh or credential change instead of automatically retrying whenever the panel opens.
+bounded concurrency, checkpoint each completed result, and stream the deduplicated snapshot to the
+requesting panel so each card appears as soon as its source fetch completes. Canonical Linear issue
+and Slack thread keys prevent repeated links from producing duplicate cards. Failed fetches remain
+visible until an explicit refresh or credential change instead of automatically retrying whenever
+the panel opens.
 
 Individual tab menus close instances or move compatible tabs to main. Explorer tabs
 can be reordered, but the dock cannot be split. Selecting an Explorer tab does not change workspace

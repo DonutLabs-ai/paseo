@@ -456,6 +456,7 @@ const OUTBOUND_PERMISSION = {
   "workspace.integrations.set_credential.response": "daemon.manage",
   "workspace.integrations.remove_credential.response": "daemon.manage",
   "workspace.references.get.response": "workspace.read",
+  "workspace.references.progress": "workspace.read",
   "workspace.references.refresh.response": "workspace.read",
 } as const satisfies Record<OutboundOperation, PermissionRequirement>;
 
