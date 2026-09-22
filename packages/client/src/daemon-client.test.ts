@@ -182,6 +182,87 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+test("streams workspace reference progress before the final response", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "workspace-reference-progress",
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  mock.triggerOpen({ features: { workspaceReferences: true } });
+  await connecting;
+  const onProgress = vi.fn();
+
+  const responsePromise = client.getWorkspaceReferences("workspace-1", {
+    requestId: "references-request-1",
+    onProgress,
+  });
+  expect(parseSentFrame(mock.sent.at(-1))).toMatchObject({
+    type: "workspace.references.get.request",
+    requestId: "references-request-1",
+    workspaceId: "workspace-1",
+  });
+
+  const reference = {
+    key: "linear:ENG-42",
+    provider: "linear",
+    url: "https://linear.app/acme/issue/ENG-42",
+    title: "ENG-42 Example",
+    summary: "Example excerpt.",
+    state: "ready",
+    error: null,
+    fetchedAt: "2026-09-22T00:00:00.000Z",
+  };
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "workspace.references.progress",
+      payload: {
+        requestId: "references-request-1",
+        workspaceId: "workspace-1",
+        references: [reference],
+        scannedAt: null,
+      },
+    }),
+  );
+  expect(onProgress).toHaveBeenCalledWith({
+    workspaceId: "workspace-1",
+    references: [reference],
+    scannedAt: null,
+  });
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "workspace.references.get.response",
+      payload: {
+        requestId: "references-request-1",
+        workspaceId: "workspace-1",
+        references: [reference],
+        scannedAt: "2026-09-22T00:00:01.000Z",
+      },
+    }),
+  );
+  await expect(responsePromise).resolves.toMatchObject({
+    workspaceId: "workspace-1",
+    references: [reference],
+  });
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "workspace.references.progress",
+      payload: {
+        requestId: "references-request-1",
+        workspaceId: "workspace-1",
+        references: [],
+        scannedAt: null,
+      },
+    }),
+  );
+  expect(onProgress).toHaveBeenCalledTimes(1);
+});
+
 test("traces WebSocket frames, message types, and JSON parse duration", async () => {
   const mock = createMockTransport();
   const recorder = createTraceRecorder();

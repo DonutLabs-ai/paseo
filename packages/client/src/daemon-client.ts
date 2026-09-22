@@ -7,7 +7,7 @@ import {
   type TimelineSubscription,
 } from "./connection/index.js";
 import { CreationClient } from "./creation/index.js";
-import type { CreationSnapshot } from "@getpaseo/protocol/messages";
+import type { CreationSnapshot, WorkspaceReferencesSnapshot } from "@getpaseo/protocol/messages";
 import type { z } from "zod";
 import type { SessionEventSubscription } from "@getpaseo/protocol/messages";
 import type { ClientCapability } from "@getpaseo/protocol/client-capabilities";
@@ -356,6 +356,11 @@ export interface DaemonClientConfig {
   runtimeMetricsWindowMs?: number;
   trace?: DaemonClientTrace;
   capabilities?: Partial<Record<ClientCapability, unknown>>;
+}
+
+export interface WorkspaceReferencesRequestOptions {
+  requestId?: string;
+  onProgress?: (snapshot: WorkspaceReferencesSnapshot) => void;
 }
 
 export interface DaemonClientTrace {
@@ -5033,23 +5038,56 @@ export class DaemonClient {
     });
   }
 
-  async getWorkspaceReferences(workspaceId: string, requestId?: string) {
+  async getWorkspaceReferences(
+    workspaceId: string,
+    requestIdOrOptions?: string | WorkspaceReferencesRequestOptions,
+  ) {
     this.requireWorkspaceReferencesSupport();
+    const options =
+      typeof requestIdOrOptions === "string"
+        ? { requestId: requestIdOrOptions }
+        : (requestIdOrOptions ?? {});
+    const requestId = this.createRequestId(options.requestId);
+    const unsubscribe = this.subscribeWorkspaceReferenceProgress(requestId, options.onProgress);
     return this.sendCorrelatedSessionRequest({
       requestId,
       message: { type: "workspace.references.get.request", workspaceId },
       responseType: "workspace.references.get.response",
       timeout: 10 * 60 * 1000,
-    });
+    }).finally(unsubscribe);
   }
 
-  async refreshWorkspaceReferences(workspaceId: string, requestId?: string) {
+  async refreshWorkspaceReferences(
+    workspaceId: string,
+    requestIdOrOptions?: string | WorkspaceReferencesRequestOptions,
+  ) {
     this.requireWorkspaceReferencesSupport();
+    const options =
+      typeof requestIdOrOptions === "string"
+        ? { requestId: requestIdOrOptions }
+        : (requestIdOrOptions ?? {});
+    const requestId = this.createRequestId(options.requestId);
+    const unsubscribe = this.subscribeWorkspaceReferenceProgress(requestId, options.onProgress);
     return this.sendCorrelatedSessionRequest({
       requestId,
       message: { type: "workspace.references.refresh.request", workspaceId },
       responseType: "workspace.references.refresh.response",
       timeout: 10 * 60 * 1000,
+    }).finally(unsubscribe);
+  }
+
+  private subscribeWorkspaceReferenceProgress(
+    requestId: string,
+    onProgress: WorkspaceReferencesRequestOptions["onProgress"],
+  ): () => void {
+    if (!onProgress) return () => undefined;
+    return this.on("workspace.references.progress", (message) => {
+      if (message.payload.requestId !== requestId) return;
+      onProgress({
+        workspaceId: message.payload.workspaceId,
+        references: message.payload.references,
+        scannedAt: message.payload.scannedAt,
+      });
     });
   }
 

@@ -11,7 +11,6 @@ import type {
   WorkspaceReferenceProvider,
   WorkspaceReferencesSnapshot,
 } from "@getpaseo/protocol/messages";
-import type { AgentManager } from "../agent/agent-manager.js";
 import { writePrivateFileAtomicSync } from "../private-files.js";
 import type { WorkspaceRegistry } from "../workspace-registry.js";
 import { WorkspaceIntegrationCredentialStore } from "./credential-store.js";
@@ -105,10 +104,32 @@ const REFERENCE_REFRESH_CONCURRENCY = 3;
 
 interface WorkspaceReferenceServiceOptions {
   paseoHome: string;
-  agentManager: AgentManager;
+  agentManager: WorkspaceReferenceTimelineSource;
   workspaceRegistry: Pick<WorkspaceRegistry, "get">;
   logger: pino.Logger;
 }
+
+interface WorkspaceReferenceTimelineSource {
+  listAgents(): Array<{ id: string; workspaceId?: string; internal?: boolean }>;
+  fetchTimeline(
+    agentId: string,
+    options:
+      | { direction: "tail"; limit: 1 }
+      | {
+          direction: "after";
+          cursor: { epoch: string; seq: number };
+          limit: 0;
+        },
+  ): {
+    epoch: string;
+    reset: boolean;
+    window: { maxSeq: number };
+    rows: Array<{ item: AgentTimelineItem }>;
+  };
+  getTimelineRows(agentId: string): Promise<Array<{ item: AgentTimelineItem }>>;
+}
+
+type WorkspaceReferenceProgressHandler = (snapshot: WorkspaceReferencesSnapshot) => void;
 
 function isMissingFileError(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
@@ -143,10 +164,16 @@ function referenceError(
   };
 }
 
+function uniqueReferences(references: readonly WorkspaceReference[]): WorkspaceReference[] {
+  const byKey = new Map<string, WorkspaceReference>();
+  for (const reference of references) byKey.set(reference.key, reference);
+  return [...byKey.values()].sort((left, right) => left.key.localeCompare(right.key));
+}
+
 function snapshot(state: WorkspaceReferenceState): WorkspaceReferencesSnapshot {
   return {
     workspaceId: state.workspaceId,
-    references: state.references,
+    references: uniqueReferences(state.references),
     scannedAt: state.scannedAt,
   };
 }
@@ -158,7 +185,7 @@ function errorMessage(error: unknown): string {
 export class WorkspaceReferenceService {
   private readonly root: string;
   private readonly credentials: WorkspaceIntegrationCredentialStore;
-  private readonly agentManager: AgentManager;
+  private readonly agentManager: WorkspaceReferenceTimelineSource;
   private readonly workspaceRegistry: Pick<WorkspaceRegistry, "get">;
   private readonly logger: pino.Logger;
   private readonly workspaceTails = new Map<string, Promise<WorkspaceReferencesSnapshot>>();
@@ -196,16 +223,24 @@ export class WorkspaceReferenceService {
     return this.credentials.remove(provider);
   }
 
-  get(workspaceId: string): Promise<WorkspaceReferencesSnapshot> {
+  get(
+    workspaceId: string,
+    onProgress?: WorkspaceReferenceProgressHandler,
+  ): Promise<WorkspaceReferencesSnapshot> {
     return this.enqueue(workspaceId, async () => {
       const state = this.read(workspaceId);
       if (state.scannedAt !== null && !this.needsScan(workspaceId, state)) return snapshot(state);
-      return this.scan(workspaceId, state, false);
+      return this.scan(workspaceId, state, false, onProgress);
     });
   }
 
-  refresh(workspaceId: string): Promise<WorkspaceReferencesSnapshot> {
-    return this.enqueue(workspaceId, () => this.scan(workspaceId, this.read(workspaceId), true));
+  refresh(
+    workspaceId: string,
+    onProgress?: WorkspaceReferenceProgressHandler,
+  ): Promise<WorkspaceReferencesSnapshot> {
+    return this.enqueue(workspaceId, () =>
+      this.scan(workspaceId, this.read(workspaceId), true, onProgress),
+    );
   }
 
   private enqueue(
@@ -227,6 +262,7 @@ export class WorkspaceReferenceService {
     workspaceId: string,
     state: WorkspaceReferenceState,
     force: boolean,
+    onProgress?: WorkspaceReferenceProgressHandler,
   ): Promise<WorkspaceReferencesSnapshot> {
     const workspace = await this.workspaceRegistry.get(workspaceId);
     if (!workspace) throw new Error(`Workspace ${workspaceId} was not found`);
@@ -237,31 +273,24 @@ export class WorkspaceReferenceService {
         .filter((reference) => timeline.targets[reference.key] !== undefined)
         .map((reference) => [reference.key, reference]),
     );
-    const writeProgress = (reference: WorkspaceReference): void => {
-      progressByKey.set(reference.key, reference);
-      this.write({
+    const publishProgress = (): void => {
+      const progressState: WorkspaceReferenceState = {
         version: 2,
         workspaceId,
         credentialRevisions,
         agents: timeline.agents,
         targets: timeline.targets,
-        references: [...progressByKey.values()].sort((left, right) =>
-          left.key.localeCompare(right.key),
-        ),
+        references: uniqueReferences([...progressByKey.values()]),
         scannedAt: null,
-      });
+      };
+      this.write(progressState);
+      onProgress?.(snapshot(progressState));
     };
-    this.write({
-      version: 2,
-      workspaceId,
-      credentialRevisions,
-      agents: timeline.agents,
-      targets: timeline.targets,
-      references: [...progressByKey.values()].sort((left, right) =>
-        left.key.localeCompare(right.key),
-      ),
-      scannedAt: null,
-    });
+    const writeProgress = (reference: WorkspaceReference): void => {
+      progressByKey.set(reference.key, reference);
+      publishProgress();
+    };
+    publishProgress();
     const references = await this.loadReferences({
       targets: timeline.targets,
       previousReferences: state.references,
@@ -276,7 +305,7 @@ export class WorkspaceReferenceService {
       credentialRevisions,
       agents: timeline.agents,
       targets: timeline.targets,
-      references,
+      references: uniqueReferences(references),
       scannedAt: new Date().toISOString(),
     };
     this.write(nextState);

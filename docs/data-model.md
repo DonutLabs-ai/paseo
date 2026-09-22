@@ -87,7 +87,9 @@ messages are held only while fetching and are not persisted in the index. Linear
 the first three description paragraphs; Slack excerpts are bounded selections from the thread OP
 and last five replies. The index schema version invalidates obsolete discovery semantics and
 rebuilds from the current timelines. Later reads scan only appended visible user and assistant
-messages unless the timeline epoch changes or the user requests a full refresh.
+messages unless the timeline epoch changes or the user requests a full refresh. References are
+deduplicated by canonical source key both in persisted progress checkpoints and outbound snapshots;
+each completed fetch is streamed to the requesting client before the final scan response.
 
 ---
 

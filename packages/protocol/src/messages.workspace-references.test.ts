@@ -65,6 +65,31 @@ describe("workspace references protocol", () => {
     ).toBe(true);
   });
 
+  it("parses incremental scan progress snapshots", () => {
+    expect(
+      SessionOutboundMessageSchema.safeParse({
+        type: "workspace.references.progress",
+        payload: {
+          requestId: "request-progress",
+          workspaceId: "workspace-1",
+          scannedAt: null,
+          references: [
+            {
+              key: "linear:ENG-42",
+              provider: "linear",
+              url: "https://linear.app/acme/issue/ENG-42",
+              title: "ENG-42 Example",
+              summary: "Example excerpt.",
+              state: "ready",
+              error: null,
+              fetchedAt: "2026-09-22T00:00:00.000Z",
+            },
+          ],
+        },
+      }).success,
+    ).toBe(true);
+  });
+
   it("keeps the daemon capability optional for compatibility", () => {
     expect(
       ServerInfoStatusPayloadSchema.parse({
