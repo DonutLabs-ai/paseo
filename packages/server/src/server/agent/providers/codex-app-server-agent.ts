@@ -2667,10 +2667,24 @@ const CodexEventTaskCompleteNotificationSchema = z
       .object({
         ...CodexEventThreadIdFields,
         type: z.literal("task_complete"),
+        last_agent_message: z.string().nullable().optional(),
+        lastAgentMessage: z.string().nullable().optional(),
       })
       .passthrough(),
   })
   .passthrough();
+
+function legacyTaskCompleteHasFinalResponse(
+  msg: z.infer<typeof CodexEventTaskCompleteNotificationSchema>["msg"],
+): boolean | null {
+  const hasSnakeCase = Object.hasOwn(msg, "last_agent_message");
+  const hasCamelCase = Object.hasOwn(msg, "lastAgentMessage");
+  if (!hasSnakeCase && !hasCamelCase) {
+    return null;
+  }
+  const lastAgentMessage = hasSnakeCase ? msg.last_agent_message : msg.lastAgentMessage;
+  return typeof lastAgentMessage === "string" && lastAgentMessage.trim().length > 0;
+}
 
 const CodexEventItemLifecycleNotificationSchema = z
   .object({
@@ -2845,6 +2859,7 @@ type ParsedCodexNotification =
       kind: "turn_completed";
       status: string;
       errorMessage: string | null;
+      hasFinalResponse: boolean | null;
       threadId: string | null;
     }
   | {
@@ -2997,6 +3012,7 @@ const CodexNotificationSchema = z.union([
         kind: "turn_completed",
         status: params.turn.status,
         errorMessage: params.turn.error?.message ?? null,
+        hasFinalResponse: null,
         threadId: params.threadId ?? null,
       }),
     ),
@@ -3421,6 +3437,7 @@ const CodexNotificationSchema = z.union([
         kind: "turn_completed",
         status: "interrupted",
         errorMessage: null,
+        hasFinalResponse: null,
         threadId: getCodexEventThreadId(params),
       }),
     ),
@@ -3441,6 +3458,7 @@ const CodexNotificationSchema = z.union([
         kind: "turn_completed",
         status: "completed",
         errorMessage: null,
+        hasFinalResponse: legacyTaskCompleteHasFinalResponse(params.msg),
         threadId: getCodexEventThreadId(params),
       }),
     ),
@@ -6417,6 +6435,13 @@ export class CodexAppServerAgentSession implements AgentSession {
     } else if (parsed.status === "interrupted") {
       this.dismissInterruptedAsyncQuestions();
       this.emitEvent({ type: "turn_canceled", provider: CODEX_PROVIDER, reason: "interrupted" });
+    } else if (parsed.hasFinalResponse === false) {
+      this.emitEvent({
+        type: "turn_failed",
+        provider: CODEX_PROVIDER,
+        error: "Codex completed the turn without a final response.",
+        failureReason: "empty_completion",
+      });
     } else {
       if (this.planModeEnabled && this.latestPlanResult?.text) {
         this.emitSyntheticPlanApprovalRequest(this.latestPlanResult.text);

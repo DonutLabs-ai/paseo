@@ -9118,6 +9118,90 @@ test("transient Codex response stream failures automatically continue after 60 s
   }
 });
 
+test("an empty Codex completion continues once without entering a retry loop", async () => {
+  vi.useFakeTimers();
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-empty-completion-retry-"));
+
+  class EmptyCompletionSession extends TestAgentSession {
+    readonly prompts: AgentPromptInput[] = [];
+
+    override async startTurn(prompt: AgentPromptInput): Promise<{ turnId: string }> {
+      this.prompts.push(prompt);
+      const turnId = `empty-completion-turn-${this.prompts.length}`;
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        this.pushEvent({
+          type: "turn_failed",
+          provider: this.provider,
+          error: "Codex completed the turn without a final response.",
+          failureReason: "empty_completion",
+          turnId,
+        });
+      }, 0);
+      return { turnId };
+    }
+  }
+
+  const session = new EmptyCompletionSession({ provider: "codex", cwd: workdir });
+  const client: AgentClient = {
+    provider: "codex",
+    capabilities: TEST_CAPABILITIES,
+    isAvailable: async () => true,
+    createSession: async () => session,
+    resumeSession: async () => session,
+  };
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+
+  try {
+    const agent = await manager.createAgent(
+      { provider: "codex", cwd: workdir },
+      "00000000-0000-4000-8000-000000000234",
+      { workspaceId: undefined },
+    );
+    const initialRun = manager.runAgent(agent.id, "Continue the unfinished task");
+    const initialFailure = expect(initialRun).rejects.toThrow(
+      "Codex completed the turn without a final response.",
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    await initialFailure;
+
+    expect(session.prompts).toEqual(["Continue the unfinished task"]);
+    expect(manager.getTimeline(agent.id).at(-1)).toEqual({
+      type: "assistant_message",
+      text:
+        "[System Error] Codex completed the turn without a final response.\n\n" +
+        "Paseo will continue this session automatically in 60 seconds.",
+    });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.runOnlyPendingTimersAsync();
+    await manager.flush();
+
+    expect(session.prompts).toEqual([
+      "Continue the unfinished task",
+      "Continue from where you left off.",
+    ]);
+    const finalTimelineItem = manager.getTimeline(agent.id).at(-1);
+    expect(finalTimelineItem).toMatchObject({ type: "assistant_message" });
+    const finalTimelineText =
+      finalTimelineItem?.type === "assistant_message" ? finalTimelineItem.text : "";
+    expect(finalTimelineText.match(/Paseo will continue this session automatically/g)).toHaveLength(
+      1,
+    );
+    expect(
+      finalTimelineText.match(/Codex completed the turn without a final response/g),
+    ).toHaveLength(2);
+    expect(manager.getAgent(agent.id)?.lifecycle).toBe("error");
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(session.prompts).toHaveLength(2);
+  } finally {
+    await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
+    vi.useRealTimers();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("a manual follow-up cancels a pending model capacity retry", async () => {
   vi.useFakeTimers();
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-capacity-manual-"));
