@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceReference, WorkspaceReferencesSnapshot } from "@getpaseo/protocol/messages";
-import { Link2, RefreshCw } from "lucide-react-native";
+import { CircleDot, Link2, MessageSquare, RefreshCw } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import invariant from "tiny-invariant";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,12 @@ import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-
 import { openExternalUrl } from "@/utils/open-external-url";
 
 const ThemedLink2 = withUnistyles(Link2, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const ThemedLinearIcon = withUnistyles(CircleDot, (theme) => ({
+  color: theme.colors.foregroundMuted,
+}));
+const ThemedSlackIcon = withUnistyles(MessageSquare, (theme) => ({
   color: theme.colors.foregroundMuted,
 }));
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner, (theme) => ({
@@ -27,6 +33,10 @@ const referencesPanelPresentation = {
 
 function providerLabel(reference: WorkspaceReference): string {
   return reference.provider === "linear" ? "Linear" : "Slack";
+}
+
+function ProviderIcon({ provider }: { provider: WorkspaceReference["provider"] }) {
+  return provider === "linear" ? <ThemedLinearIcon size={14} /> : <ThemedSlackIcon size={14} />;
 }
 
 function uniqueReferences(references: readonly WorkspaceReference[]): WorkspaceReference[] {
@@ -46,7 +56,10 @@ function ReferenceCard({ reference }: { reference: WorkspaceReference }) {
   return (
     <Pressable onPress={open} style={styles.card} accessibilityRole="link">
       <View style={styles.cardHeader}>
-        <Text style={styles.provider}>{providerLabel(reference)}</Text>
+        <View style={styles.providerLabel}>
+          <ProviderIcon provider={reference.provider} />
+          <Text style={styles.provider}>{providerLabel(reference)}</Text>
+        </View>
         <ThemedLink2 size={14} />
       </View>
       <Text style={styles.title} numberOfLines={2}>
@@ -194,6 +207,7 @@ const styles = StyleSheet.create((theme) => ({
     padding: theme.spacing[3],
   },
   cardHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  providerLabel: { alignItems: "center", flexDirection: "row", gap: theme.spacing[1] },
   provider: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.sm,
