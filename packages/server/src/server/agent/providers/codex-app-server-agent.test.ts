@@ -3650,6 +3650,45 @@ describe("Codex app-server provider", () => {
     expect(events.filter((event) => event.type === "turn_completed")).toHaveLength(1);
   });
 
+  test("rejects a legacy task_complete that explicitly has no final response", () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals(session).handleNotification("codex/event/task_complete", {
+      msg: {
+        type: "task_complete",
+        last_agent_message: null,
+      },
+    });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "turn_failed",
+        provider: "codex",
+        error: "Codex completed the turn without a final response.",
+        failureReason: "empty_completion",
+      }),
+    );
+    expect(events.some((event) => event.type === "turn_completed")).toBe(false);
+  });
+
+  test("accepts a legacy task_complete with a non-empty final response", () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals(session).handleNotification("codex/event/task_complete", {
+      msg: {
+        type: "task_complete",
+        last_agent_message: "Work is complete.",
+      },
+    });
+
+    expect(events.filter((event) => event.type === "turn_completed")).toHaveLength(1);
+    expect(events.some((event) => event.type === "turn_failed")).toBe(false);
+  });
+
   test("discovers a MultiAgentV2 child from a legacy-only lifecycle notification", async () => {
     const appServer = createFakeCodexAppServer();
     const session = new CodexAppServerAgentSession(

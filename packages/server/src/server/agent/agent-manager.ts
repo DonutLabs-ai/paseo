@@ -112,13 +112,17 @@ const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
 type TimeoutResult = "completed" | "timed_out";
 type AutomaticRetryFailureReason = Extract<
   AgentTurnFailureReason,
-  "model_at_capacity" | "transient_transport"
+  "empty_completion" | "model_at_capacity" | "transient_transport"
 >;
 
 function isAutomaticRetryFailureReason(
   failureReason: AgentTurnFailureReason | undefined,
 ): failureReason is AutomaticRetryFailureReason {
-  return failureReason === "model_at_capacity" || failureReason === "transient_transport";
+  return (
+    failureReason === "empty_completion" ||
+    failureReason === "model_at_capacity" ||
+    failureReason === "transient_transport"
+  );
 }
 
 function submittedPromptText(prompt: AgentPromptInput): string {
@@ -770,6 +774,8 @@ export class AgentManager {
   private readonly reloadedSessionCloses = new WeakMap<AgentSession, Promise<void>>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
   private readonly automaticRetryTimers = new Map<string, NodeJS.Timeout>();
+  private readonly automaticRetryAttempts = new Map<string, number>();
+  private readonly automaticRetryStarts = new Set<string>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private mcpBaseUrl: string | null;
   private readonly mcpAuthToken: string | null;
@@ -2504,6 +2510,9 @@ export class AgentManager {
     options?: AgentManagerRunOptions,
   ): AsyncGenerator<AgentStreamEvent> {
     const existingAgent = this.requireSessionAgent(agentId);
+    if (!this.automaticRetryStarts.has(agentId)) {
+      this.automaticRetryAttempts.delete(agentId);
+    }
     this.cancelAutomaticRetry(agentId);
     this.logger.trace(
       {
@@ -3715,6 +3724,8 @@ export class AgentManager {
     cancelReason: string,
   ): ManagedAgentClosed {
     this.cancelAutomaticRetry(agent.id);
+    this.automaticRetryAttempts.delete(agent.id);
+    this.automaticRetryStarts.delete(agent.id);
     this.agentStreamCoalescer.flushAndDiscard(agent.id);
     this.agents.delete(agent.id);
     this.previousStatuses.delete(agent.id);
@@ -4469,6 +4480,7 @@ export class AgentManager {
     );
     if (terminalDisposition === "stale") return;
     this.cancelAutomaticRetry(agent.id);
+    this.automaticRetryAttempts.delete(agent.id);
     if (event.usage) {
       agent.lastUsage = { ...agent.lastUsage, ...event.usage };
     }
@@ -4520,7 +4532,8 @@ export class AgentManager {
     const automaticRetryFailureReason =
       isForegroundEvent &&
       !options?.fromHistory &&
-      isAutomaticRetryFailureReason(event.failureReason)
+      isAutomaticRetryFailureReason(event.failureReason) &&
+      this.canScheduleAutomaticRetry(agent.id, event.failureReason)
         ? event.failureReason
         : null;
     const formattedFailure = this.formatTurnFailedMessage(event);
@@ -4818,6 +4831,7 @@ export class AgentManager {
     failureReason: AutomaticRetryFailureReason,
   ): void {
     this.cancelAutomaticRetry(agent.id);
+    this.automaticRetryAttempts.set(agent.id, (this.automaticRetryAttempts.get(agent.id) ?? 0) + 1);
     const timer = setTimeout(() => {
       if (this.automaticRetryTimers.get(agent.id) !== timer) {
         return;
@@ -4831,15 +4845,21 @@ export class AgentManager {
         { agentId: agent.id, provider: current.provider, failureReason },
         "Retrying agent after recoverable failure",
       );
-      const retry = this.runAgent(agent.id, AGENT_CONTINUE_PROMPT).then(
-        () => undefined,
-        (error: unknown) => {
-          this.logger.warn(
-            { err: error, agentId: agent.id, provider: current.provider, failureReason },
-            "Automatic agent retry failed",
-          );
-        },
-      );
+      this.automaticRetryStarts.add(agent.id);
+      let retry: Promise<void>;
+      try {
+        retry = this.runAgent(agent.id, AGENT_CONTINUE_PROMPT).then(
+          () => undefined,
+          (error: unknown) => {
+            this.logger.warn(
+              { err: error, agentId: agent.id, provider: current.provider, failureReason },
+              "Automatic agent retry failed",
+            );
+          },
+        );
+      } finally {
+        this.automaticRetryStarts.delete(agent.id);
+      }
       this.trackBackgroundTask(retry);
     }, AUTOMATIC_RETRY_DELAY_MS);
     timer.unref();
@@ -4853,6 +4873,16 @@ export class AgentManager {
       },
       "Scheduled agent retry after recoverable failure",
     );
+  }
+
+  private canScheduleAutomaticRetry(
+    agentId: string,
+    failureReason: AutomaticRetryFailureReason,
+  ): boolean {
+    if (failureReason !== "empty_completion") {
+      return true;
+    }
+    return (this.automaticRetryAttempts.get(agentId) ?? 0) < 1;
   }
 
   private cancelAutomaticRetry(agentId: string): void {
