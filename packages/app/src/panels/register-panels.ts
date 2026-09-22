@@ -15,6 +15,7 @@ import { providerSubagentPanelRegistration } from "@/panels/provider-subagent-pa
 import { pullRequestPanelRegistration } from "@/panels/pull-request-panel";
 import { pluginPanelRegistration } from "@/plugins/workspace-panels/panel";
 import { newTabPanelRegistration } from "@/panels/new-tab-panel";
+import { referencesPanelRegistration } from "@/panels/references-panel";
 
 let panelsRegistered = false;
 
@@ -32,6 +33,7 @@ export function ensurePanelsRegistered(): void {
   registerPanel(filePanelRegistration);
   registerPanel(filesPanelRegistration);
   registerPanel(pullRequestPanelRegistration);
+  registerPanel(referencesPanelRegistration);
   registerPanel(commitDiffPanelRegistration);
   registerPanel(workingDiffPanelRegistration);
   registerPanel(changesTreePanelRegistration);

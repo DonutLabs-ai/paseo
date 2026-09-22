@@ -125,6 +125,7 @@ import { parsePluginClientId } from "./plugins/plugin-session-identity.js";
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
 import { buildAgentPrompt } from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
+import type { WorkspaceReferenceService } from "./workspace-references/service.js";
 import {
   getAgentStreamEventTurnId,
   type AgentPersistenceHandle,
@@ -509,6 +510,7 @@ export interface SessionOptions {
     invokePluginRpc(pluginId: string, method: string, input: unknown): Promise<unknown>;
   };
   orchestrationSkills?: import("./orchestration-skills/index.js").OrchestrationSkills;
+  workspaceReferenceService?: WorkspaceReferenceService;
   mcpBaseUrl?: string | null;
   stt: Resolvable<SpeechToTextProvider | null>;
   sttLanguage?: string;
@@ -729,6 +731,7 @@ export class Session {
   private readonly pushNotifications: PushNotifications;
   private readonly pluginRuntime: SessionOptions["pluginRuntime"];
   private readonly orchestrationSkills: SessionOptions["orchestrationSkills"];
+  private readonly workspaceReferenceService: WorkspaceReferenceService | undefined;
   private unsubscribeAgentEvents: (() => void) | null = null;
   private unsubscribeProjectMutations: (() => void) | null = null;
   private unsubscribePluginChanges: (() => void) | null = null;
@@ -868,6 +871,7 @@ export class Session {
     this.worktreesRoot = worktreesRoot;
     this.pluginRuntime = pluginRuntime;
     this.orchestrationSkills = orchestrationSkills;
+    this.workspaceReferenceService = options.workspaceReferenceService;
     this.sessionLogger = logger.child({
       module: "session",
       clientId: this.clientId,
@@ -2317,11 +2321,65 @@ export class Session {
     if (promise) await promise;
   }
 
+  private dispatchWorkspaceReferenceMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    const service = this.workspaceReferenceService;
+    if (
+      !msg.type.startsWith("workspace.integrations.") &&
+      !msg.type.startsWith("workspace.references.")
+    ) {
+      return undefined;
+    }
+    if (!service) throw new Error("Workspace references are unavailable on this daemon");
+    switch (msg.type) {
+      case "workspace.integrations.get_status.request":
+        this.emit({
+          type: "workspace.integrations.get_status.response",
+          payload: { requestId: msg.requestId, integrations: service.integrationStatuses() },
+        });
+        return Promise.resolve();
+      case "workspace.integrations.set_credential.request":
+        return service.setCredential(msg.provider, msg.credential).then((integration) => {
+          this.emit({
+            type: "workspace.integrations.set_credential.response",
+            payload: { requestId: msg.requestId, integration },
+          });
+          return undefined;
+        });
+      case "workspace.integrations.remove_credential.request": {
+        const integration = service.removeCredential(msg.provider);
+        this.emit({
+          type: "workspace.integrations.remove_credential.response",
+          payload: { requestId: msg.requestId, integration },
+        });
+        return Promise.resolve();
+      }
+      case "workspace.references.get.request":
+        return service.get(msg.workspaceId).then((result) => {
+          this.emit({
+            type: "workspace.references.get.response",
+            payload: { requestId: msg.requestId, ...result },
+          });
+          return undefined;
+        });
+      case "workspace.references.refresh.request":
+        return service.refresh(msg.workspaceId).then((result) => {
+          this.emit({
+            type: "workspace.references.refresh.response",
+            payload: { requestId: msg.requestId, ...result },
+          });
+          return undefined;
+        });
+      default:
+        return undefined;
+    }
+  }
+
   private dispatchWorkspaceLifecycleMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     return (
       this.dispatchWorkspaceStateMessage(msg) ??
       this.dispatchWorkspaceLabelMessage(msg) ??
       this.dispatchWorkspaceSetupMessage(msg) ??
+      this.dispatchWorkspaceReferenceMessage(msg) ??
       this.dispatchWorkspaceAndProjectMessage(msg)
     );
   }

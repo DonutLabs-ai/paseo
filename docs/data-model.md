@@ -63,6 +63,10 @@ $PASEO_HOME/
 ├── runtime/
 │   └── managed-processes/
 │       └── {recordId}.json              # Helper processes owned by Paseo; reconciled on daemon bootstrap
+├── workspace-integrations/
+│   └── credentials.json                 # Host-scoped Linear and Slack credentials (mode 0600)
+├── workspace-references/
+│   └── {sha256(workspaceId)}.json        # Reference targets, scan cursors, and summaries
 ├── plugins/
 │   ├── sources.json                      # Managed kind and Git acquisition remote
 │   └── {pluginId}/{uuid}/                # Git checkout or npm package/lockfile/dependency tree
@@ -70,6 +74,20 @@ $PASEO_HOME/
 ```
 
 The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` by stripping the filesystem root and replacing path separators with `-` (Windows drive letters become a `C-` style prefix). Persistent server stores write atomically by writing a temp file in the target directory and then renaming it into place.
+
+Workspace integration credentials are write-only from the app: daemon RPC responses expose only
+configured state, account label, and verification time. The daemon verifies credentials before
+persisting them and never includes tokens in reference indexes or logs. These files use host-local
+mode `0600`; they are not OS-keychain encrypted, so access to the daemon account's filesystem remains
+the security boundary.
+
+Workspace reference indexes retain normalized Linear/Slack targets, per-agent timeline epoch and
+last scanned sequence, generated summaries, and fetch errors. Raw issue descriptions and Slack
+messages are held only while fetching and summarizing and are not persisted in the index. Summary
+generation sends the selected source text to the daemon's configured structured-generation
+provider. Existing workspaces need no migration: the first References read creates the index from
+current timelines, then later reads scan only appended rows unless the timeline epoch changes or the
+user requests a full refresh.
 
 ---
 

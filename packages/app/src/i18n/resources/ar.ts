@@ -1863,6 +1863,18 @@ export const ar: TranslationResources = {
     archiveFinishedRetry: "إعادة المحاولة ({{failed}}/{{total}})",
   },
   panels: {
+    references: {
+      label: "المراجع",
+      subtitle: "سلاسل Slack ومسائل Linear",
+      tooltip: "مراجع مساحة العمل",
+      disconnected: "اتصل بهذا المضيف لتحميل مراجع مساحة العمل.",
+      scanning: "جارٍ فحص جلسات مساحة العمل…",
+      updated: "آخر تحديث {{timestamp}}",
+      notScanned: "لم يتم الفحص",
+      refresh: "تحديث",
+      emptyTitle: "لم يتم العثور على مراجع Slack أو Linear",
+      emptyDescription: "يفحص Paseo جميع الوكلاء في مساحة العمل هذه ويحفظ الملخصات المنشأة فقط.",
+    },
     draft: {
       newAgent: "وكيل جديد",
       creatingAgent: "وكيل الخلق",
@@ -2401,6 +2413,21 @@ export const ar: TranslationResources = {
         removeErrorTitle: "خطأ",
         removeErrorMessage: "غير قادر على إزالة الاتصال",
         timeout: "نفذ الوقت",
+      },
+      workspaceReferences: {
+        title: "مراجع مساحة العمل",
+        info: "اربط الخدمات المستخدمة لتلخيص الروابط المذكورة في الجلسات. تبقى بيانات الاعتماد على هذا المضيف ولا تُعاد إلى التطبيق.",
+        linearHint: "مفتاح API شخصي. يقرأ Paseo أوصاف المسائل فقط.",
+        slackHint:
+          "رمز OAuth لمستخدم أو روبوت. يقرأ Paseo الرسالة الأصلية وآخر 5 ردود؛ تحتاج الروبوتات إلى وصول للقناة.",
+        connectedAs: "متصل باسم {{account}}",
+        notConnected: "غير متصل",
+        replaceCredential: "استبدال بيانات الاعتماد",
+        tokenPlaceholder: "رمز {{provider}}",
+        saving: "جارٍ الحفظ…",
+        replace: "استبدال",
+        connect: "اتصال",
+        remove: "إزالة",
       },
       pairDevices: {
         title: "إقران الأجهزة",

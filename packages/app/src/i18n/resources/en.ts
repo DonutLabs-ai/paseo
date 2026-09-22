@@ -1888,6 +1888,19 @@ export const en = {
     archiveFinishedRetry: "Retry ({{failed}}/{{total}})",
   },
   panels: {
+    references: {
+      label: "References",
+      subtitle: "Slack threads and Linear issues",
+      tooltip: "Workspace references",
+      disconnected: "Connect to this host to load workspace references.",
+      scanning: "Scanning workspace sessions…",
+      updated: "Updated {{timestamp}}",
+      notScanned: "Not scanned",
+      refresh: "Refresh",
+      emptyTitle: "No Slack or Linear references found",
+      emptyDescription:
+        "Paseo scans every agent in this workspace and stores only generated summaries.",
+    },
     draft: {
       newAgent: "New Agent",
       creatingAgent: "Creating agent",
@@ -2520,6 +2533,21 @@ export const en = {
         removeErrorTitle: "Error",
         removeErrorMessage: "Unable to remove connection",
         timeout: "Timeout",
+      },
+      workspaceReferences: {
+        title: "Workspace references",
+        info: "Connect services used to summarize links mentioned in workspace sessions. Credentials stay on this host and are never returned to the app.",
+        linearHint: "Personal API key. Paseo reads issue descriptions only.",
+        slackHint:
+          "OAuth user or bot token. Paseo reads the thread OP and last 5 replies; bot tokens need channel access.",
+        connectedAs: "Connected as {{account}}",
+        notConnected: "Not connected",
+        replaceCredential: "Replace credential",
+        tokenPlaceholder: "{{provider}} token",
+        saving: "Saving…",
+        replace: "Replace",
+        connect: "Connect",
+        remove: "Remove",
       },
       pairDevices: {
         title: "Pair devices",

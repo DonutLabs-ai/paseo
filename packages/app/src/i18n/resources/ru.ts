@@ -1897,6 +1897,19 @@ export const ru: TranslationResources = {
     archiveFinishedRetry: "Повторить ({{failed}}/{{total}})",
   },
   panels: {
+    references: {
+      label: "Ссылки",
+      subtitle: "Обсуждения Slack и задачи Linear",
+      tooltip: "Ссылки рабочего пространства",
+      disconnected: "Подключитесь к этому хосту, чтобы загрузить ссылки рабочего пространства.",
+      scanning: "Сканирование сессий рабочего пространства…",
+      updated: "Обновлено {{timestamp}}",
+      notScanned: "Не сканировалось",
+      refresh: "Обновить",
+      emptyTitle: "Ссылки Slack или Linear не найдены",
+      emptyDescription:
+        "Paseo сканирует всех агентов в этом рабочем пространстве и сохраняет только созданные сводки.",
+    },
     draft: {
       newAgent: "Новый агент",
       creatingAgent: "Создание агента",
@@ -2443,6 +2456,21 @@ export const ru: TranslationResources = {
         removeErrorTitle: "Ошибка",
         removeErrorMessage: "Не удалось удалить подключение",
         timeout: "Время ожидания истекло",
+      },
+      workspaceReferences: {
+        title: "Ссылки рабочего пространства",
+        info: "Подключите сервисы для создания сводок по ссылкам из сессий. Учётные данные остаются на этом хосте и никогда не возвращаются в приложение.",
+        linearHint: "Личный API-ключ. Paseo читает только описания задач.",
+        slackHint:
+          "OAuth-токен пользователя или бота. Paseo читает исходное сообщение и последние 5 ответов; боту нужен доступ к каналу.",
+        connectedAs: "Подключено как {{account}}",
+        notConnected: "Не подключено",
+        replaceCredential: "Заменить учётные данные",
+        tokenPlaceholder: "Токен {{provider}}",
+        saving: "Сохранение…",
+        replace: "Заменить",
+        connect: "Подключить",
+        remove: "Удалить",
       },
       pairDevices: {
         title: "Подключение устройств",

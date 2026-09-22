@@ -1842,6 +1842,18 @@ export const zhCN: TranslationResources = {
     archiveFinishedRetry: "重试 ({{failed}}/{{total}})",
   },
   panels: {
+    references: {
+      label: "引用",
+      subtitle: "Slack 线程与 Linear issue",
+      tooltip: "Workspace 引用",
+      disconnected: "连接此主机后可加载 Workspace 引用。",
+      scanning: "正在扫描 Workspace session…",
+      updated: "更新于 {{timestamp}}",
+      notScanned: "尚未扫描",
+      refresh: "刷新",
+      emptyTitle: "未找到 Slack 或 Linear 引用",
+      emptyDescription: "Paseo 会扫描此 Workspace 中的所有 Agent，并且只保存生成的摘要。",
+    },
     draft: {
       newAgent: "新建 Agent",
       creatingAgent: "正在创建 Agent",
@@ -2375,6 +2387,21 @@ export const zhCN: TranslationResources = {
         removeErrorTitle: "错误",
         removeErrorMessage: "无法移除连接",
         timeout: "超时",
+      },
+      workspaceReferences: {
+        title: "Workspace 引用",
+        info: "连接相关服务，为 Workspace session 中提及的链接生成摘要。凭证只保存在此主机上，绝不会返回到 App。",
+        linearHint: "Personal API key。Paseo 只读取 issue description。",
+        slackHint:
+          "OAuth user 或 bot token。Paseo 读取线程 OP 和最后 5 条回复；bot token 需要有频道访问权限。",
+        connectedAs: "已连接为 {{account}}",
+        notConnected: "未连接",
+        replaceCredential: "替换凭证",
+        tokenPlaceholder: "{{provider}} token",
+        saving: "正在保存…",
+        replace: "替换",
+        connect: "连接",
+        remove: "移除",
       },
       pairDevices: {
         title: "配对设备",

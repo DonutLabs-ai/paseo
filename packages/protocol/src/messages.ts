@@ -17,6 +17,28 @@ export {
 import { TerminalProfileSchema } from "./terminal-profile.js";
 export { TerminalProfileSchema, type TerminalProfile } from "./terminal-profile.js";
 import { z } from "zod";
+import {
+  WorkspaceIntegrationRemoveCredentialRequestSchema,
+  WorkspaceIntegrationRemoveCredentialResponseSchema,
+  WorkspaceIntegrationSetCredentialRequestSchema,
+  WorkspaceIntegrationSetCredentialResponseSchema,
+  WorkspaceIntegrationStatusRequestSchema,
+  WorkspaceIntegrationStatusResponseSchema,
+  WorkspaceReferencesGetRequestSchema,
+  WorkspaceReferencesGetResponseSchema,
+  WorkspaceReferencesRefreshRequestSchema,
+  WorkspaceReferencesRefreshResponseSchema,
+} from "./workspace-references.js";
+export {
+  WorkspaceIntegrationStatusSchema,
+  WorkspaceReferenceProviderSchema,
+  WorkspaceReferenceSchema,
+  WorkspaceReferencesSnapshotSchema,
+  type WorkspaceIntegrationStatus,
+  type WorkspaceReference,
+  type WorkspaceReferenceProvider,
+  type WorkspaceReferencesSnapshot,
+} from "./workspace-references.js";
 import { TerminalActivitySchema } from "./terminal-activity.js";
 import { CLIENT_CAPS } from "./client-capabilities.js";
 import { AGENT_LIFECYCLE_STATUSES } from "./agent-lifecycle.js";
@@ -3217,6 +3239,11 @@ export const SubscriptionReleaseResponseSchema = z.object({
 });
 
 export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
+  WorkspaceIntegrationStatusRequestSchema,
+  WorkspaceIntegrationSetCredentialRequestSchema,
+  WorkspaceIntegrationRemoveCredentialRequestSchema,
+  WorkspaceReferencesGetRequestSchema,
+  WorkspaceReferencesRefreshRequestSchema,
   BrowserHostRegisterRequestSchema,
   SubscriptionReleaseRequestSchema,
   SessionEventsSetSubscriptionRequestSchema,
@@ -3614,6 +3641,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceSetupRun: z.boolean().optional(),
         // COMPAT(workspaceTerminals): added in v0.8.0, remove gate after 2027-09-05.
         workspaceTerminals: z.boolean().optional(),
+        // COMPAT(workspaceReferences): added in v0.9.0, remove gate after 2027-09-22.
+        workspaceReferences: z.boolean().optional(),
         // COMPAT(checkoutForgeSetAutoMerge): added in v0.2.0-beta.1. Remove the
         // feature gate and checkoutGithubSetAutoMerge fallback after 2027-01-17
         // once the supported daemon floor is >= v0.2.0.
@@ -6856,6 +6885,11 @@ export const AgentSkillsImportLegacySelectionResponseSchema = z.object({
 });
 
 export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
+  WorkspaceIntegrationStatusResponseSchema,
+  WorkspaceIntegrationSetCredentialResponseSchema,
+  WorkspaceIntegrationRemoveCredentialResponseSchema,
+  WorkspaceReferencesGetResponseSchema,
+  WorkspaceReferencesRefreshResponseSchema,
   BrowserHostRegisterResponseSchema,
   SubscriptionReleaseResponseSchema,
   SessionEventsSetSubscriptionResponseSchema,

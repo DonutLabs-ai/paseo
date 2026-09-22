@@ -1883,6 +1883,19 @@ export const ja: TranslationResources = {
     archiveFinishedRetry: "再試行 ({{failed}}/{{total}})",
   },
   panels: {
+    references: {
+      label: "参照情報",
+      subtitle: "Slack スレッドと Linear issue",
+      tooltip: "ワークスペースの参照情報",
+      disconnected: "ワークスペースの参照情報を読み込むには、このホストに接続してください。",
+      scanning: "ワークスペースのセッションをスキャン中…",
+      updated: "更新日時: {{timestamp}}",
+      notScanned: "未スキャン",
+      refresh: "更新",
+      emptyTitle: "Slack または Linear の参照情報が見つかりません",
+      emptyDescription:
+        "Paseo はこのワークスペース内のすべての Agent をスキャンし、生成した要約のみを保存します。",
+    },
     draft: {
       newAgent: "新しいエージェント",
       creatingAgent: "エージェントを作成中",
@@ -2423,6 +2436,21 @@ export const ja: TranslationResources = {
         removeErrorTitle: "エラー",
         removeErrorMessage: "接続を削除できません",
         timeout: "タイムアウト",
+      },
+      workspaceReferences: {
+        title: "ワークスペースの参照情報",
+        info: "セッション内で言及されたリンクを要約するサービスに接続します。認証情報はこのホストにのみ保存され、App には返されません。",
+        linearHint: "Personal API key。Paseo は issue の description のみを読み取ります。",
+        slackHint:
+          "OAuth user または bot token。Paseo はスレッドの OP と最後の 5 件の返信を読み取ります。bot token にはチャンネルへのアクセス権が必要です。",
+        connectedAs: "{{account}} として接続済み",
+        notConnected: "未接続",
+        replaceCredential: "認証情報を置き換え",
+        tokenPlaceholder: "{{provider}} token",
+        saving: "保存中…",
+        replace: "置き換え",
+        connect: "接続",
+        remove: "削除",
       },
       pairDevices: {
         title: "デバイスをペアリング",

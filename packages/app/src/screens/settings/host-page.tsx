@@ -56,6 +56,7 @@ import { HostAppearanceSection } from "@/screens/settings/host-appearance-sectio
 import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { useSessionStore } from "@/stores/session-store";
 import { settingsStyles } from "@/styles/settings";
+import { WorkspaceReferenceIntegrationsSection } from "@/screens/settings/workspace-reference-integrations-section";
 import type { HostConnection, HostProfile } from "@/types/host-connection";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { isVersionMismatch } from "@/desktop/updates/desktop-updates";
@@ -245,6 +246,7 @@ export function HostConnectionsPage({ serverId }: { serverId: string }) {
     <View>
       <HostConnectionError serverId={serverId} />
       <ConnectionsSection host={host} />
+      <WorkspaceReferenceIntegrationsSection serverId={serverId} />
     </View>
   );
 }

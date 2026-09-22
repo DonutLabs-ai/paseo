@@ -1896,6 +1896,19 @@ export const ptBR: TranslationResources = {
     archiveFinishedRetry: "Tentar novamente ({{failed}}/{{total}})",
   },
   panels: {
+    references: {
+      label: "Referências",
+      subtitle: "Threads do Slack e issues do Linear",
+      tooltip: "Referências do workspace",
+      disconnected: "Conecte-se a este host para carregar as referências do workspace.",
+      scanning: "Verificando as sessões do workspace…",
+      updated: "Atualizado em {{timestamp}}",
+      notScanned: "Não verificado",
+      refresh: "Atualizar",
+      emptyTitle: "Nenhuma referência do Slack ou Linear encontrada",
+      emptyDescription:
+        "O Paseo verifica todos os agentes deste workspace e armazena apenas os resumos gerados.",
+    },
     draft: {
       newAgent: "Novo Agente",
       creatingAgent: "Criando agente",
@@ -2437,6 +2450,21 @@ export const ptBR: TranslationResources = {
         removeErrorTitle: "Erro",
         removeErrorMessage: "Não foi possível remover a conexão",
         timeout: "Timeout",
+      },
+      workspaceReferences: {
+        title: "Referências do workspace",
+        info: "Conecte os serviços usados para resumir links mencionados nas sessões. As credenciais permanecem neste host e nunca são retornadas ao app.",
+        linearHint: "Chave de API pessoal. O Paseo lê apenas as descrições das issues.",
+        slackHint:
+          "Token OAuth de usuário ou bot. O Paseo lê a mensagem original e as últimas 5 respostas; bots precisam de acesso ao canal.",
+        connectedAs: "Conectado como {{account}}",
+        notConnected: "Não conectado",
+        replaceCredential: "Substituir credencial",
+        tokenPlaceholder: "Token do {{provider}}",
+        saving: "Salvando…",
+        replace: "Substituir",
+        connect: "Conectar",
+        remove: "Remover",
       },
       pairDevices: {
         title: "Parear dispositivos",
