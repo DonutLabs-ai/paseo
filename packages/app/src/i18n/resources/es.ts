@@ -1922,7 +1922,7 @@ export const es: TranslationResources = {
       refresh: "Actualizar",
       emptyTitle: "No se encontraron referencias de Slack o Linear",
       emptyDescription:
-        "Paseo analiza todos los agentes de este espacio de trabajo y solo guarda los resúmenes generados.",
+        "Paseo analiza los mensajes visibles de este espacio de trabajo y solo guarda extractos breves de las fuentes.",
     },
     draft: {
       newAgent: "Nuevo agente",
@@ -2471,10 +2471,17 @@ export const es: TranslationResources = {
       },
       workspaceReferences: {
         title: "Referencias del espacio de trabajo",
-        info: "Conecta los servicios usados para resumir los enlaces mencionados en las sesiones. Las credenciales permanecen en este host y nunca se devuelven a la app.",
+        info: "Conecta los servicios usados para obtener extractos de los enlaces mencionados en las sesiones. Las credenciales permanecen en este host y nunca se devuelven a la app.",
         linearHint: "Clave de API personal. Paseo solo lee las descripciones de incidencias.",
         slackHint:
           "Token OAuth de usuario o bot. Paseo lee el mensaje original y las últimas 5 respuestas; los bots necesitan acceso al canal.",
+        setupGuide: "Guía de configuración",
+        linearGuide:
+          "En Linear, abre Settings → Account → Security & Access → Personal API keys. Crea una clave con acceso Read, limítala a los equipos necesarios si quieres y pégala aquí.",
+        linearGuideLink: "Guía de claves de API de Linear",
+        slackGuide:
+          "Crea una app de Slack y, en OAuth & Permissions, añade channels:history, groups:history, im:history y mpim:history a Bot Token Scopes. Instala o reinstala la app, pega aquí el token xoxb- e invita al bot a cada canal que deba leer. También funciona un token de usuario xoxp- con User Token Scopes equivalentes.",
+        slackGuideLink: "Crear o configurar una app de Slack",
         connectedAs: "Conectado como {{account}}",
         notConnected: "Sin conexión",
         replaceCredential: "Reemplazar credencial",

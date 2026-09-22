@@ -82,12 +82,12 @@ mode `0600`; they are not OS-keychain encrypted, so access to the daemon account
 the security boundary.
 
 Workspace reference indexes retain normalized Linear/Slack targets, per-agent timeline epoch and
-last scanned sequence, generated summaries, and fetch errors. Raw issue descriptions and Slack
-messages are held only while fetching and summarizing and are not persisted in the index. Summary
-generation sends the selected source text to the daemon's configured structured-generation
-provider. Existing workspaces need no migration: the first References read creates the index from
-current timelines, then later reads scan only appended rows unless the timeline epoch changes or the
-user requests a full refresh.
+last scanned sequence, source excerpts, and fetch errors. Complete issue descriptions and Slack
+messages are held only while fetching and are not persisted in the index. Linear excerpts contain
+the first three description paragraphs; Slack excerpts are bounded selections from the thread OP
+and last five replies. The index schema version invalidates obsolete discovery semantics and
+rebuilds from the current timelines. Later reads scan only appended visible user and assistant
+messages unless the timeline epoch changes or the user requests a full refresh.
 
 ---
 

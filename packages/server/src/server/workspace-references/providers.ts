@@ -1,12 +1,13 @@
 import { z } from "zod";
+import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
 import type { WorkspaceReferenceProvider } from "@getpaseo/protocol/messages";
 
 const URL_PATTERN = /https:\/\/[^\s<>"'`]+/g;
 const TRAILING_PUNCTUATION = /[),.;:!?\]}]+$/;
 const LINEAR_IDENTIFIER = /^[A-Z][A-Z0-9]+-\d+$/i;
 const MAX_SLACK_MESSAGE_CHARS = 2_400;
-const JsonValueSchema = z.json();
-type JsonValue = z.infer<typeof JsonValueSchema>;
+const MAX_REFERENCE_EXCERPT_CHARS = 800;
+const MAX_LINEAR_EXCERPT_PARAGRAPHS = 3;
 
 export interface WorkspaceReferenceTarget {
   key: string;
@@ -19,15 +20,37 @@ export interface WorkspaceReferenceTarget {
 
 export interface WorkspaceReferenceSource {
   title: string;
-  content: string;
+  excerpt: string;
+}
+
+function truncateExcerpt(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars - 1).trimEnd()}…`;
+}
+
+function firstParagraphs(text: string, maxParagraphs: number): string {
+  const paragraphs = text
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .slice(0, maxParagraphs);
+  return truncateExcerpt(paragraphs.join("\n\n"), MAX_REFERENCE_EXCERPT_CHARS);
+}
+
+function balancedSections(sections: string[]): string {
+  if (sections.length === 0) return "";
+  const separatorChars = Math.max(0, sections.length - 1) * 2;
+  const sectionChars = Math.max(
+    1,
+    Math.floor((MAX_REFERENCE_EXCERPT_CHARS - separatorChars) / sections.length),
+  );
+  return sections.map((section) => truncateExcerpt(section, sectionChars)).join("\n\n");
 }
 
 const LinearIssueSchema = z.object({
   identifier: z.string(),
   title: z.string(),
   description: z.string().nullable(),
-  url: z.string(),
-  state: z.object({ name: z.string() }),
 });
 
 const LinearIssueResponseSchema = z.object({
@@ -78,8 +101,6 @@ const LINEAR_ISSUE_QUERY = `
       identifier
       title
       description
-      url
-      state { name }
     }
   }
 `;
@@ -140,28 +161,15 @@ export function normalizeWorkspaceReferenceUrl(rawUrl: string): WorkspaceReferen
   };
 }
 
-export function extractWorkspaceReferenceTargets(value: unknown): WorkspaceReferenceTarget[] {
-  const serialized = JSON.stringify(value);
-  if (!serialized) return [];
-  const json = JsonValueSchema.parse(JSON.parse(serialized));
+export function extractWorkspaceReferenceTargets(
+  item: AgentTimelineItem,
+): WorkspaceReferenceTarget[] {
+  if (item.type !== "user_message" && item.type !== "assistant_message") return [];
   const byKey = new Map<string, WorkspaceReferenceTarget>();
-  const visit = (node: JsonValue): void => {
-    if (typeof node === "string") {
-      for (const match of node.matchAll(URL_PATTERN)) {
-        const target = normalizeWorkspaceReferenceUrl(match[0]);
-        if (target) byKey.set(target.key, target);
-      }
-      return;
-    }
-    if (Array.isArray(node)) {
-      for (const child of node) visit(child);
-      return;
-    }
-    if (node && typeof node === "object") {
-      for (const child of Object.values(node)) visit(child);
-    }
-  };
-  visit(json);
+  for (const match of item.text.matchAll(URL_PATTERN)) {
+    const target = normalizeWorkspaceReferenceUrl(match[0]);
+    if (target) byKey.set(target.key, target);
+  }
   return [...byKey.values()];
 }
 
@@ -206,11 +214,10 @@ export async function fetchLinearReference(
   if (!issue) throw new Error(`Linear issue ${target.identifier} was not found`);
   return {
     title: `${issue.identifier} ${issue.title}`,
-    content: [
-      `Status: ${issue.state.name}`,
-      "Description:",
+    excerpt: firstParagraphs(
       issue.description?.trim() || "No description.",
-    ].join("\n"),
+      MAX_LINEAR_EXCERPT_PARAGRAPHS,
+    ),
   };
 }
 
@@ -272,14 +279,12 @@ export async function fetchSlackReference(
   const root = ordered.find((message) => message.ts === target.threadTs) ?? ordered[0];
   if (!root) throw new Error("Slack returned an empty thread");
   const replies = ordered.filter((message) => message.ts !== root.ts).slice(-5);
-  const rendered = [root, ...replies]
-    .map((message, index) => {
-      const role = index === 0 ? "OP" : `Recent reply ${index}`;
-      return `${role} — ${slackAuthor(message)}:\n${slackMessageText(message)}`;
-    })
-    .join("\n\n");
+  const rendered = [root, ...replies].map((message, index) => {
+    const role = index === 0 ? "OP" : `Recent reply ${index}`;
+    return `${role} — ${slackAuthor(message)}:\n${slackMessageText(message)}`;
+  });
   return {
     title: root.text.trim().split("\n")[0]?.slice(0, 120) || "Slack thread",
-    content: rendered,
+    excerpt: balancedSections(rendered),
   };
 }

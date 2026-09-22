@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
 import {
   extractWorkspaceReferenceTargets,
   fetchLinearReference,
@@ -40,19 +41,38 @@ describe("workspace reference URL discovery", () => {
     });
   });
 
-  it("finds and deduplicates references inside nested timeline payloads", () => {
+  it("finds and deduplicates references in visible messages", () => {
     const targets = extractWorkspaceReferenceTargets({
-      user: "See https://linear.app/donutbrowser/issue/ENG-9/example.",
-      assistant: [
-        { text: "https://linear.app/donutbrowser/issue/ENG-9/renamed" },
-        { text: "https://acme.slack.com/archives/C1/p1700000000123456" },
-      ],
+      type: "assistant_message",
+      text: [
+        "See https://linear.app/donutbrowser/issue/ENG-9/example.",
+        "https://linear.app/donutbrowser/issue/ENG-9/renamed",
+        "https://acme.slack.com/archives/C1/p1700000000123456",
+      ].join("\n"),
     });
 
     expect(targets.map((target) => target.key)).toEqual([
       "linear:ENG-9",
       "slack:acme:C1:1700000000.123456",
     ]);
+  });
+
+  it("ignores links in reasoning, tool calls, and tool output", () => {
+    const incidentalUrl = "https://linear.app/donutbrowser/issue/ENG-999/incidental";
+    const hiddenItems: AgentTimelineItem[] = [
+      { type: "reasoning", text: incidentalUrl },
+      {
+        type: "tool_call",
+        callId: "call-1",
+        name: "Shell",
+        detail: { type: "unknown", input: incidentalUrl, output: incidentalUrl },
+        status: "completed",
+        error: null,
+      },
+      { type: "error", message: incidentalUrl },
+    ];
+
+    expect(hiddenItems.flatMap(extractWorkspaceReferenceTargets)).toEqual([]);
   });
 });
 
@@ -63,13 +83,20 @@ describe("workspace reference source boundaries", () => {
       const body = requestSchema.parse(JSON.parse(String(init?.body)));
       expect(body.variables.id).toBe("ENG-42");
       expect(body.query).not.toContain("comments");
+      expect(body.query).not.toContain("state");
+      expect(body.query).not.toContain("url");
       return new Response(
         JSON.stringify({
           data: {
             issue: {
               identifier: "ENG-42",
               title: "Preserve retry status",
-              description: "The upstream 429 must remain retryable.",
+              description: [
+                "The upstream 429 must remain retryable.",
+                "Preserve the provider status.",
+                "Keep the retry signal.",
+                "This fourth paragraph is outside the excerpt.",
+              ].join("\n\n"),
               url: "https://linear.app/acme/issue/ENG-42",
               state: { name: "In Progress" },
             },
@@ -92,7 +119,11 @@ describe("workspace reference source boundaries", () => {
 
     expect(source).toEqual({
       title: "ENG-42 Preserve retry status",
-      content: "Status: In Progress\nDescription:\nThe upstream 429 must remain retryable.",
+      excerpt: [
+        "The upstream 429 must remain retryable.",
+        "Preserve the provider status.",
+        "Keep the retry signal.",
+      ].join("\n\n"),
     });
   });
 
@@ -129,11 +160,12 @@ describe("workspace reference source boundaries", () => {
     );
 
     expect(source.title).toBe("Root request");
-    expect(source.content).toContain("OP — U0:\nRoot request");
-    expect(source.content).not.toContain("Reply 1");
-    expect(source.content).not.toContain("Reply 2");
+    expect(source.excerpt).toContain("OP — U0:\nRoot request");
+    expect(source.excerpt).not.toContain("Reply 1");
+    expect(source.excerpt).not.toContain("Reply 2");
     for (const index of [3, 4, 5, 6, 7]) {
-      expect(source.content).toContain(`Reply ${index}`);
+      expect(source.excerpt).toContain(`Reply ${index}`);
     }
+    expect(source.excerpt.length).toBeLessThanOrEqual(800);
   });
 });

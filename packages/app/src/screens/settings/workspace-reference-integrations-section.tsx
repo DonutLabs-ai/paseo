@@ -4,12 +4,18 @@ import { useTranslation } from "react-i18next";
 import type { WorkspaceIntegrationStatus } from "@getpaseo/protocol/messages";
 import { StyleSheet } from "react-native-unistyles";
 import { Button } from "@/components/ui/button";
+import { ExternalLink } from "@/components/ui/external-link";
 import { FormTextInput } from "@/components/ui/form-field";
 import type { EditingTextInputHandle } from "@/components/ui/text-input";
 import { SettingsCard, SettingsRow, SettingsSection } from "@/components/settings";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 
 type Provider = "linear" | "slack";
+
+const PROVIDER_GUIDE_URLS: Record<Provider, string> = {
+  linear: "https://linear.app/docs/api-and-webhooks",
+  slack: "https://api.slack.com/apps",
+};
 
 function providerName(provider: Provider): string {
   return provider === "linear" ? "Linear" : "Slack";
@@ -78,6 +84,16 @@ function IntegrationCredentialRow({
       ? "settings.host.workspaceReferences.linearHint"
       : "settings.host.workspaceReferences.slackHint",
   );
+  const guideText = t(
+    provider === "linear"
+      ? "settings.host.workspaceReferences.linearGuide"
+      : "settings.host.workspaceReferences.slackGuide",
+  );
+  const guideLinkLabel = t(
+    provider === "linear"
+      ? "settings.host.workspaceReferences.linearGuideLink"
+      : "settings.host.workspaceReferences.slackGuideLink",
+  );
   let actionLabel = t("settings.host.workspaceReferences.connect");
   if (status.configured) actionLabel = t("settings.host.workspaceReferences.replace");
   if (pending) actionLabel = t("settings.host.workspaceReferences.saving");
@@ -86,9 +102,18 @@ function IntegrationCredentialRow({
       <View>
         <Text style={styles.status}>{statusText}</Text>
         <Text style={styles.hint}>{hintText}</Text>
+        <View style={styles.guide}>
+          <Text style={styles.guideTitle}>{t("settings.host.workspaceReferences.setupGuide")}</Text>
+          <Text style={styles.hint}>{guideText}</Text>
+          <ExternalLink
+            href={PROVIDER_GUIDE_URLS[provider]}
+            label={guideLinkLabel}
+            accessibilityLabel={guideLinkLabel}
+          />
+        </View>
       </View>
     ),
-    [hintText, statusText],
+    [guideLinkLabel, guideText, hintText, provider, statusText, t],
   );
 
   return (
@@ -201,5 +226,7 @@ const styles = StyleSheet.create((theme) => ({
   input: { minWidth: 220 },
   status: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm, marginTop: 4 },
   hint: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm, marginTop: 4 },
+  guide: { gap: theme.spacing[1], marginTop: theme.spacing[2] },
+  guideTitle: { color: theme.colors.foreground, fontSize: theme.fontSize.sm, fontWeight: "600" },
   error: { color: theme.colors.statusDanger, marginBottom: theme.spacing[2] },
 }));

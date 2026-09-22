@@ -1908,7 +1908,7 @@ export const ru: TranslationResources = {
       refresh: "Обновить",
       emptyTitle: "Ссылки Slack или Linear не найдены",
       emptyDescription:
-        "Paseo сканирует всех агентов в этом рабочем пространстве и сохраняет только созданные сводки.",
+        "Paseo сканирует видимые сообщения рабочего пространства и сохраняет только короткие выдержки из источников.",
     },
     draft: {
       newAgent: "Новый агент",
@@ -2459,10 +2459,17 @@ export const ru: TranslationResources = {
       },
       workspaceReferences: {
         title: "Ссылки рабочего пространства",
-        info: "Подключите сервисы для создания сводок по ссылкам из сессий. Учётные данные остаются на этом хосте и никогда не возвращаются в приложение.",
+        info: "Подключите сервисы для получения выдержек по ссылкам из сессий. Учётные данные остаются на этом хосте и никогда не возвращаются в приложение.",
         linearHint: "Личный API-ключ. Paseo читает только описания задач.",
         slackHint:
           "OAuth-токен пользователя или бота. Paseo читает исходное сообщение и последние 5 ответов; боту нужен доступ к каналу.",
+        setupGuide: "Инструкция по настройке",
+        linearGuide:
+          "В Linear откройте Settings → Account → Security & Access → Personal API keys. Создайте ключ с доступом Read, при необходимости ограничьте его нужными командами и вставьте сюда.",
+        linearGuideLink: "Руководство по API-ключам Linear",
+        slackGuide:
+          "Создайте приложение Slack и в OAuth & Permissions добавьте channels:history, groups:history, im:history и mpim:history в Bot Token Scopes. Установите или переустановите приложение, вставьте сюда токен xoxb- и пригласите бота во все нужные каналы. Также подходит пользовательский токен xoxp- с аналогичными User Token Scopes.",
+        slackGuideLink: "Создать или настроить приложение Slack",
         connectedAs: "Подключено как {{account}}",
         notConnected: "Не подключено",
         replaceCredential: "Заменить учётные данные",

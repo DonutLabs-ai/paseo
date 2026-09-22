@@ -731,8 +731,6 @@ export class VoiceAssistantWebSocketServer {
       paseoHome,
       agentManager: this.agentManager,
       workspaceRegistry: this.workspaceRegistry,
-      providerSnapshotManager: this.providerSnapshotManager,
-      daemonConfigStore: this.daemonConfigStore,
       logger: this.logger,
     });
     this.serverCapabilities = buildServerCapabilities({
