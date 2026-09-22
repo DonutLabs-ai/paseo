@@ -1871,6 +1871,18 @@ export const ko: TranslationResources = {
     archiveFinishedRetry: "다시 시도 ({{failed}}/{{total}})",
   },
   panels: {
+    references: {
+      label: "참조",
+      subtitle: "Slack 스레드와 Linear 이슈",
+      tooltip: "워크스페이스 참조",
+      disconnected: "워크스페이스 참조를 불러오려면 이 호스트에 연결하세요.",
+      scanning: "워크스페이스 세션을 스캔하는 중…",
+      updated: "업데이트: {{timestamp}}",
+      notScanned: "스캔하지 않음",
+      refresh: "새로 고침",
+      emptyTitle: "Slack 또는 Linear 참조를 찾지 못했습니다",
+      emptyDescription: "Paseo는 이 워크스페이스의 모든 Agent를 스캔하고 생성된 요약만 저장합니다.",
+    },
     draft: {
       newAgent: "새 에이전트",
       creatingAgent: "에이전트 생성 중",
@@ -2409,6 +2421,21 @@ export const ko: TranslationResources = {
         removeErrorTitle: "오류",
         removeErrorMessage: "연결을 제거할 수 없습니다",
         timeout: "시간 초과",
+      },
+      workspaceReferences: {
+        title: "워크스페이스 참조",
+        info: "세션에 언급된 링크를 요약하는 서비스를 연결합니다. 자격 증명은 이 호스트에만 저장되며 App으로 반환되지 않습니다.",
+        linearHint: "Personal API key. Paseo는 이슈 description만 읽습니다.",
+        slackHint:
+          "OAuth user 또는 bot token. Paseo는 스레드 OP와 마지막 답글 5개를 읽으며 bot token에는 채널 접근 권한이 필요합니다.",
+        connectedAs: "{{account}} 계정으로 연결됨",
+        notConnected: "연결되지 않음",
+        replaceCredential: "자격 증명 교체",
+        tokenPlaceholder: "{{provider}} token",
+        saving: "저장 중…",
+        replace: "교체",
+        connect: "연결",
+        remove: "제거",
       },
       pairDevices: {
         title: "기기 페어링",

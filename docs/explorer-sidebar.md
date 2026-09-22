@@ -42,8 +42,18 @@ that pane from the workspace split tree and docks it separately. Persisted ident
 literal `"explorer"` pane id and `explorerPaneIdByWorkspace` key for compatibility.
 
 The tab rail has no inline add or close controls. Its context menu opens a New Tab launcher and
-toggles Files, Changes, and Explorer-compatible workspace-scoped plugin panels from the shared
-launch catalog. Individual tab menus close instances or move compatible tabs to main. Explorer tabs
+toggles Files, Changes, References, and Explorer-compatible workspace-scoped plugin panels from the
+shared launch catalog. References discovers Linear issue and Slack thread URLs mentioned by any
+agent in the workspace, fetches the configured source fields on the daemon, and renders persisted
+generated summaries. Slack input is the thread OP plus its last five replies. Linear input is the
+issue title, status, and description; comments are not read.
+
+The first References open for an existing workspace scans every current agent timeline. Later opens
+compare each agent's persisted timeline epoch and sequence, scanning only appended rows; **Refresh**
+forces a full rescan and source refresh. This keeps existing workspaces usable without a one-time
+global migration and avoids rescanning complete histories on every load.
+
+Individual tab menus close instances or move compatible tabs to main. Explorer tabs
 can be reordered, but the dock cannot be split. Selecting an Explorer tab does not change workspace
 focus.
 
