@@ -5110,6 +5110,30 @@ describe("Codex app-server provider", () => {
     });
   });
 
+  test("classifies Codex rate-limit exhaustion as a transient transport failure", () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals(session).handleNotification("turn/started", {
+      turn: { id: "turn-rate-limited" },
+    });
+    asInternals(session).handleNotification("turn/completed", {
+      turn: {
+        status: "failed",
+        error: {
+          message: "exceeded retry limit, last status: 429 Too Many Requests",
+        },
+      },
+    });
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn_failed",
+      error: "exceeded retry limit, last status: 429 Too Many Requests",
+      failureReason: "transient_transport",
+    });
+  });
+
   test("emits and dedupes Codex thread/compacted notifications", () => {
     const session = createSession();
     session.activeForegroundTurnId = null;
