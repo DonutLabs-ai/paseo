@@ -164,7 +164,7 @@ export function normalizeWorkspaceReferenceUrl(rawUrl: string): WorkspaceReferen
 export function extractWorkspaceReferenceTargets(
   item: AgentTimelineItem,
 ): WorkspaceReferenceTarget[] {
-  if (item.type !== "user_message" && item.type !== "assistant_message") return [];
+  if (item.type !== "user_message") return [];
   const byKey = new Map<string, WorkspaceReferenceTarget>();
   for (const match of item.text.matchAll(URL_PATTERN)) {
     const target = normalizeWorkspaceReferenceUrl(match[0]);

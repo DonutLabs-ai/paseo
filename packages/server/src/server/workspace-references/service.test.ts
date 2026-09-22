@@ -29,7 +29,7 @@ describe("WorkspaceReferenceService", () => {
     writeFileSync(
       path.join(referenceRoot, `${digest}.json`),
       `${JSON.stringify({
-        version: 2,
+        version: 3,
         workspaceId,
         credentialRevisions: { linear: null, slack: null },
         agents: {},
@@ -165,7 +165,7 @@ describe("WorkspaceReferenceService", () => {
     writeFileSync(
       path.join(referenceRoot, `${digest}.json`),
       `${JSON.stringify({
-        version: 2,
+        version: 3,
         workspaceId,
         credentialRevisions: { linear: revision, slack: null },
         agents: {},
@@ -212,10 +212,10 @@ describe("WorkspaceReferenceService", () => {
     expect(workspaceGet).not.toHaveBeenCalled();
   });
 
-  it("rebuilds version 1 indexes with the current discovery semantics", async () => {
+  it("rebuilds version 2 indexes with user-only discovery semantics", async () => {
     const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-workspace-references-"));
     homes.push(paseoHome);
-    const workspaceId = "wks_reference_v1_test";
+    const workspaceId = "wks_reference_v2_test";
     const digest = createHash("sha256").update(workspaceId).digest("hex");
     const referenceRoot = path.join(paseoHome, "workspace-references");
     const statePath = path.join(referenceRoot, `${digest}.json`);
@@ -223,7 +223,7 @@ describe("WorkspaceReferenceService", () => {
     writeFileSync(
       statePath,
       `${JSON.stringify({
-        version: 1,
+        version: 2,
         workspaceId,
         credentialRevisions: { linear: null, slack: null },
         agents: {},
@@ -273,7 +273,7 @@ describe("WorkspaceReferenceService", () => {
       references: [],
     });
     expect(JSON.parse(readFileSync(statePath, "utf8"))).toMatchObject({
-      version: 2,
+      version: 3,
       workspaceId,
       targets: {},
     });

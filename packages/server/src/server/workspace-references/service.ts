@@ -67,13 +67,19 @@ const WorkspaceReferenceStateV1Schema = z.object({
   ...WorkspaceReferenceStateFields,
 });
 
-const WorkspaceReferenceStateSchema = z.object({
+const WorkspaceReferenceStateV2Schema = z.object({
   version: z.literal(2),
+  ...WorkspaceReferenceStateFields,
+});
+
+const WorkspaceReferenceStateSchema = z.object({
+  version: z.literal(3),
   ...WorkspaceReferenceStateFields,
 });
 
 const StoredWorkspaceReferenceStateSchema = z.discriminatedUnion("version", [
   WorkspaceReferenceStateV1Schema,
+  WorkspaceReferenceStateV2Schema,
   WorkspaceReferenceStateSchema,
 ]);
 
@@ -137,7 +143,7 @@ function isMissingFileError(error: unknown): boolean {
 
 function emptyState(workspaceId: string): WorkspaceReferenceState {
   return {
-    version: 2,
+    version: 3,
     workspaceId,
     credentialRevisions: { linear: null, slack: null },
     agents: {},
@@ -275,7 +281,7 @@ export class WorkspaceReferenceService {
     );
     const publishProgress = (): void => {
       const progressState: WorkspaceReferenceState = {
-        version: 2,
+        version: 3,
         workspaceId,
         credentialRevisions,
         agents: timeline.agents,
@@ -300,7 +306,7 @@ export class WorkspaceReferenceService {
       onReference: writeProgress,
     });
     const nextState: WorkspaceReferenceState = {
-      version: 2,
+      version: 3,
       workspaceId,
       credentialRevisions,
       agents: timeline.agents,
@@ -485,7 +491,7 @@ export class WorkspaceReferenceService {
     const parsed = StoredWorkspaceReferenceStateSchema.parse(JSON.parse(raw));
     if (parsed.workspaceId !== workspaceId)
       throw new Error("Workspace reference index identity mismatch");
-    if (parsed.version === 1) return emptyState(workspaceId);
+    if (parsed.version !== 3) return emptyState(workspaceId);
     return parsed;
   }
 
