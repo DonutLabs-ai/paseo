@@ -4998,6 +4998,61 @@ export class DaemonClient {
     });
   }
 
+  async getWorkspaceIntegrationStatuses(requestId?: string) {
+    this.requireWorkspaceReferencesSupport();
+    return this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workspace.integrations.get_status.request" },
+      responseType: "workspace.integrations.get_status.response",
+    });
+  }
+
+  async setWorkspaceIntegrationCredential(
+    provider: "linear" | "slack",
+    credential: string,
+    requestId?: string,
+  ) {
+    this.requireWorkspaceReferencesSupport();
+    return this.sendCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "workspace.integrations.set_credential.request",
+        provider,
+        credential,
+      },
+      responseType: "workspace.integrations.set_credential.response",
+    });
+  }
+
+  async removeWorkspaceIntegrationCredential(provider: "linear" | "slack", requestId?: string) {
+    this.requireWorkspaceReferencesSupport();
+    return this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workspace.integrations.remove_credential.request", provider },
+      responseType: "workspace.integrations.remove_credential.response",
+    });
+  }
+
+  async getWorkspaceReferences(workspaceId: string, requestId?: string) {
+    this.requireWorkspaceReferencesSupport();
+    return this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workspace.references.get.request", workspaceId },
+      responseType: "workspace.references.get.response",
+      timeout: 10 * 60 * 1000,
+    });
+  }
+
+  async refreshWorkspaceReferences(workspaceId: string, requestId?: string) {
+    this.requireWorkspaceReferencesSupport();
+    return this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "workspace.references.refresh.request", workspaceId },
+      responseType: "workspace.references.refresh.response",
+      timeout: 10 * 60 * 1000,
+    });
+  }
+
   async getDaemonStatus(options?: DaemonStatusOptions): Promise<DaemonStatusPayload> {
     if (!this.lastServerInfoMessage) throw new DaemonConnectionError("Transport not connected");
     if (this.lastServerInfoMessage?.features?.daemonStatusRpc !== true) {
@@ -6052,6 +6107,13 @@ export class DaemonClient {
     // COMPAT(daemonConfigReload): added in v0.4.0, remove gate after 2027-02-14.
     if (this.lastServerInfoMessage?.features?.daemonConfigReload !== true) {
       throw new Error("Update the host to reload daemon configuration.");
+    }
+  }
+
+  private requireWorkspaceReferencesSupport(): void {
+    // COMPAT(workspaceReferences): added in v0.9.0, remove gate after 2027-09-22.
+    if (this.lastServerInfoMessage?.features?.workspaceReferences !== true) {
+      throw new Error("Update the host to use workspace references.");
     }
   }
 

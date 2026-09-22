@@ -216,6 +216,11 @@ const INBOUND_PERMISSION = {
   workspace_setup_status_request: "workspace.read",
   "workspace.setup.run.request": "workspace.write",
   write_project_config_request: "workspace.write",
+  "workspace.integrations.get_status.request": "daemon.read",
+  "workspace.integrations.set_credential.request": "daemon.manage",
+  "workspace.integrations.remove_credential.request": "daemon.manage",
+  "workspace.references.get.request": "workspace.read",
+  "workspace.references.refresh.request": "workspace.read",
 } as const satisfies Record<InboundOperation, PermissionRequirement>;
 
 const OUTBOUND_PERMISSION = {
@@ -447,6 +452,11 @@ const OUTBOUND_PERMISSION = {
   "workspace.setup.run.response": "workspace.write",
   workspace_update: ["workspace.read", "hub.execute"],
   write_project_config_response: "workspace.write",
+  "workspace.integrations.get_status.response": "daemon.read",
+  "workspace.integrations.set_credential.response": "daemon.manage",
+  "workspace.integrations.remove_credential.response": "daemon.manage",
+  "workspace.references.get.response": "workspace.read",
+  "workspace.references.refresh.response": "workspace.read",
 } as const satisfies Record<OutboundOperation, PermissionRequirement>;
 
 export function requiredPermissionForInbound(operation: InboundOperation): PermissionRequirement {

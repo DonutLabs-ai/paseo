@@ -1916,6 +1916,19 @@ export const fr: TranslationResources = {
     archiveFinishedRetry: "Réessayer ({{failed}}/{{total}})",
   },
   panels: {
+    references: {
+      label: "Références",
+      subtitle: "Fils Slack et tickets Linear",
+      tooltip: "Références de l’espace de travail",
+      disconnected: "Connectez-vous à cet hôte pour charger les références de l’espace de travail.",
+      scanning: "Analyse des sessions de l’espace de travail…",
+      updated: "Mis à jour {{timestamp}}",
+      notScanned: "Non analysé",
+      refresh: "Actualiser",
+      emptyTitle: "Aucune référence Slack ou Linear trouvée",
+      emptyDescription:
+        "Paseo analyse tous les agents de cet espace de travail et ne conserve que les résumés générés.",
+    },
     draft: {
       newAgent: "Nouvel agent",
       creatingAgent: "Agent créateur",
@@ -2460,6 +2473,21 @@ export const fr: TranslationResources = {
         removeErrorTitle: "Erreur",
         removeErrorMessage: "Impossible de supprimer la connexion",
         timeout: "Temps mort",
+      },
+      workspaceReferences: {
+        title: "Références de l’espace de travail",
+        info: "Connectez les services utilisés pour résumer les liens mentionnés dans les sessions. Les identifiants restent sur cet hôte et ne sont jamais renvoyés à l’application.",
+        linearHint: "Clé API personnelle. Paseo lit uniquement la description des tickets.",
+        slackHint:
+          "Jeton OAuth utilisateur ou bot. Paseo lit le message initial et les 5 dernières réponses ; les bots doivent avoir accès au canal.",
+        connectedAs: "Connecté en tant que {{account}}",
+        notConnected: "Non connecté",
+        replaceCredential: "Remplacer l’identifiant",
+        tokenPlaceholder: "Jeton {{provider}}",
+        saving: "Enregistrement…",
+        replace: "Remplacer",
+        connect: "Connecter",
+        remove: "Supprimer",
       },
       pairDevices: {
         title: "Associer des appareils",
