@@ -42,8 +42,8 @@ export interface UseChatOutlineInput {
   enabled: boolean;
   viewportRef: RefObject<StreamViewportHandle | null>;
   onJumpError: () => void;
-  visibleItemIds?: ReadonlySet<string>;
-  revealLoadedItem?: (itemId: string) => boolean;
+  visibleMessageIds?: ReadonlySet<string>;
+  revealLoadedMessage?: (messageId: string) => boolean;
 }
 
 export interface ChatOutline {
@@ -64,8 +64,8 @@ export function useChatOutline({
   enabled,
   viewportRef,
   onJumpError,
-  visibleItemIds,
-  revealLoadedItem,
+  visibleMessageIds,
+  revealLoadedMessage,
 }: UseChatOutlineInput): ChatOutline {
   const [scopedIndex, setScopedIndex] = useState<ScopedPromptIndex | null>(null);
   const [pendingJump, setPendingJump] = useState<PendingPromptJump | null>(null);
@@ -161,8 +161,8 @@ export function useChatOutline({
     const target = loadedItems.find((item) => item.timelineCursor?.seq === pendingJump.seq);
     if (target) {
       if (pendingJump.hasScrolled) return;
-      if (visibleItemIds?.has(target.id) === false) {
-        revealLoadedItem?.(target.id);
+      if (visibleMessageIds?.has(target.id) === false) {
+        revealLoadedMessage?.(target.id);
         return;
       }
       viewportRef.current?.scrollToMessage?.(target.id);
@@ -173,7 +173,7 @@ export function useChatOutline({
       return;
     }
     if (pendingJump.fetchSettled) setPendingJump(null);
-  }, [loadedItems, pendingJump, revealLoadedItem, viewportRef, visibleItemIds]);
+  }, [loadedItems, pendingJump, revealLoadedMessage, viewportRef, visibleMessageIds]);
 
   const jumpToPrompt = useCallback(
     (seq: number) => {
@@ -181,7 +181,7 @@ export function useChatOutline({
       setPendingJump(null);
       const loaded = loadedItems.find((item) => item.timelineCursor?.seq === seq);
       if (loaded) {
-        if (revealLoadedItem?.(loaded.id)) {
+        if (revealLoadedMessage?.(loaded.id)) {
           const requestId = nextJumpRequestIdRef.current;
           setPendingJump({ requestId, seq, fetchSettled: true, hasScrolled: false });
           return;
@@ -205,7 +205,7 @@ export function useChatOutline({
           });
         });
     },
-    [agentId, index, loadedItems, onJumpError, revealLoadedItem, serverId, viewportRef],
+    [agentId, index, loadedItems, onJumpError, revealLoadedMessage, serverId, viewportRef],
   );
 
   return {
