@@ -214,7 +214,7 @@ describe("useChatOutline", () => {
           timelineEpoch,
           enabled,
           viewportRef,
-          visibleItemIds: new Set(),
+          visibleMessageIds: new Set(),
           onJumpError: vi.fn(),
         }),
       {
@@ -297,7 +297,7 @@ describe("useChatOutline", () => {
       prompts: [{ seq: 1, timestamp: new Date(1).toISOString(), preview: "prompt" }],
     });
     const scrollToMessage = vi.fn();
-    const revealLoadedItem = vi.fn(() => true);
+    const revealLoadedMessage = vi.fn(() => true);
     const viewport: StreamViewportHandle = {
       scrollToBottom: vi.fn(),
       prepareForViewportChange: vi.fn(),
@@ -314,7 +314,7 @@ describe("useChatOutline", () => {
       },
     ];
     const { result, rerender } = renderHook(
-      ({ visibleItemIds }) =>
+      ({ visibleMessageIds }) =>
         useChatOutline({
           agentId: "agent-1",
           serverId: "server-1",
@@ -324,18 +324,18 @@ describe("useChatOutline", () => {
           enabled: true,
           viewportRef,
           onJumpError: vi.fn(),
-          visibleItemIds,
-          revealLoadedItem,
+          visibleMessageIds,
+          revealLoadedMessage,
         }),
-      { initialProps: { visibleItemIds: new Set<string>() } },
+      { initialProps: { visibleMessageIds: new Set<string>() } },
     );
 
     await waitFor(() => expect(result.current.prompts).toHaveLength(1));
     await act(async () => result.current.jumpToPrompt(1));
-    expect(revealLoadedItem).toHaveBeenCalledWith("older-prompt");
+    expect(revealLoadedMessage).toHaveBeenCalledWith("older-prompt");
     expect(scrollToMessage).not.toHaveBeenCalled();
 
-    rerender({ visibleItemIds: new Set(["older-prompt"]) });
+    rerender({ visibleMessageIds: new Set(["older-prompt"]) });
     await waitFor(() => expect(scrollToMessage).toHaveBeenCalledWith("older-prompt"));
   });
 
@@ -347,7 +347,7 @@ describe("useChatOutline", () => {
     const fetch = deferred<void>();
     runtime.fetchAgentTimeline.mockReturnValue(fetch.promise);
     const scrollToMessage = vi.fn();
-    const revealLoadedItem = vi.fn(() => true);
+    const revealLoadedMessage = vi.fn(() => true);
     const viewportRef = {
       current: {
         scrollToBottom: vi.fn(),
@@ -363,7 +363,7 @@ describe("useChatOutline", () => {
       timelineCursor: { epoch: "epoch-1", seq: 1 },
     };
     const { result, rerender } = renderHook(
-      ({ tail, visibleItemIds }) =>
+      ({ tail, visibleMessageIds }) =>
         useChatOutline({
           agentId: "agent-1",
           serverId: "server-1",
@@ -373,13 +373,13 @@ describe("useChatOutline", () => {
           enabled: true,
           viewportRef,
           onJumpError: vi.fn(),
-          visibleItemIds,
-          revealLoadedItem,
+          visibleMessageIds,
+          revealLoadedMessage,
         }),
       {
         initialProps: {
           tail: [] as (typeof fetchedPrompt)[],
-          visibleItemIds: new Set<string>(),
+          visibleMessageIds: new Set<string>(),
         },
       },
     );
@@ -388,11 +388,11 @@ describe("useChatOutline", () => {
     act(() => result.current.jumpToPrompt(1));
     await waitFor(() => expect(runtime.fetchAgentTimeline).toHaveBeenCalledOnce());
 
-    rerender({ tail: [fetchedPrompt], visibleItemIds: new Set<string>() });
-    await waitFor(() => expect(revealLoadedItem).toHaveBeenCalledWith(fetchedPrompt.id));
+    rerender({ tail: [fetchedPrompt], visibleMessageIds: new Set<string>() });
+    await waitFor(() => expect(revealLoadedMessage).toHaveBeenCalledWith(fetchedPrompt.id));
     expect(scrollToMessage).not.toHaveBeenCalled();
 
-    rerender({ tail: [fetchedPrompt], visibleItemIds: new Set([fetchedPrompt.id]) });
+    rerender({ tail: [fetchedPrompt], visibleMessageIds: new Set([fetchedPrompt.id]) });
     await waitFor(() => expect(scrollToMessage).toHaveBeenCalledOnce());
     expect(scrollToMessage).toHaveBeenCalledWith(fetchedPrompt.id);
     await act(async () => fetch.resolve());
@@ -416,8 +416,8 @@ describe("useChatOutline", () => {
       timestamp: new Date(2),
       timelineCursor: { epoch: "epoch-1", seq: 2 },
     };
-    const revealLoadedItem = vi.fn();
-    revealLoadedItem.mockReturnValue(false);
+    const revealLoadedMessage = vi.fn();
+    revealLoadedMessage.mockReturnValue(false);
     const { result } = renderHook(() =>
       useChatOutline({
         agentId: "agent-1",
@@ -428,8 +428,8 @@ describe("useChatOutline", () => {
         enabled: true,
         viewportRef: { current: viewport },
         onJumpError: vi.fn(),
-        visibleItemIds: new Set([livePrompt.id]),
-        revealLoadedItem,
+        visibleMessageIds: new Set([livePrompt.id]),
+        revealLoadedMessage,
       }),
     );
 
