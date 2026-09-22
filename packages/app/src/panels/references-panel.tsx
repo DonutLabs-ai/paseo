@@ -7,6 +7,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import invariant from "tiny-invariant";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
+import { MarkdownRenderer } from "@/components/markdown/renderer";
 import { usePaneContext } from "@/panels/pane-context";
 import { definePanel, type PanelPresentation } from "@/panels/panel-registry";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
@@ -49,28 +50,32 @@ function normalizeSnapshot(snapshot: WorkspaceReferencesSnapshot): WorkspaceRefe
   return { ...snapshot, references: uniqueReferences(snapshot.references) };
 }
 
-function ReferenceCard({ reference }: { reference: WorkspaceReference }) {
+export function ReferenceCard({ reference }: { reference: WorkspaceReference }) {
   const open = useCallback(() => {
     void openExternalUrl(reference.url);
   }, [reference.url]);
   return (
-    <Pressable onPress={open} style={styles.card} accessibilityRole="link">
-      <View style={styles.cardHeader}>
-        <View style={styles.providerLabel}>
-          <ProviderIcon provider={reference.provider} />
-          <Text style={styles.provider}>{providerLabel(reference)}</Text>
+    <View style={styles.card}>
+      <Pressable onPress={open} style={styles.referenceLink} accessibilityRole="link">
+        <View style={styles.cardHeader}>
+          <View style={styles.providerLabel}>
+            <ProviderIcon provider={reference.provider} />
+            <Text style={styles.provider}>{providerLabel(reference)}</Text>
+          </View>
+          <ThemedLink2 size={14} />
         </View>
-        <ThemedLink2 size={14} />
-      </View>
-      <Text style={styles.title} numberOfLines={2}>
-        {reference.title ?? reference.url}
-      </Text>
-      {reference.summary ? <Text style={styles.summary}>{reference.summary}</Text> : null}
+        <Text style={styles.title} numberOfLines={2}>
+          {reference.title ?? reference.url}
+        </Text>
+      </Pressable>
+      {reference.summary ? (
+        <MarkdownRenderer text={reference.summary} compact enableHtmlish={false} />
+      ) : null}
       {reference.error ? <Text style={styles.error}>{reference.error}</Text> : null}
       {reference.fetchedAt ? (
         <Text style={styles.timestamp}>{new Date(reference.fetchedAt).toLocaleString()}</Text>
       ) : null}
-    </Pressable>
+    </View>
   );
 }
 
@@ -206,6 +211,7 @@ const styles = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
     padding: theme.spacing[3],
   },
+  referenceLink: { gap: theme.spacing[2] },
   cardHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   providerLabel: { alignItems: "center", flexDirection: "row", gap: theme.spacing[1] },
   provider: {
@@ -214,7 +220,6 @@ const styles = StyleSheet.create((theme) => ({
     textTransform: "uppercase",
   },
   title: { color: theme.colors.foreground, fontSize: theme.fontSize.base, fontWeight: "600" },
-  summary: { color: theme.colors.foreground, fontSize: theme.fontSize.sm, lineHeight: 20 },
   error: { color: theme.colors.statusDanger, fontSize: theme.fontSize.sm },
   pageError: {
     color: theme.colors.statusDanger,
