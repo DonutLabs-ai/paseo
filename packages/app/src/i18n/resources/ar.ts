@@ -2425,7 +2425,7 @@ export const ar: TranslationResources = {
           "في Linear، افتح Settings → Account → Security & Access → Personal API keys. أنشئ مفتاحًا بصلاحية Read، وحدده للفرق المطلوبة اختياريًا، ثم الصقه هنا.",
         linearGuideLink: "دليل مفتاح Linear API",
         slackGuide:
-          "أنشئ تطبيق Slack، ثم أضف channels:history وgroups:history وim:history وmpim:history ضمن Bot Token Scopes في OAuth & Permissions. ثبّت التطبيق أو أعد تثبيته، والصق رمز xoxb- هنا، وادعُ الروبوت إلى كل قناة يجب أن يقرأها. يعمل أيضًا رمز مستخدم xoxp- مع User Token Scopes المكافئة.",
+          "أنشئ تطبيق Slack، ثم أضف channels:history وgroups:history وim:history وmpim:history وusers:read ضمن Bot Token Scopes في OAuth & Permissions. ثبّت التطبيق أو أعد تثبيته، والصق رمز xoxb- هنا، وادعُ الروبوت إلى كل قناة يجب أن يقرأها. يعمل أيضًا رمز مستخدم xoxp- مع User Token Scopes المكافئة.",
         slackGuideLink: "إنشاء تطبيق Slack أو إعداده",
         connectedAs: "متصل باسم {{account}}",
         notConnected: "غير متصل",

@@ -2398,7 +2398,7 @@ export const zhCN: TranslationResources = {
           "在 Linear 打开 Settings → Account → Security & Access → Personal API keys。创建具有 Read 权限的 key，可按需限制到指定 team，然后粘贴到这里。",
         linearGuideLink: "Linear API key 指南",
         slackGuide:
-          "创建 Slack app，在 OAuth & Permissions 的 Bot Token Scopes 中添加 channels:history、groups:history、im:history 和 mpim:history。安装或重新安装 app，将 xoxb- token 粘贴到这里，并邀请 bot 加入需要读取的每个频道。也支持具有对应 User Token Scopes 的 xoxp- user token。",
+          "创建 Slack app，在 OAuth & Permissions 的 Bot Token Scopes 中添加 channels:history、groups:history、im:history、mpim:history 和 users:read。安装或重新安装 app，将 xoxb- token 粘贴到这里，并邀请 bot 加入需要读取的每个频道。也支持具有对应 User Token Scopes 的 xoxp- user token。",
         slackGuideLink: "创建或配置 Slack app",
         connectedAs: "已连接为 {{account}}",
         notConnected: "未连接",

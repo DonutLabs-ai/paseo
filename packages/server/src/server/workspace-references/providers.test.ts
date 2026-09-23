@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
 import {
+  createSlackUserResolver,
   extractWorkspaceReferenceTargets,
   fetchLinearReference,
   fetchSlackReference,
@@ -137,16 +138,24 @@ describe("workspace reference source boundaries", () => {
         user: `U${index + 1}`,
       })),
     ];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ ok: true, messages }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-      ),
-    );
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      const body = url.pathname.endsWith("/users.info")
+        ? {
+            ok: true,
+            user: {
+              id: url.searchParams.get("user"),
+              profile: { display_name: `Person ${url.searchParams.get("user")}` },
+            },
+          }
+        : { ok: true, messages };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const lookupErrors = vi.fn();
 
     const source = await fetchSlackReference(
       {
@@ -158,16 +167,21 @@ describe("workspace reference source boundaries", () => {
         url: "https://acme.slack.com/archives/C1/p1700000000000001",
       },
       "xoxp-token",
+      createSlackUserResolver("xoxp-token", lookupErrors),
     );
 
     expect(source.title).toBe("Root request");
-    expect(source.excerpt).toContain("OP — U0:\nRoot request");
+    expect(source.excerpt).toContain("OP — Person U0:\nRoot request");
     expect(source.excerpt).not.toContain("Reply 1");
     expect(source.excerpt).not.toContain("Reply 2");
     for (const index of [3, 4, 5, 6, 7]) {
       expect(source.excerpt).toContain(`Reply ${index}`);
     }
     expect(source.excerpt.length).toBeLessThanOrEqual(800);
+    expect(lookupErrors).not.toHaveBeenCalled();
+    expect(
+      fetchMock.mock.calls.filter(([input]) => String(input).includes("/users.info")),
+    ).toHaveLength(6);
   });
 
   it("uses attachment and block content and decodes Slack mrkdwn entities", async () => {
@@ -193,15 +207,68 @@ describe("workspace reference source boundaries", () => {
         blocks: [{ text: { type: "mrkdwn", text: "Issue &lt;ready&gt; for review" } }],
       },
     ];
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      const body = url.pathname.endsWith("/users.info")
+        ? {
+            ok: true,
+            user: {
+              id: url.searchParams.get("user"),
+              profile: { display_name: "Wenzhang" },
+            },
+          }
+        : { ok: true, messages };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const source = await fetchSlackReference(
+      {
+        provider: "slack",
+        key: "slack:acme:C1:1700000000.000001",
+        identifier: "C1:1700000000.000001",
+        channelId: "C1",
+        threadTs: "1700000000.000001",
+        url: "https://acme.slack.com/archives/C1/p1700000000000001",
+      },
+      "xoxp-token",
+      createSlackUserResolver("xoxp-token", vi.fn()),
+    );
+
+    expect(source.title).toBe("Alert & recovery");
+    expect(source.excerpt).toContain(
+      "OP — Turing:\nAlert & recovery\n> investigate @Wenzhang with the runbook",
+    );
+    expect(source.excerpt).toContain("Mark :white_check_mark: when ready");
+    expect(source.excerpt).toContain("Recent reply 1 — Linear:\nIssue <ready> for review");
+    expect(source.excerpt).not.toContain("&amp;");
+    expect(source.excerpt).not.toContain("*Alert");
+    expect(source.excerpt).not.toContain("(empty message)");
+    expect(
+      fetchMock.mock.calls.filter(([input]) => String(input).includes("/users.info")),
+    ).toHaveLength(1);
+  });
+
+  it("keeps the Slack user id visible when identity lookup fails", async () => {
+    const lookupErrors = vi.fn();
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        async () =>
-          new Response(JSON.stringify({ ok: true, messages }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          }),
-      ),
+      vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        const body = url.pathname.endsWith("/users.info")
+          ? { ok: false, error: "missing_scope" }
+          : {
+              ok: true,
+              messages: [{ ts: "1700000000.000001", text: "Hello <@U123>", user: "U123" }],
+            };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
     );
 
     const source = await fetchSlackReference(
@@ -214,16 +281,10 @@ describe("workspace reference source boundaries", () => {
         url: "https://acme.slack.com/archives/C1/p1700000000000001",
       },
       "xoxp-token",
+      createSlackUserResolver("xoxp-token", lookupErrors),
     );
 
-    expect(source.title).toBe("Alert & recovery");
-    expect(source.excerpt).toContain(
-      "OP — Turing:\nAlert & recovery\n> investigate @U123 with the runbook",
-    );
-    expect(source.excerpt).toContain("Mark :white_check_mark: when ready");
-    expect(source.excerpt).toContain("Recent reply 1 — Linear:\nIssue <ready> for review");
-    expect(source.excerpt).not.toContain("&amp;");
-    expect(source.excerpt).not.toContain("*Alert");
-    expect(source.excerpt).not.toContain("(empty message)");
+    expect(source.excerpt).toContain("OP — U123:\nHello @U123");
+    expect(lookupErrors).toHaveBeenCalledOnce();
   });
 });

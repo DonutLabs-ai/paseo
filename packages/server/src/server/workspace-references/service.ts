@@ -15,11 +15,13 @@ import { writePrivateFileAtomicSync } from "../private-files.js";
 import type { WorkspaceRegistry } from "../workspace-registry.js";
 import { WorkspaceIntegrationCredentialStore } from "./credential-store.js";
 import {
+  createSlackUserResolver,
   extractWorkspaceReferenceTargets,
   fetchLinearReference,
   fetchSlackReference,
   verifyLinearCredential,
   verifySlackCredential,
+  type SlackUserResolver,
   type WorkspaceReferenceTarget,
 } from "./providers.js";
 
@@ -396,6 +398,15 @@ export class WorkspaceReferenceService {
     const targets = Object.values(options.targets).sort((left, right) =>
       left.key.localeCompare(right.key),
     );
+    const slackCredential = this.credentials.get("slack");
+    const slackUserResolver = slackCredential
+      ? createSlackUserResolver(slackCredential.token, (userId, error) => {
+          this.logger.warn(
+            { err: error, userId },
+            "Failed to resolve Slack user name for workspace reference",
+          );
+        })
+      : undefined;
     const limit = pLimit(REFERENCE_REFRESH_CONCURRENCY);
     return Promise.all(
       targets.map((target) =>
@@ -408,7 +419,7 @@ export class WorkspaceReferenceService {
           ) {
             return previous;
           }
-          const reference = await this.fetchReference(target, previous);
+          const reference = await this.fetchReference(target, previous, slackUserResolver);
           options.onReference(reference);
           return reference;
         }),
@@ -446,6 +457,7 @@ export class WorkspaceReferenceService {
   private async fetchReference(
     target: WorkspaceReferenceTarget,
     previous: WorkspaceReference | undefined,
+    slackUserResolver: SlackUserResolver | undefined,
   ): Promise<WorkspaceReference> {
     try {
       const credential = this.credentials.get(target.provider);
@@ -454,10 +466,15 @@ export class WorkspaceReferenceService {
           `Connect ${target.provider === "linear" ? "Linear" : "Slack"} in host settings`,
         );
       }
-      const source =
-        target.provider === "linear"
-          ? await fetchLinearReference(target, credential.token)
-          : await fetchSlackReference(target, credential.token);
+      let source;
+      if (target.provider === "linear") {
+        source = await fetchLinearReference(target, credential.token);
+      } else {
+        if (!slackUserResolver) {
+          throw new Error("Slack user resolver is missing for a configured credential");
+        }
+        source = await fetchSlackReference(target, credential.token, slackUserResolver);
+      }
       return {
         key: target.key,
         provider: target.provider,

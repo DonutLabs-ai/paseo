@@ -2435,7 +2435,7 @@ export const ko: TranslationResources = {
           "Linear에서 Settings → Account → Security & Access → Personal API keys를 엽니다. Read 권한의 key를 만들고 필요하면 대상 team으로 제한한 다음 여기에 붙여 넣으세요.",
         linearGuideLink: "Linear API key 가이드",
         slackGuide:
-          "Slack app을 만들고 OAuth & Permissions의 Bot Token Scopes에 channels:history, groups:history, im:history, mpim:history를 추가합니다. App을 설치하거나 다시 설치한 뒤 xoxb- token을 여기에 붙여 넣고 읽어야 할 각 채널에 bot을 초대하세요. 동일한 User Token Scopes를 가진 xoxp- user token도 사용할 수 있습니다.",
+          "Slack app을 만들고 OAuth & Permissions의 Bot Token Scopes에 channels:history, groups:history, im:history, mpim:history, users:read를 추가합니다. App을 설치하거나 다시 설치한 뒤 xoxb- token을 여기에 붙여 넣고 읽어야 할 각 채널에 bot을 초대하세요. 동일한 User Token Scopes를 가진 xoxp- user token도 사용할 수 있습니다.",
         slackGuideLink: "Slack app 만들기 또는 설정",
         connectedAs: "{{account}} 계정으로 연결됨",
         notConnected: "연결되지 않음",
