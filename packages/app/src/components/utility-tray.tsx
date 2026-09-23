@@ -24,7 +24,12 @@ import { ToolbarButton } from "@/components/ui/pane-content-toolbar";
 import { smallIconButtonChromeFrameSize } from "@/components/ui/icon-button-chrome";
 import { TerminalPane } from "@/components/terminal-pane";
 import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
-import { useHostRuntimeClient, useHosts } from "@/runtime/host-runtime";
+import {
+  useHostRuntimeClient,
+  useHostRuntimeConnectionEpoch,
+  useHostRuntimeConnectionStatus,
+  useHosts,
+} from "@/runtime/host-runtime";
 import { useUtilityTrayStore, type UtilityTrayTarget } from "@/stores/utility-tray-store";
 import { WindowChromeRegion, WindowChromeSafeArea } from "@/utils/desktop-window";
 import {
@@ -53,7 +58,13 @@ const UTILITY_TRAY_TRIGGER_NATIVE_ID = "utility-tray-trigger";
 interface HostUtilityTerminal {
   hostLabel: string;
   serverId: string;
+  connectionEpoch: number;
   terminal: UtilityTerminalInfo;
+}
+
+interface HostUtilityTerminalSnapshot {
+  connectionEpoch: number;
+  terminals: UtilityTerminalInfo[];
 }
 
 interface UtilityTerminalDraft {
@@ -161,9 +172,9 @@ export function UtilityTrayHost() {
   const close = useUtilityTrayStore((state) => state.close);
   const selectTarget = useUtilityTrayStore((state) => state.selectTarget);
   const setHostFailureIds = useUtilityTrayStore((state) => state.setHostFailureIds);
-  const [terminalsByServer, setTerminalsByServer] = useState<Record<string, UtilityTerminalInfo[]>>(
-    {},
-  );
+  const [terminalsByServer, setTerminalsByServer] = useState<
+    Record<string, HostUtilityTerminalSnapshot>
+  >({});
   const [hostErrors, setHostErrors] = useState<Record<string, string | null>>({});
   const [showPicker, setShowPicker] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -172,13 +183,15 @@ export function UtilityTrayHost() {
 
   const entries = useMemo(
     () =>
-      hosts.flatMap((host) =>
-        (terminalsByServer[host.serverId] ?? []).map((terminal) => ({
+      hosts.flatMap((host) => {
+        const snapshot = terminalsByServer[host.serverId];
+        return (snapshot?.terminals ?? []).map((terminal) => ({
           serverId: host.serverId,
           hostLabel: host.label,
+          connectionEpoch: snapshot.connectionEpoch,
           terminal,
-        })),
-      ),
+        }));
+      }),
     [hosts, terminalsByServer],
   );
   const selectedEntry = useMemo(
@@ -224,8 +237,11 @@ export function UtilityTrayHost() {
   }, [close, isOpen]);
 
   const handleHostUpdate = useCallback(
-    (serverId: string, terminals: UtilityTerminalInfo[]) => {
-      setTerminalsByServer((current) => ({ ...current, [serverId]: terminals }));
+    (serverId: string, connectionEpoch: number, terminals: UtilityTerminalInfo[]) => {
+      setTerminalsByServer((current) => ({
+        ...current,
+        [serverId]: { connectionEpoch, terminals },
+      }));
       setHostErrors((current) => ({ ...current, [serverId]: null }));
       setHostFailureIds(serverId, getUtilityTerminalFailureIds(terminals));
     },
@@ -271,7 +287,11 @@ export function UtilityTrayHost() {
         }
         handleHostUpdate(
           selectedEntry.serverId,
-          replaceUtilityTerminal(terminalsByServer[selectedEntry.serverId] ?? [], result.terminal),
+          selectedEntry.connectionEpoch,
+          replaceUtilityTerminal(
+            terminalsByServer[selectedEntry.serverId]?.terminals ?? [],
+            result.terminal,
+          ),
         );
       } catch (error) {
         setMutationError(error instanceof Error ? error.message : String(error));
@@ -298,8 +318,9 @@ export function UtilityTrayHost() {
       }
       handleHostUpdate(
         selectedEntry.serverId,
+        selectedEntry.connectionEpoch,
         removeUtilityTerminal(
-          terminalsByServer[selectedEntry.serverId] ?? [],
+          terminalsByServer[selectedEntry.serverId]?.terminals ?? [],
           selectedEntry.terminal.id,
         ),
       );
@@ -456,6 +477,9 @@ function UtilityTrayContent({
   onSelect: (entry: HostUtilityTerminal) => void;
   onStart: () => void;
 }) {
+  const selectedServerId = selectedEntry?.serverId ?? "";
+  const connectionEpoch = useHostRuntimeConnectionEpoch(selectedServerId);
+  const connectionStatus = useHostRuntimeConnectionStatus(selectedServerId);
   if (showCreate) {
     return (
       <UtilityTerminalCreateForm hosts={hosts} onCancel={onCancelCreate} onCreated={onCreated} />
@@ -469,6 +493,13 @@ function UtilityTrayContent({
         onSelect={onSelect}
         onCreate={onCreate}
       />
+    );
+  }
+  if (connectionStatus !== "online" || selectedEntry.connectionEpoch !== connectionEpoch) {
+    return (
+      <View style={styles.centerState}>
+        <Text style={styles.stateText}>Reconnecting utility terminal…</Text>
+      </View>
     );
   }
   if (selectedEntry.terminal.status === "running" && selectedEntry.terminal.terminalId) {
@@ -510,15 +541,17 @@ function UtilityTerminalHostSync({
   onError,
 }: {
   serverId: string;
-  onUpdate: (serverId: string, terminals: UtilityTerminalInfo[]) => void;
+  onUpdate: (serverId: string, connectionEpoch: number, terminals: UtilityTerminalInfo[]) => void;
   onError: (serverId: string, error: string) => void;
 }) {
   const client = useHostRuntimeClient(serverId);
+  const connectionEpoch = useHostRuntimeConnectionEpoch(serverId);
+  const connectionStatus = useHostRuntimeConnectionStatus(serverId);
   useEffect(() => {
-    if (!client) return;
+    if (!client || connectionStatus !== "online") return;
     let cancelled = false;
     const unsubscribe = client.on("utility_terminals.changed", (message) => {
-      if (!cancelled) onUpdate(serverId, message.payload.terminals);
+      if (!cancelled) onUpdate(serverId, connectionEpoch, message.payload.terminals);
     });
     const syncTerminals = async () => {
       try {
@@ -527,7 +560,7 @@ function UtilityTerminalHostSync({
         if (result.error) {
           throw new Error(result.error);
         }
-        onUpdate(serverId, result.terminals);
+        onUpdate(serverId, connectionEpoch, result.terminals);
       } catch (error) {
         if (!cancelled) onError(serverId, error instanceof Error ? error.message : String(error));
       }
@@ -537,7 +570,7 @@ function UtilityTerminalHostSync({
       cancelled = true;
       unsubscribe();
     };
-  }, [client, onError, onUpdate, serverId]);
+  }, [client, connectionEpoch, connectionStatus, onError, onUpdate, serverId]);
   return null;
 }
 
@@ -654,6 +687,7 @@ function UtilityTerminalCreateForm({
     args: "",
   });
   const client = useHostRuntimeClient(draft.serverId);
+  const connectionEpoch = useHostRuntimeConnectionEpoch(draft.serverId);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selectedHost = hosts.find((host) => host.serverId === draft.serverId) ?? null;
@@ -691,6 +725,7 @@ function UtilityTerminalCreateForm({
       onCreated({
         serverId: draft.serverId,
         hostLabel: selectedHost?.label ?? draft.serverId,
+        connectionEpoch,
         terminal: result.terminal,
       });
     } catch (caught) {
@@ -698,7 +733,7 @@ function UtilityTerminalCreateForm({
     } finally {
       setIsCreating(false);
     }
-  }, [client, draft, isCreating, onCreated, selectedHost?.label]);
+  }, [client, connectionEpoch, draft, isCreating, onCreated, selectedHost?.label]);
 
   return (
     <ScrollView contentContainerStyle={styles.form}>

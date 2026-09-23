@@ -76,6 +76,12 @@ function workspaceDeltaEntity(delta: SequencedWorkspaceDirectoryDelta): Workspac
   return "projectId" in delta || "project" in delta ? "projects" : "workspaces";
 }
 
+function workspaceDeltaId(delta: SequencedWorkspaceDirectoryDelta): string {
+  if ("projectId" in delta) return delta.projectId;
+  if ("project" in delta) return delta.project.projectId;
+  return delta.kind === "upsert" ? delta.workspace.id : delta.id;
+}
+
 function isDeltaCoveredByCursor(
   cursor: DirectoryCursor | undefined,
   delta: { generation?: string; seq?: number },
@@ -179,6 +185,11 @@ export class DirectorySync {
   private demandRefresh: Promise<void> | null = null;
   private satisfiedDemandSource: DirectorySourceToken | null = null;
   private cursors: DirectoryCheckpoint = {};
+  private hasAuthoritativeDirectorySnapshot = false;
+  private latestLiveWorkspaceSeqByEntity: Record<
+    WorkspaceDirectoryEntity,
+    Map<string, DirectoryCursor>
+  > = { projects: new Map(), workspaces: new Map() };
 
   constructor(
     private readonly serverId: string,
@@ -293,7 +304,14 @@ export class DirectorySync {
   ): void {
     const entity = delta.kind === "script_status" ? null : workspaceDeltaEntity(delta);
     if (entity && delta.kind !== "script_status") {
-      if (isDeltaCoveredByCursor(this.readCursors()[entity], delta)) return;
+      if (
+        isDeltaCoveredByCursor(this.readCursors()[entity], delta) ||
+        isDeltaCoveredByCursor(
+          this.latestLiveWorkspaceSeqByEntity[entity].get(workspaceDeltaId(delta)),
+          delta,
+        )
+      )
+        return;
     }
     this.revision += 1;
     this.workspaceRevision += 1;
@@ -303,7 +321,7 @@ export class DirectorySync {
     if (this.workspaceTransactions.record(source, delta)) return;
     this.applyWorkspaceDelta(delta);
     if (delta.kind !== "script_status") {
-      this.noteLiveCursor(workspaceDeltaEntity(delta), delta);
+      this.noteLiveWorkspaceVersion(delta);
     }
     this.persistCheckpoint();
   }
@@ -642,7 +660,15 @@ export class DirectorySync {
       const query: Parameters<DaemonClient["observeWorkspaces"]>[0] = {
         sort: [{ key: "activity_at", direction: "desc" }],
         page: cursor ? { limit: PAGE_LIMIT, cursor } : { limit: PAGE_LIMIT },
-        ...(supportsDirectorySync ? { sync: this.readCursors().workspaces ?? {} } : {}),
+        // Older clients advanced the durable cursor on unordered live delivery. Rebuild once
+        // per app process before trusting that cursor for incremental reconnects.
+        ...(supportsDirectorySync
+          ? {
+              sync: this.hasAuthoritativeDirectorySnapshot
+                ? (this.readCursors().workspaces ?? {})
+                : {},
+            }
+          : {}),
       };
       let payload: FetchWorkspacesPayload;
       if (subscribe) {
@@ -844,7 +870,11 @@ export class DirectorySync {
     supportsDirectorySync: boolean,
   ): Promise<void> {
     const payload = await client.listProjects(
-      supportsDirectorySync ? { sync: this.readCursors().projects ?? {} } : undefined,
+      supportsDirectorySync
+        ? {
+            sync: this.hasAuthoritativeDirectorySnapshot ? (this.readCursors().projects ?? {}) : {},
+          }
+        : undefined,
     );
     this.assertWorkspaceTransactionCurrent(client, source, transaction);
     if (payload.sync?.mode !== "changes") transaction.snapshot.projects.clear();
@@ -886,6 +916,7 @@ export class DirectorySync {
       completion.snapshot.syncCursors,
     );
     const deltaMutations = this.workspaces.commitSnapshot(completion.snapshot, deltas);
+    this.hasAuthoritativeDirectorySnapshot = true;
     const next = this.workspaces.snapshot();
     const workspaceIds =
       completion.snapshot.syncModes?.workspaces === "changes"
@@ -905,11 +936,6 @@ export class DirectorySync {
     for (const [entity, cursor] of Object.entries(completion.snapshot.syncCursors ?? {})) {
       if (cursor) this.writeCursor(entity as "projects" | "workspaces", cursor);
     }
-    for (const delta of deltas) {
-      if (delta.kind !== "script_status") {
-        this.noteLiveCursor(workspaceDeltaEntity(delta), delta);
-      }
-    }
     this.persistCheckpoint();
   }
 
@@ -917,13 +943,20 @@ export class DirectorySync {
     deltas: readonly WorkspaceDirectoryDelta[],
     snapshotCursors: WorkspaceDirectorySnapshot["syncCursors"] = {},
   ): WorkspaceDirectoryDelta[] {
-    // The global workspace listener and the owned workspace subscription can observe the same
-    // sequenced update. A hydration snapshot can also already contain buffered updates through
-    // its head cursor. Apply each sequence at most once so an older upsert cannot follow a newer
-    // archive removal and recreate the workspace in the local replica.
-    const cursors: Partial<Record<WorkspaceDirectoryEntity, DirectoryCursor>> = {
+    // The global listener and owned subscription can deliver the same update. Different
+    // workspace IDs can arrive out of order, so only the authoritative snapshot head is a
+    // directory-wide floor; live updates are ordered independently per ID.
+    const snapshotBaselines: Partial<Record<WorkspaceDirectoryEntity, DirectoryCursor>> = {
       projects: snapshotCursors?.projects ?? this.readCursors().projects,
       workspaces: snapshotCursors?.workspaces ?? this.readCursors().workspaces,
+    };
+    const latestByEntity: Record<WorkspaceDirectoryEntity, Map<string, DirectoryCursor>> = {
+      projects: snapshotCursors?.projects
+        ? new Map()
+        : new Map(this.latestLiveWorkspaceSeqByEntity.projects),
+      workspaces: snapshotCursors?.workspaces
+        ? new Map()
+        : new Map(this.latestLiveWorkspaceSeqByEntity.workspaces),
     };
     const accepted: WorkspaceDirectoryDelta[] = [];
     for (const delta of deltas) {
@@ -932,21 +965,21 @@ export class DirectorySync {
         continue;
       }
       const entity = workspaceDeltaEntity(delta);
-      if (isDeltaCoveredByCursor(cursors[entity], delta)) continue;
+      if (isDeltaCoveredByCursor(snapshotBaselines[entity], delta)) continue;
+      const id = workspaceDeltaId(delta);
+      if (isDeltaCoveredByCursor(latestByEntity[entity].get(id), delta)) continue;
       accepted.push(delta);
       if (delta.generation !== undefined && delta.seq !== undefined) {
-        cursors[entity] = { generation: delta.generation, afterSeq: delta.seq };
+        latestByEntity[entity].set(id, { generation: delta.generation, afterSeq: delta.seq });
       }
     }
+    this.latestLiveWorkspaceSeqByEntity = latestByEntity;
     return accepted;
   }
 
   private applyBufferedWorkspaceDeltas(deltas: readonly WorkspaceDirectoryDelta[]): void {
     for (const delta of this.selectCurrentWorkspaceDeltas(deltas)) {
       this.applyWorkspaceDelta(delta);
-      if (delta.kind !== "script_status") {
-        this.noteLiveCursor(workspaceDeltaEntity(delta), delta);
-      }
     }
     this.persistCheckpoint();
   }
@@ -1003,6 +1036,14 @@ export class DirectorySync {
     this.writeCursor(entity, {
       generation: payload.generation,
       afterSeq: payload.seq,
+    });
+  }
+
+  private noteLiveWorkspaceVersion(delta: SequencedWorkspaceDirectoryDelta): void {
+    if (!delta.generation || delta.seq === undefined) return;
+    this.latestLiveWorkspaceSeqByEntity[workspaceDeltaEntity(delta)].set(workspaceDeltaId(delta), {
+      generation: delta.generation,
+      afterSeq: delta.seq,
     });
   }
 

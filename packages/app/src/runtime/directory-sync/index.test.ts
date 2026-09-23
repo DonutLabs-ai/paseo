@@ -236,6 +236,61 @@ afterEach(() => {
 });
 
 describe("DirectorySync session readiness", () => {
+  it("applies archived and done updates that arrive after a newer update for another workspace", () => {
+    const serverId = "out-of-order-workspace-archive";
+    const { client, directory } = createDirectory(serverId);
+    useSessionStore.getState().initializeSession(serverId, null, 1);
+    const workspace = (id: string) => ({
+      id,
+      projectId: "project-1",
+      projectDisplayName: "Paseo",
+      projectRootPath: "/repo",
+      workspaceDirectory: `/repo/${id}`,
+      projectKind: "git" as const,
+      workspaceKind: "worktree" as const,
+      name: id,
+      status: "running" as const,
+      statusEnteredAt: null,
+      activityAt: null,
+      archivingAt: null,
+      diffStat: null,
+      scripts: [],
+    });
+    const archived = workspace("archived-after-newer-update");
+    const completed = workspace("completed-after-newer-update");
+    const other = workspace("other-updated-first");
+    directory.acceptWorkspaces([archived, completed, other].map(normalizeWorkspaceDescriptor));
+
+    client.emit({
+      type: "workspace_update",
+      payload: {
+        kind: "upsert",
+        workspace: { ...other, status: "done" },
+        generation: "g",
+        seq: 4,
+      },
+    });
+    client.emit({
+      type: "workspace_update",
+      payload: { kind: "remove", id: archived.id, generation: "g", seq: 3 },
+    });
+    client.emit({
+      type: "workspace_update",
+      payload: {
+        kind: "upsert",
+        workspace: { ...completed, status: "done" },
+        generation: "g",
+        seq: 2,
+      },
+    });
+
+    const workspaces = useSessionStore.getState().sessions[serverId]?.workspaces;
+    expect(workspaces?.get(other.id)?.status).toBe("done");
+    expect(workspaces?.get(completed.id)?.status).toBe("done");
+    expect(workspaces?.has(archived.id)).toBe(false);
+    directory.dispose();
+  });
+
   it("does not resurrect an archived workspace from an older sequenced update", () => {
     const serverId = "stale-workspace-upsert-after-archive";
     const { client, directory } = createDirectory(serverId);
@@ -923,7 +978,7 @@ describe("DirectorySync session readiness", () => {
     directory.dispose();
   });
 
-  it("reconciles workspace changes on top of the accepted cached baseline", async () => {
+  it("rebuilds a workspace baseline before trusting a cached cursor", async () => {
     const serverId = "cached-workspace-changes";
     serverIds.add(serverId);
     const client = new FakeDirectoryClient();
@@ -991,16 +1046,28 @@ describe("DirectorySync session readiness", () => {
       entries: [],
       emptyProjects: [],
       pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
-      sync: { generation: "g", headSeq: 7, mode: "changes", removals: [] },
+      sync: { generation: "g", headSeq: 7, mode: "snapshot", removals: [] },
     });
     await refresh;
 
     expect(client.lastWorkspaceOptions).toMatchObject({
-      sync: { generation: "g", afterSeq: 7 },
+      sync: {},
     });
     expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(cachedWorkspace.id)).toBe(
-      true,
+      false,
     );
+
+    client.workspaceResult = {
+      requestId: "workspaces-again",
+      entries: [],
+      emptyProjects: [],
+      pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+      sync: { generation: "g", headSeq: 7, mode: "changes", removals: [] },
+    };
+    await directory.refreshWorkspaces();
+    expect(client.lastWorkspaceOptions).toMatchObject({
+      sync: { generation: "g", afterSeq: 7 },
+    });
     directory.dispose();
   });
 
@@ -1354,7 +1421,7 @@ describe("DirectorySync session readiness", () => {
     directory.dispose();
   });
 
-  it("merges project changes from the existing list RPC and advances its cursor", async () => {
+  it("repairs a cached project baseline before continuing with incremental changes", async () => {
     const serverId = "project-list-sequence";
     serverIds.add(serverId);
     const client = new FakeDirectoryClient();
@@ -1426,19 +1493,25 @@ describe("DirectorySync session readiness", () => {
           projectKind: "git",
           syncSeq: 5,
         },
+        {
+          projectId: "untouched-project",
+          projectDisplayName: "Untouched",
+          projectRootPath: "/repo/untouched",
+          projectKind: "git",
+        },
       ],
       sync: {
         generation: "generation",
         headSeq: 6,
-        mode: "changes",
-        removals: [{ id: "project-2", seq: 6 }],
+        mode: "snapshot",
+        removals: [],
       },
     };
 
     await directory.refreshWorkspaces();
 
     expect(client.lastProjectOptions).toEqual({
-      sync: { generation: "generation", afterSeq: 4 },
+      sync: {},
     });
     const projects = useSessionStore.getState().sessions[serverId]?.projects;
     expect(Array.from(projects?.keys() ?? [])).toEqual(["project-1", "untouched-project"]);
@@ -1446,11 +1519,39 @@ describe("DirectorySync session readiness", () => {
     expect(writes.map(({ checkpoint }) => checkpoint)).toContainEqual({
       projects: { generation: "generation", afterSeq: 6 },
     });
+    const writesBeforeIncremental = writes.length;
+    client.projectResult = {
+      requestId: "projects-incremental",
+      projects: [
+        {
+          projectId: "project-1",
+          projectDisplayName: "Newest name",
+          projectRootPath: "/repo/one",
+          projectKind: "git",
+          syncSeq: 7,
+        },
+      ],
+      sync: {
+        generation: "generation",
+        headSeq: 7,
+        mode: "changes",
+        removals: [],
+      },
+    };
+    await directory.refreshWorkspaces();
+
+    expect(client.lastProjectOptions).toEqual({
+      sync: { generation: "generation", afterSeq: 6 },
+    });
+    expect(
+      useSessionStore.getState().sessions[serverId]?.projects.get("project-1")?.projectDisplayName,
+    ).toBe("Newest name");
     const writtenProjectIds = writes
+      .slice(writesBeforeIncremental)
       .flatMap(({ mutations }) => mutations)
       .filter((mutation) => mutation.kind === "project")
       .map((mutation) => mutation.id);
-    expect(writtenProjectIds).toEqual(["project-1", "project-2"]);
+    expect(writtenProjectIds).toEqual(["project-1"]);
     expect(writtenProjectIds).not.toContain("untouched-project");
     directory.dispose();
   });

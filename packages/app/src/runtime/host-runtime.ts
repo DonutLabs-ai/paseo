@@ -2484,6 +2484,15 @@ export function useHostRuntimeClient(serverId: string): DaemonClient | null {
   );
 }
 
+export function useHostRuntimeConnectionEpoch(serverId: string): number {
+  const store = getHostRuntimeStore();
+  return useSyncExternalStore(
+    (onStoreChange) => store.subscribe(serverId, onStoreChange),
+    () => store.getSnapshot(serverId)?.connectionEpoch ?? 0,
+    () => store.getSnapshot(serverId)?.connectionEpoch ?? 0,
+  );
+}
+
 export function useHostRuntimeIsConnected(serverId: string): boolean {
   const store = getHostRuntimeStore();
   return useSyncExternalStore(
