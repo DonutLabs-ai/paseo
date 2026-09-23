@@ -33,6 +33,7 @@ const AgentScanStateSchema = z.object({
 
 const WorkspaceReferenceStateFields = {
   workspaceId: z.string(),
+  slackExcerptVersion: z.number().int().nonnegative().optional(),
   credentialRevisions: z.object({
     linear: z.string().uuid().nullable(),
     slack: z.string().uuid().nullable(),
@@ -104,11 +105,13 @@ interface ReferenceLoadOptions {
   previousReferences: WorkspaceReferenceState["references"];
   credentialRevisions: CredentialRevisions;
   previousCredentialRevisions: CredentialRevisions;
+  refreshSlackExcerpts: boolean;
   force: boolean;
   onReference: (reference: WorkspaceReference) => void;
 }
 
 const REFERENCE_REFRESH_CONCURRENCY = 3;
+const SLACK_EXCERPT_VERSION = 1;
 
 interface WorkspaceReferenceServiceOptions {
   paseoHome: string;
@@ -147,6 +150,7 @@ function emptyState(workspaceId: string): WorkspaceReferenceState {
   return {
     version: 3,
     workspaceId,
+    slackExcerptVersion: SLACK_EXCERPT_VERSION,
     credentialRevisions: { linear: null, slack: null },
     agents: {},
     targets: {},
@@ -285,6 +289,7 @@ export class WorkspaceReferenceService {
       const progressState: WorkspaceReferenceState = {
         version: 3,
         workspaceId,
+        slackExcerptVersion: state.slackExcerptVersion,
         credentialRevisions,
         agents: timeline.agents,
         targets: timeline.targets,
@@ -304,12 +309,14 @@ export class WorkspaceReferenceService {
       previousReferences: state.references,
       credentialRevisions,
       previousCredentialRevisions: state.credentialRevisions,
+      refreshSlackExcerpts: state.slackExcerptVersion !== SLACK_EXCERPT_VERSION,
       force,
       onReference: writeProgress,
     });
     const nextState: WorkspaceReferenceState = {
       version: 3,
       workspaceId,
+      slackExcerptVersion: SLACK_EXCERPT_VERSION,
       credentialRevisions,
       agents: timeline.agents,
       targets: timeline.targets,
@@ -415,6 +422,7 @@ export class WorkspaceReferenceService {
           if (
             !options.force &&
             !refreshedProviders.has(target.provider) &&
+            !(target.provider === "slack" && options.refreshSlackExcerpts) &&
             previous !== undefined
           ) {
             return previous;
@@ -428,6 +436,12 @@ export class WorkspaceReferenceService {
   }
 
   private needsScan(workspaceId: string, state: WorkspaceReferenceState): boolean {
+    if (
+      state.slackExcerptVersion !== SLACK_EXCERPT_VERSION &&
+      Object.values(state.targets).some((target) => target.provider === "slack")
+    ) {
+      return true;
+    }
     const credentialRevisions = this.credentialRevisions();
     for (const provider of ["linear", "slack"] as const) {
       const revision = credentialRevisions[provider];

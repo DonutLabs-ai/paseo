@@ -37,14 +37,14 @@ function firstParagraphs(text: string, maxParagraphs: number): string {
   return truncateExcerpt(paragraphs.join("\n\n"), MAX_REFERENCE_EXCERPT_CHARS);
 }
 
-function balancedSections(sections: string[]): string {
+function balancedSections(sections: string[], separator = "\n\n"): string {
   if (sections.length === 0) return "";
-  const separatorChars = Math.max(0, sections.length - 1) * 2;
+  const separatorChars = Math.max(0, sections.length - 1) * separator.length;
   const sectionChars = Math.max(
     1,
     Math.floor((MAX_REFERENCE_EXCERPT_CHARS - separatorChars) / sections.length),
   );
-  return sections.map((section) => truncateExcerpt(section, sectionChars)).join("\n\n");
+  return sections.map((section) => truncateExcerpt(section, sectionChars)).join(separator);
 }
 
 const LinearIssueSchema = z.object({
@@ -542,6 +542,6 @@ export async function fetchSlackReference(
   });
   return {
     title: slackMessageText(root, userNames).split("\n")[0]?.slice(0, 120) || "Slack thread",
-    excerpt: balancedSections(rendered),
+    excerpt: balancedSections(rendered, "\n\n---\n\n"),
   };
 }

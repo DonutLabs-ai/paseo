@@ -172,6 +172,7 @@ describe("workspace reference source boundaries", () => {
 
     expect(source.title).toBe("Root request");
     expect(source.excerpt).toContain("OP — Person U0:\nRoot request");
+    expect(source.excerpt.match(/\n\n---\n\n/g)).toHaveLength(5);
     expect(source.excerpt).not.toContain("Reply 1");
     expect(source.excerpt).not.toContain("Reply 2");
     for (const index of [3, 4, 5, 6, 7]) {
@@ -244,6 +245,7 @@ describe("workspace reference source boundaries", () => {
     );
     expect(source.excerpt).toContain("Mark :white_check_mark: when ready");
     expect(source.excerpt).toContain("Recent reply 1 — Linear:\nIssue <ready> for review");
+    expect(source.excerpt).toContain("\n\n---\n\nRecent reply 1 — Linear:");
     expect(source.excerpt).not.toContain("&amp;");
     expect(source.excerpt).not.toContain("*Alert");
     expect(source.excerpt).not.toContain("(empty message)");

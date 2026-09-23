@@ -16,9 +16,157 @@ function referenceKeys(snapshot: { references: Array<{ key: string }> }): string
 
 afterEach(() => {
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true });
+  vi.unstubAllGlobals();
 });
 
 describe("WorkspaceReferenceService", () => {
+  it("refreshes only old-format Slack summaries when an unchanged workspace is opened", async () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-workspace-references-"));
+    homes.push(paseoHome);
+    const workspaceId = "wks_reference_slack_format_test";
+    const credentials = new WorkspaceIntegrationCredentialStore(paseoHome);
+    credentials.set("slack", {
+      token: "xoxb-test-token",
+      accountLabel: "Test Slack",
+      verifiedAt: "2026-09-22T00:00:00.000Z",
+    });
+    const digest = createHash("sha256").update(workspaceId).digest("hex");
+    const referenceRoot = path.join(paseoHome, "workspace-references");
+    mkdirSync(referenceRoot, { recursive: true });
+    writeFileSync(
+      path.join(referenceRoot, `${digest}.json`),
+      `${JSON.stringify({
+        version: 3,
+        workspaceId,
+        credentialRevisions: {
+          linear: null,
+          slack: credentials.revision("slack"),
+        },
+        agents: {
+          "agent-1": {
+            epoch: "epoch-1",
+            lastSeq: 1,
+            referenceKeys: ["linear:ENG-42", "slack:acme:C1:1700000000.000001"],
+          },
+        },
+        targets: {
+          "linear:ENG-42": {
+            key: "linear:ENG-42",
+            provider: "linear",
+            url: "https://linear.app/acme/issue/ENG-42",
+            identifier: "ENG-42",
+          },
+          "slack:acme:C1:1700000000.000001": {
+            key: "slack:acme:C1:1700000000.000001",
+            provider: "slack",
+            url: "https://acme.slack.com/archives/C1/p1700000000000001",
+            identifier: "C1:1700000000.000001",
+            channelId: "C1",
+            threadTs: "1700000000.000001",
+          },
+        },
+        references: [
+          {
+            key: "linear:ENG-42",
+            provider: "linear",
+            url: "https://linear.app/acme/issue/ENG-42",
+            title: "Linear issue",
+            summary: "Keep the cached issue",
+            state: "ready",
+            error: null,
+            fetchedAt: "2026-09-22T00:00:00.000Z",
+          },
+          {
+            key: "slack:acme:C1:1700000000.000001",
+            provider: "slack",
+            url: "https://acme.slack.com/archives/C1/p1700000000000001",
+            title: "Root request",
+            summary: "OP — Person:\nRoot request\n\nRecent reply 1 — Person:\nReply",
+            state: "ready",
+            error: null,
+            fetchedAt: "2026-09-22T00:00:00.000Z",
+          },
+        ],
+        scannedAt: "2026-09-22T00:00:01.000Z",
+      })}\n`,
+    );
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/users.info")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            user: { id: "U1", profile: { display_name: "Person" } },
+          }),
+          { status: 200 },
+        );
+      }
+      if (url.pathname.endsWith("/conversations.replies")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            messages: [
+              { ts: "1700000000.000001", text: "Root request", user: "U1" },
+              { ts: "1700000001.000001", text: "Reply", user: "U1" },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url.pathname}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const logger = pino({ enabled: false });
+    const service = new WorkspaceReferenceService({
+      paseoHome,
+      agentManager: {
+        listAgents: () => [{ id: "agent-1", workspaceId }],
+        fetchTimeline: () => ({
+          epoch: "epoch-1",
+          reset: false,
+          window: { maxSeq: 1 },
+          rows: [],
+        }),
+        getTimelineRows: async () => {
+          throw new Error("unchanged timeline must not be rescanned");
+        },
+      },
+      workspaceRegistry: {
+        get: async () => ({
+          workspaceId,
+          projectId: "/tmp/project",
+          cwd: "/tmp/project",
+          kind: "directory",
+          displayName: "project",
+          title: null,
+          branch: null,
+          worktreeRoot: null,
+          baseBranch: null,
+          isPaseoOwnedWorktree: false,
+          mainRepoRoot: null,
+          createdAt: "2026-09-22T00:00:00.000Z",
+          updatedAt: "2026-09-22T00:00:00.000Z",
+          archivedAt: null,
+          autoArchivedChangeRequestUrl: null,
+          pinnedAt: null,
+        }),
+      },
+      logger,
+    });
+
+    const result = await service.get(workspaceId);
+    expect(
+      result.references.find((reference) => reference.provider === "slack")?.summary,
+    ).toContain("\n\n---\n\nRecent reply 1");
+    expect(result.references.find((reference) => reference.provider === "linear")?.summary).toBe(
+      "Keep the cached issue",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const repeated = await service.get(workspaceId);
+    expect(repeated.references).toEqual(result.references);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("deduplicates persisted references by canonical key", async () => {
     const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-workspace-references-"));
     homes.push(paseoHome);
