@@ -2486,7 +2486,7 @@ export const fr: TranslationResources = {
           "Dans Linear, ouvrez Settings → Account → Security & Access → Personal API keys. Créez une clé avec l’accès Read, limitez-la si besoin aux équipes requises, puis collez-la ici.",
         linearGuideLink: "Guide des clés API Linear",
         slackGuide:
-          "Créez une app Slack, puis ajoutez channels:history, groups:history, im:history et mpim:history aux Bot Token Scopes dans OAuth & Permissions. Installez ou réinstallez l’app, collez ici son jeton xoxb-, puis invitez le bot dans chaque canal à lire. Un jeton utilisateur xoxp- avec les User Token Scopes équivalents fonctionne aussi.",
+          "Créez une app Slack, puis ajoutez channels:history, groups:history, im:history, mpim:history et users:read aux Bot Token Scopes dans OAuth & Permissions. Installez ou réinstallez l’app, collez ici son jeton xoxb-, puis invitez le bot dans chaque canal à lire. Un jeton utilisateur xoxp- avec les User Token Scopes équivalents fonctionne aussi.",
         slackGuideLink: "Créer ou configurer une app Slack",
         connectedAs: "Connecté en tant que {{account}}",
         notConnected: "Non connecté",

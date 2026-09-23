@@ -2467,7 +2467,7 @@ export const ru: TranslationResources = {
           "В Linear откройте Settings → Account → Security & Access → Personal API keys. Создайте ключ с доступом Read, при необходимости ограничьте его нужными командами и вставьте сюда.",
         linearGuideLink: "Руководство по API-ключам Linear",
         slackGuide:
-          "Создайте приложение Slack и в OAuth & Permissions добавьте channels:history, groups:history, im:history и mpim:history в Bot Token Scopes. Установите или переустановите приложение, вставьте сюда токен xoxb- и пригласите бота во все нужные каналы. Также подходит пользовательский токен xoxp- с аналогичными User Token Scopes.",
+          "Создайте приложение Slack и в OAuth & Permissions добавьте channels:history, groups:history, im:history, mpim:history и users:read в Bot Token Scopes. Установите или переустановите приложение, вставьте сюда токен xoxb- и пригласите бота во все нужные каналы. Также подходит пользовательский токен xoxp- с аналогичными User Token Scopes.",
         slackGuideLink: "Создать или настроить приложение Slack",
         connectedAs: "Подключено как {{account}}",
         notConnected: "Не подключено",

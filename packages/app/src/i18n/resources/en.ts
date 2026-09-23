@@ -2544,7 +2544,7 @@ export const en = {
           "In Linear, open Settings → Account → Security & Access → Personal API keys. Create a key with Read access, optionally limit it to the required teams, then paste it here.",
         linearGuideLink: "Linear API key guide",
         slackGuide:
-          "Create a Slack app, then under OAuth & Permissions add channels:history, groups:history, im:history, and mpim:history as Bot Token Scopes. Install or reinstall the app, paste its xoxb- token here, and invite the bot to every channel it should read. An xoxp- user token with the equivalent User Token Scopes also works.",
+          "Create a Slack app, then under OAuth & Permissions add channels:history, groups:history, im:history, mpim:history, and users:read as Bot Token Scopes. Install or reinstall the app, paste its xoxb- token here, and invite the bot to every channel it should read. An xoxp- user token with the equivalent User Token Scopes also works.",
         slackGuideLink: "Create or configure a Slack app",
         connectedAs: "Connected as {{account}}",
         notConnected: "Not connected",

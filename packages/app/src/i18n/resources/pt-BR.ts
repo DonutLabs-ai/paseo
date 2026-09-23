@@ -2461,7 +2461,7 @@ export const ptBR: TranslationResources = {
           "No Linear, abra Settings → Account → Security & Access → Personal API keys. Crie uma chave com acesso Read, limite-a às equipes necessárias se quiser e cole-a aqui.",
         linearGuideLink: "Guia de chaves da API do Linear",
         slackGuide:
-          "Crie um app do Slack e, em OAuth & Permissions, adicione channels:history, groups:history, im:history e mpim:history aos Bot Token Scopes. Instale ou reinstale o app, cole o token xoxb- aqui e convide o bot para cada canal que ele deve ler. Um token de usuário xoxp- com User Token Scopes equivalentes também funciona.",
+          "Crie um app do Slack e, em OAuth & Permissions, adicione channels:history, groups:history, im:history, mpim:history e users:read aos Bot Token Scopes. Instale ou reinstale o app, cole o token xoxb- aqui e convide o bot para cada canal que ele deve ler. Um token de usuário xoxp- com User Token Scopes equivalentes também funciona.",
         slackGuideLink: "Criar ou configurar um app do Slack",
         connectedAs: "Conectado como {{account}}",
         notConnected: "Não conectado",

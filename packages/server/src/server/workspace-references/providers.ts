@@ -135,6 +135,28 @@ const SlackAuthResponseSchema = z
   })
   .passthrough();
 
+const SlackUserResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    error: z.string().optional(),
+    user: z
+      .object({
+        id: z.string(),
+        name: z.string().optional(),
+        real_name: z.string().optional(),
+        profile: z
+          .object({
+            display_name: z.string().optional(),
+            real_name: z.string().optional(),
+          })
+          .passthrough()
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
 const LinearViewerResponseSchema = z.object({
   data: z
     .object({ viewer: z.object({ name: z.string(), email: z.string().optional() }) })
@@ -287,8 +309,57 @@ export async function verifySlackCredential(token: string): Promise<string> {
   return user ? `${team} · ${user}` : team;
 }
 
-function slackAuthor(message: z.infer<typeof SlackMessageSchema>): string {
-  return message.username ?? message.bot_profile?.name ?? message.user ?? "Unknown author";
+export interface SlackUserResolver {
+  resolve(userId: string): Promise<string | null>;
+}
+
+export function createSlackUserResolver(
+  token: string,
+  onLookupError: (userId: string, error: unknown) => void,
+): SlackUserResolver {
+  const cachedNames = new Map<string, Promise<string | null>>();
+  return {
+    resolve(userId) {
+      const existing = cachedNames.get(userId);
+      if (existing) return existing;
+      const lookup = (async (): Promise<string | null> => {
+        try {
+          const parsed = SlackUserResponseSchema.parse(
+            await slackApi(token, "users.info", new URLSearchParams({ user: userId })),
+          );
+          if (!parsed.ok || !parsed.user) {
+            throw new Error(
+              `Slack could not read user ${userId}: ${parsed.error ?? "unknown error"}`,
+            );
+          }
+          return (
+            parsed.user.profile?.display_name?.trim() ||
+            parsed.user.profile?.real_name?.trim() ||
+            parsed.user.real_name?.trim() ||
+            parsed.user.name?.trim() ||
+            null
+          );
+        } catch (error) {
+          onLookupError(userId, error);
+          return null;
+        }
+      })();
+      cachedNames.set(userId, lookup);
+      return lookup;
+    },
+  };
+}
+
+function slackAuthor(
+  message: z.infer<typeof SlackMessageSchema>,
+  userNames: ReadonlyMap<string, string>,
+): string {
+  return (
+    message.username ??
+    message.bot_profile?.name ??
+    (message.user ? (userNames.get(message.user) ?? message.user) : undefined) ??
+    "Unknown author"
+  );
 }
 
 function decodeSlackEntities(text: string): string {
@@ -296,9 +367,12 @@ function decodeSlackEntities(text: string): string {
   return text.replace(/&(amp|lt|gt);/g, (entity) => replacements[entity] ?? entity);
 }
 
-function renderSlackInlineSyntax(text: string): string {
+function renderSlackInlineSyntax(text: string, userNames: ReadonlyMap<string, string>): string {
   const rendered = text.replace(/<([^>]+)>/g, (match, token: string) => {
-    if (token.startsWith("@")) return token;
+    if (token.startsWith("@")) {
+      const [userId, label] = token.slice(1).split("|", 2);
+      return `@${userNames.get(userId) ?? label ?? userId}`;
+    }
     if (token.startsWith("#")) {
       const [channelId, label] = token.slice(1).split("|", 2);
       return `#${label ?? channelId}`;
@@ -320,14 +394,55 @@ function renderSlackInlineSyntax(text: string): string {
     .replace(/(^|[\s([{>])~([^~\n]+)~(?=$|[\s)\]},.!?:;])/gm, "$1$2");
 }
 
-function renderSlackRichTextElement(element: SlackRichTextElement): string {
-  if (element.type === "user" && element.user_id) return `@${element.user_id}`;
+function renderSlackRichTextElement(
+  element: SlackRichTextElement,
+  userNames: ReadonlyMap<string, string>,
+): string {
+  if (element.type === "user" && element.user_id)
+    return `@${userNames.get(element.user_id) ?? element.user_id}`;
   if (element.type === "channel" && element.channel_id) return `#${element.channel_id}`;
   if (element.type === "emoji" && element.name) return `:${element.name}:`;
   if (element.type === "broadcast" && element.range) return `@${element.range}`;
   if (element.type === "link") return element.text ?? element.url ?? "";
   if (element.text) return element.text;
-  return element.elements?.map(renderSlackRichTextElement).join("") ?? "";
+  return (
+    element.elements?.map((child) => renderSlackRichTextElement(child, userNames)).join("") ?? ""
+  );
+}
+
+function collectSlackRichTextUserIds(element: SlackRichTextElement, userIds: Set<string>): void {
+  if (element.type === "user" && element.user_id) userIds.add(element.user_id);
+  for (const child of element.elements ?? []) collectSlackRichTextUserIds(child, userIds);
+}
+
+function collectSlackInlineUserIds(text: string, userIds: Set<string>): void {
+  for (const match of text.matchAll(/<@([A-Z0-9]+)(?:\|[^>]*)?>/gi)) {
+    const userId = match[1];
+    if (userId) userIds.add(userId);
+  }
+}
+
+function collectSlackMessageUserIds(
+  message: z.infer<typeof SlackMessageSchema>,
+  userIds: Set<string>,
+): void {
+  if (message.user) userIds.add(message.user);
+  collectSlackInlineUserIds(message.text, userIds);
+  for (const attachment of message.attachments ?? []) {
+    for (const text of [
+      attachment.title,
+      attachment.pretext,
+      attachment.text,
+      attachment.fallback,
+    ]) {
+      if (text) collectSlackInlineUserIds(text, userIds);
+    }
+  }
+  for (const block of message.blocks ?? []) {
+    if (block.text) collectSlackInlineUserIds(block.text.text, userIds);
+    for (const field of block.fields ?? []) collectSlackInlineUserIds(field.text, userIds);
+    for (const element of block.elements ?? []) collectSlackRichTextUserIds(element, userIds);
+  }
 }
 
 function uniqueNonEmptyParts(parts: Array<string | undefined>): string[] {
@@ -349,22 +464,32 @@ function slackAttachmentText(message: z.infer<typeof SlackMessageSchema>): strin
     .join("\n\n");
 }
 
-function slackBlockText(message: z.infer<typeof SlackMessageSchema>): string {
+function slackBlockText(
+  message: z.infer<typeof SlackMessageSchema>,
+  userNames: ReadonlyMap<string, string>,
+): string {
   const parts: string[] = [];
   for (const block of message.blocks ?? []) {
     if (block.text?.text.trim()) parts.push(block.text.text);
     for (const field of block.fields ?? []) {
       if (field.text.trim()) parts.push(field.text);
     }
-    const richText = block.elements?.map(renderSlackRichTextElement).join("").trim();
+    const richText = block.elements
+      ?.map((element) => renderSlackRichTextElement(element, userNames))
+      .join("")
+      .trim();
     if (richText) parts.push(richText);
   }
   return parts.join("\n");
 }
 
-function slackMessageText(message: z.infer<typeof SlackMessageSchema>): string {
+function slackMessageText(
+  message: z.infer<typeof SlackMessageSchema>,
+  userNames: ReadonlyMap<string, string>,
+): string {
   const text = renderSlackInlineSyntax(
-    message.text.trim() || slackAttachmentText(message) || slackBlockText(message),
+    message.text.trim() || slackAttachmentText(message) || slackBlockText(message, userNames),
+    userNames,
   ).trim();
   if (!text) return "(empty message)";
   if (text.length <= MAX_SLACK_MESSAGE_CHARS) return text;
@@ -374,6 +499,7 @@ function slackMessageText(message: z.infer<typeof SlackMessageSchema>): string {
 export async function fetchSlackReference(
   target: WorkspaceReferenceTarget,
   token: string,
+  userResolver: SlackUserResolver,
 ): Promise<WorkspaceReferenceSource> {
   if (!target.channelId || !target.threadTs) throw new Error("Invalid Slack thread target");
   const messages = new Map<string, z.infer<typeof SlackMessageSchema>>();
@@ -400,12 +526,22 @@ export async function fetchSlackReference(
   const root = ordered.find((message) => message.ts === target.threadTs) ?? ordered[0];
   if (!root) throw new Error("Slack returned an empty thread");
   const replies = ordered.filter((message) => message.ts !== root.ts).slice(-5);
-  const rendered = [root, ...replies].map((message, index) => {
+  const selectedMessages = [root, ...replies];
+  const userIds = new Set<string>();
+  for (const message of selectedMessages) collectSlackMessageUserIds(message, userIds);
+  const userNames = new Map<string, string>();
+  await Promise.all(
+    [...userIds].map(async (userId) => {
+      const name = await userResolver.resolve(userId);
+      if (name) userNames.set(userId, name);
+    }),
+  );
+  const rendered = selectedMessages.map((message, index) => {
     const role = index === 0 ? "OP" : `Recent reply ${index}`;
-    return `${role} — ${slackAuthor(message)}:\n${slackMessageText(message)}`;
+    return `${role} — ${slackAuthor(message, userNames)}:\n${slackMessageText(message, userNames)}`;
   });
   return {
-    title: slackMessageText(root).split("\n")[0]?.slice(0, 120) || "Slack thread",
+    title: slackMessageText(root, userNames).split("\n")[0]?.slice(0, 120) || "Slack thread",
     excerpt: balancedSections(rendered),
   };
 }
