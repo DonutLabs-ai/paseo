@@ -44,6 +44,7 @@ describe("canonical CLI surface", () => {
     expect(help).toContain("--branch <name>");
     expect(help).toContain("--pr-number <n>");
     expect(help).toContain("--forge <forge>");
+    expect(help).toContain("--prompt-file <path>");
   });
 
   it("uses background for execution and reserves detach for ownership", () => {

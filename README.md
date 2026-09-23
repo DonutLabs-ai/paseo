@@ -114,6 +114,7 @@ Everything you can do in the app, you can do from the terminal.
 ```bash
 paseo run --provider claude/opus-4.6 "implement user authentication"
 paseo run --provider codex/gpt-5.5 --worktree feature-x "implement feature X"
+paseo run --provider codex/gpt-5.6-sol --prompt-file /tmp/task-prompt.txt
 
 paseo ls                           # list running agents
 paseo attach abc123                # stream live output

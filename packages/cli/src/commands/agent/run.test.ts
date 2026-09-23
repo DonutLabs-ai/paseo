@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildRunWorkspaceSource,
+  resolveRunPromptInput,
   resolveExistingRunWorkspace,
   resolveRunCallerAgentId,
   runRunCommand,
   type AgentRunOptions,
 } from "./run";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const daemonTarget = { kind: "endpoint" as const, host: "example.test:12345" };
 
@@ -16,6 +20,41 @@ describe("managed agent caller context", () => {
 
   it("omits blank caller ids", () => {
     expect(resolveRunCallerAgentId({ PASEO_AGENT_ID: "   " })).toBeUndefined();
+  });
+});
+
+describe("run prompt input", () => {
+  it("reads a prompt from a file without placing its contents in the command arguments", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "paseo-run-prompt-"));
+    try {
+      const promptPath = join(directory, "prompt.txt");
+      const prompt = "full issue context\n".repeat(16_384);
+      await writeFile(promptPath, prompt);
+
+      await expect(resolveRunPromptInput(undefined, promptPath)).resolves.toBe(prompt);
+    } finally {
+      await rm(directory, { recursive: true });
+    }
+  });
+
+  it("rejects combining a positional prompt with --prompt-file", async () => {
+    await expect(resolveRunPromptInput("inline", "/tmp/prompt.txt")).rejects.toMatchObject({
+      code: "CONFLICTING_PROMPT_INPUT",
+    });
+  });
+
+  it("rejects an empty prompt file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "paseo-run-empty-prompt-"));
+    try {
+      const promptPath = join(directory, "prompt.txt");
+      await writeFile(promptPath, "  \n");
+
+      await expect(resolveRunPromptInput(undefined, promptPath)).rejects.toMatchObject({
+        code: "MISSING_PROMPT",
+      });
+    } finally {
+      await rm(directory, { recursive: true });
+    }
   });
 });
 
