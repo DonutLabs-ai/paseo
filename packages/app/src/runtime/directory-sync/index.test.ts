@@ -236,6 +236,110 @@ afterEach(() => {
 });
 
 describe("DirectorySync session readiness", () => {
+  it("does not resurrect an archived workspace from an older sequenced update", () => {
+    const serverId = "stale-workspace-upsert-after-archive";
+    const { client, directory } = createDirectory(serverId);
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, client as unknown as DaemonClient, 1);
+    const workspacePayload = {
+      id: "workspace-archived",
+      projectId: "project-1",
+      projectDisplayName: "Paseo",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo/workspace-archived",
+      projectKind: "git",
+      workspaceKind: "worktree",
+      name: "workspace-archived",
+      status: "done",
+      statusEnteredAt: null,
+      activityAt: null,
+      archivingAt: null,
+      diffStat: null,
+      scripts: [],
+    } satisfies WorkspaceFetchResult["entries"][number];
+    directory.acceptWorkspaces([normalizeWorkspaceDescriptor(workspacePayload)]);
+
+    client.emit({
+      type: "workspace_update",
+      payload: { kind: "remove", id: workspacePayload.id, generation: "g", seq: 2 },
+    });
+    client.emit({
+      type: "workspace_update",
+      payload: {
+        kind: "upsert",
+        workspace: workspacePayload,
+        generation: "g",
+        seq: 1,
+      },
+    });
+
+    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(workspacePayload.id)).toBe(
+      false,
+    );
+    directory.dispose();
+  });
+
+  it("orders buffered workspace updates against the hydration checkpoint", async () => {
+    const serverId = "buffered-stale-workspace-upsert-after-archive";
+    const { client, directory } = createDirectory(serverId);
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, client as unknown as DaemonClient, 1);
+    store.updateSessionServerInfo(serverId, {
+      serverId,
+      hostname: null,
+      version: "test",
+      features: { workspaceMultiplicity: true, directorySync: true },
+    });
+    const workspacePayload = {
+      id: "workspace-archived-during-hydration",
+      projectId: "project-1",
+      projectDisplayName: "Paseo",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo/workspace-archived-during-hydration",
+      projectKind: "git",
+      workspaceKind: "worktree",
+      name: "workspace-archived-during-hydration",
+      status: "done",
+      statusEnteredAt: null,
+      activityAt: null,
+      archivingAt: null,
+      diffStat: null,
+      scripts: [],
+    } satisfies WorkspaceFetchResult["entries"][number];
+    directory.acceptWorkspaces([normalizeWorkspaceDescriptor(workspacePayload)]);
+    const releaseWorkspaceFetch = client.holdWorkspaceFetch();
+
+    directory.setDemand({}, true);
+    const refresh = directory.refreshDemand();
+    await expect.poll(() => client.fetchWorkspacesCalls).toBe(1);
+    client.emit({
+      type: "workspace_update",
+      payload: { kind: "remove", id: workspacePayload.id, generation: "g", seq: 2 },
+    });
+    client.emit({
+      type: "workspace_update",
+      payload: {
+        kind: "upsert",
+        workspace: workspacePayload,
+        generation: "g",
+        seq: 1,
+      },
+    });
+    releaseWorkspaceFetch({
+      requestId: "workspaces-before-archive",
+      entries: [workspacePayload],
+      emptyProjects: [],
+      pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+      sync: { mode: "snapshot", removals: [], generation: "g", headSeq: 0 },
+    });
+    await refresh;
+
+    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(workspacePayload.id)).toBe(
+      false,
+    );
+    directory.dispose();
+  });
+
   it("reconciles a failed workspace when its agent starts a new turn", async () => {
     const serverId = "failed-workspace-started-turn-reconciliation";
     const { client, directory } = createDirectory(serverId);
