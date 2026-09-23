@@ -210,6 +210,8 @@ export class DirectorySync {
       this.noteLiveCursor("workspaces", message.payload);
       this.persistCheckpoint();
     });
+    // Reattach labels here because route-only demand can satisfy the epoch before full demand requests them.
+    void this.connectWorkspaceLabels().catch(() => undefined);
     if (this.hasDemand()) void this.requestDemandRefresh().catch(() => undefined);
     return true;
   }

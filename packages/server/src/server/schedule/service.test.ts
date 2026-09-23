@@ -217,6 +217,7 @@ async function createRegistryBackedScheduleWorkspaceDeps(rootDir: string): Promi
     projectRegistry,
     workspaceRegistry,
     workspaceGitService,
+    isDirectory: async () => true,
   });
   return {
     workspaceRegistry,
