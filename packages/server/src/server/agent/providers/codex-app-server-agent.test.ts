@@ -4628,6 +4628,84 @@ describe("Codex app-server provider", () => {
     });
   });
 
+  test.each([
+    { childTurns: [{ status: "completed" }], expectedStatus: "completed" },
+    { childTurns: [{ status: "failed" }], expectedStatus: "failed" },
+    { childTurns: [{ status: "interrupted" }], expectedStatus: "canceled" },
+    {
+      childTurns: [{ status: "completed" }, { status: "inProgress" }],
+      expectedStatus: "running",
+    },
+  ] as const)(
+    "replays a stale Codex child route from its latest turn as $expectedStatus",
+    async ({ childTurns, expectedStatus }) => {
+      const session = createSession();
+      const persistedChildTurns = childTurns.map((turn, index) => ({
+        ...turn,
+        id: `child-turn-${index}`,
+        items: [],
+      }));
+      session.client = {
+        request: vi.fn(async (method: string, params: unknown) => {
+          if (method === "thread/turns/list") {
+            return { data: persistedChildTurns, nextCursor: null };
+          }
+          if (method === "thread/items/list") {
+            return { data: [], nextCursor: null };
+          }
+          if (method !== "thread/read") {
+            return {};
+          }
+          const threadId = (params as { threadId?: string }).threadId;
+          if (threadId === "child-thread") {
+            return {
+              thread: {
+                id: "child-thread",
+                historyMode: "paginated",
+                turns: [],
+              },
+            };
+          }
+          return {
+            thread: {
+              turns: [
+                {
+                  items: [
+                    {
+                      type: "collabAgentToolCall",
+                      id: "stale-spawn",
+                      tool: "spawnAgent",
+                      status: "completed",
+                      receiverThreadIds: ["child-thread"],
+                      agentsStates: { "child-thread": { status: "pendingInit" } },
+                    },
+                  ],
+                },
+              ],
+            },
+          };
+        }),
+      };
+
+      await asInternals(session).loadPersistedHistory(session.client);
+
+      const history: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) {
+        history.push(event);
+      }
+      const childStatuses = history.flatMap((event) =>
+        event.type === "provider_subagent" && event.event.type === "upsert"
+          ? [event.event.status]
+          : [],
+      );
+      const parentToolCalls = history.flatMap((event) =>
+        event.type === "timeline" && event.item.type === "tool_call" ? [event.item] : [],
+      );
+      expect(childStatuses.at(-1)).toBe(expectedStatus);
+      expect(parentToolCalls).toMatchObject([{ callId: "stale-spawn", status: expectedStatus }]);
+    },
+  );
+
   test("restores nested MultiAgentV2 ownership from persisted child threads", async () => {
     const session = createSession();
     session.client = {
