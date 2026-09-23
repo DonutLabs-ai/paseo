@@ -45,7 +45,11 @@ import { ProviderSettingsHost } from "@/components/provider-settings-host";
 import { WorkspaceSetupDialog } from "@/components/workspace-setup-dialog";
 import { WorkspaceShortcutTargetsSubscriber } from "@/components/workspace-shortcut-targets-subscriber";
 import { FloatingPanelPortalHost } from "@/components/ui/floating-panel-portal";
-import { UtilityTrayHost, UtilityTrayTriggerHost } from "@/components/utility-tray";
+import {
+  UTILITY_TRAY_TRIGGER_CLEARANCE,
+  UtilityTrayHost,
+  UtilityTrayTriggerHost,
+} from "@/components/utility-tray";
 import { HostChooserModal, useHostChooser } from "@/hosts/host-chooser";
 import {
   getIsElectronRuntime,
@@ -122,6 +126,7 @@ import { installWebScrollbarStyles } from "@/styles/install-web-scrollbar-styles
 import type { HostProfile } from "@/types/host-connection";
 import {
   useHasWindowChromeObstruction,
+  WindowChromeAccessoryRegion,
   WindowChromeProvider,
   WindowChromeRegion,
   WindowChromeSafeArea,
@@ -590,7 +595,17 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
   // Their tracked styles update in place; web numeric styles still need remounting.
   const surface = (
     <View style={layoutStyles.surfaceFill}>
-      {workspaceChrome}
+      {isCompactLayout ? (
+        workspaceChrome
+      ) : (
+        <WindowChromeAccessoryRegion
+          corner="top-right"
+          width={UTILITY_TRAY_TRIGGER_CLEARANCE}
+          height={HEADER_INNER_HEIGHT}
+        >
+          {workspaceChrome}
+        </WindowChromeAccessoryRegion>
+      )}
       <AppearanceStyleBoundary>
         {!isCompactLayout && appChromeLayout.sidebarToggleOwner === "window" ? (
           <WindowChromeRegion corners="top-left">

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addWindowChromeAccessory,
   intersectWindowChromeCorners,
   resolveHasOwnedWindowChromeObstruction,
   resolveWindowChromeObstruction,
@@ -46,6 +47,26 @@ describe("window chrome", () => {
     expect(
       resolveWindowChromeSafeArea({ obstruction, corners: "top-right", placement: "inline" }),
     ).toEqual({ paddingLeft: 0, paddingRight: 48 });
+  });
+
+  it("adds an app-owned accessory after the native corner obstruction", () => {
+    expect(
+      addWindowChromeAccessory({
+        obstruction: { topLeft: null, topRight: { width: 108, height: 36 } },
+        corner: "top-right",
+        accessory: { width: 32, height: 36 },
+      }),
+    ).toEqual({ topLeft: null, topRight: { width: 140, height: 36 } });
+    expect(
+      addWindowChromeAccessory({
+        obstruction: { topLeft: { width: 78, height: 45 }, topRight: null },
+        corner: "top-right",
+        accessory: { width: 32, height: 36 },
+      }),
+    ).toEqual({
+      topLeft: { width: 78, height: 45 },
+      topRight: { width: 32, height: 36 },
+    });
   });
 
   it("intersects identical and empty corner claims", () => {
