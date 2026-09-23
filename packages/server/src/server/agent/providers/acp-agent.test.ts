@@ -1,5 +1,8 @@
 import { type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   AgentSideConnection,
@@ -4202,6 +4205,75 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
 });
 
 describe("ACPAgentSession resume with a local history source", () => {
+  test("loads archived history without launching ACP from a deleted worktree", async () => {
+    const cwd = path.join(tmpdir(), `paseo-deleted-worktree-${randomUUID()}`);
+    const collect = vi.fn().mockResolvedValue([
+      {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "archived question" },
+        messageId: "archived-user-1",
+      },
+    ] satisfies SessionUpdate[]);
+    const launch = vi.spyOn(spawnUtils, "spawnProcess").mockImplementation(() => {
+      throw new Error("archived history launched ACP");
+    });
+    const client = new ACPAgentClient({
+      provider: "acp",
+      logger: createTestLogger(),
+      defaultCommand: [process.execPath],
+      localHistorySource: { collect },
+    });
+
+    try {
+      const session = await client.resumeSession(
+        { provider: "acp", sessionId: "archived-session", metadata: { cwd } },
+        undefined,
+        undefined,
+        { purpose: "history" },
+      );
+
+      expect(launch).not.toHaveBeenCalled();
+      expect(collect).toHaveBeenCalledWith({ cwd, sessionId: "archived-session" });
+      const history: AgentStreamEvent[] = [];
+      for await (const event of session.streamHistory()) {
+        history.push(event);
+      }
+      expect(history).toEqual([
+        {
+          type: "timeline",
+          provider: "acp",
+          item: {
+            type: "user_message",
+            text: "archived question",
+            messageId: "archived-user-1",
+          },
+        },
+      ]);
+      await session.close();
+    } finally {
+      launch.mockRestore();
+    }
+  });
+
+  test("does not hide a broken archived history source behind an empty timeline", async () => {
+    const sourceError = new Error("archived session log is unreadable");
+    const client = new ACPAgentClient({
+      provider: "acp",
+      logger: createTestLogger(),
+      defaultCommand: [process.execPath],
+      localHistorySource: { collect: vi.fn().mockRejectedValue(sourceError) },
+    });
+
+    await expect(
+      client.resumeSession(
+        { provider: "acp", sessionId: "archived-session", metadata: { cwd: "/tmp" } },
+        undefined,
+        undefined,
+        { purpose: "history" },
+      ),
+    ).rejects.toBe(sourceError);
+  });
+
   /**
    * A resumed session whose agent advertises `session/resume` but not
    * `session/load` replays nothing, so the timeline is only populated when a
@@ -4349,5 +4421,18 @@ describe("ACPAgentSession resume with a local history source", () => {
       history.push(event);
     }
     expect(history).toEqual([]);
+  });
+});
+
+describe("ACPAgentSession process launch failures", () => {
+  test("rejects a missing working directory instead of emitting an uncaught child error", async () => {
+    const client = new ACPAgentClient({
+      provider: "acp",
+      logger: createTestLogger(),
+      defaultCommand: [process.execPath],
+    });
+    const cwd = path.join(tmpdir(), `paseo-deleted-worktree-${randomUUID()}`);
+
+    await expect(client.createSession({ provider: "acp", cwd })).rejects.toThrow(/ENOENT/);
   });
 });
