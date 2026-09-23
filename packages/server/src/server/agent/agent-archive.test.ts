@@ -60,6 +60,21 @@ test("clears persisted attention when archiving", () => {
   });
 });
 
+test("cancels a pending usage-limit continuation when archiving", () => {
+  const archived = buildArchivedAgentRecord(
+    {
+      ...BASE_RECORD,
+      pendingAutomaticRetry: {
+        reason: "usage_limit",
+        retryAt: "2026-09-28T15:31:00.000Z",
+      },
+    },
+    { archivedAt: "2026-09-23T12:00:00.000Z" },
+  );
+
+  expect(archived.pendingAutomaticRetry).toBeNull();
+});
+
 test("can stamp updatedAt to the archive timestamp", () => {
   const archived = buildArchivedAgentRecord(BASE_RECORD, {
     archivedAt: "2025-01-03T00:00:00.000Z",

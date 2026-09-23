@@ -9118,6 +9118,254 @@ test("transient Codex response stream failures automatically continue after 60 s
   }
 });
 
+test("Codex usage limits resume after the reset time across daemon restart", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 8, 23, 10));
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-usage-limit-retry-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const retryAt = new Date(2026, 8, 28, 23, 31).toISOString();
+  const prompts: AgentPromptInput[] = [];
+
+  class UsageLimitSession extends TestAgentSession {
+    override async startTurn(prompt: AgentPromptInput): Promise<{ turnId: string }> {
+      prompts.push(prompt);
+      const turnId = `usage-limit-turn-${prompts.length}`;
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        this.pushEvent(
+          prompts.length === 1
+            ? {
+                type: "turn_failed",
+                provider: this.provider,
+                error: "Error running remote compact task: You’ve hit your usage limit.",
+                failureReason: "usage_limit",
+                retryAt,
+                turnId,
+              }
+            : { type: "turn_completed", provider: this.provider, turnId },
+        );
+      }, 0);
+      return { turnId };
+    }
+  }
+
+  const client: AgentClient = {
+    provider: "codex",
+    capabilities: TEST_CAPABILITIES,
+    isAvailable: async () => true,
+    createSession: async (config) => new UsageLimitSession(config),
+    resumeSession: async (_handle, config) =>
+      new UsageLimitSession({ provider: "codex", cwd: config?.cwd ?? workdir }),
+  };
+  const agentId = "00000000-0000-4000-8000-000000000237";
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+
+  try {
+    await manager.createAgent({ provider: "codex", cwd: workdir }, agentId, {
+      workspaceId: undefined,
+    });
+    const initialRun = manager.runAgent(agentId, "Finish the task");
+    const initialFailure = expect(initialRun).rejects.toThrow("remote compact task");
+    await vi.advanceTimersByTimeAsync(0);
+    await initialFailure;
+    await manager.flush();
+
+    expect(prompts).toEqual(["Finish the task"]);
+    expect((await storage.get(agentId))?.pendingAutomaticRetry).toEqual({
+      reason: "usage_limit",
+      retryAt,
+    });
+    expect(manager.getTimeline(agentId).at(-1)).toMatchObject({
+      type: "assistant_message",
+      text: expect.stringContaining("automatically when the usage limit resets"),
+    });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(prompts).toHaveLength(1);
+    manager.prepareForShutdown();
+    await manager.closeAgent(agentId);
+    expect((await storage.get(agentId))?.pendingAutomaticRetry).toEqual({
+      reason: "usage_limit",
+      retryAt,
+    });
+
+    const restarted = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+    await restarted.restorePendingAutomaticRetries(await storage.list());
+    await vi.advanceTimersByTimeAsync(new Date(retryAt).getTime() - Date.now() - 1);
+    expect(prompts).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(prompts).toHaveLength(2));
+    await vi.runOnlyPendingTimersAsync();
+    await restarted.flush();
+
+    expect(prompts).toEqual(["Finish the task", "Continue from where you left off."]);
+    expect((await storage.get(agentId))?.pendingAutomaticRetry).toBeUndefined();
+    expect(restarted.getAgent(agentId)?.lifecycle).toBe("idle");
+    restarted.prepareForShutdown();
+    await restarted.closeAgent(agentId);
+  } finally {
+    vi.useRealTimers();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("a manual follow-up cancels the persisted usage-limit retry", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 8, 23, 10));
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-usage-limit-manual-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const retryAt = new Date(2026, 8, 28, 23, 31).toISOString();
+  const prompts: AgentPromptInput[] = [];
+
+  class UsageLimitThenSuccessSession extends TestAgentSession {
+    override async startTurn(prompt: AgentPromptInput): Promise<{ turnId: string }> {
+      prompts.push(prompt);
+      const turnId = `manual-usage-limit-turn-${prompts.length}`;
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        this.pushEvent(
+          prompts.length === 1
+            ? {
+                type: "turn_failed",
+                provider: this.provider,
+                error: "Codex usage limit",
+                failureReason: "usage_limit",
+                retryAt,
+                turnId,
+              }
+            : { type: "turn_completed", provider: this.provider, turnId },
+        );
+      }, 0);
+      return { turnId };
+    }
+  }
+
+  const session = new UsageLimitThenSuccessSession({ provider: "codex", cwd: workdir });
+  const client: AgentClient = {
+    provider: "codex",
+    capabilities: TEST_CAPABILITIES,
+    isAvailable: async () => true,
+    createSession: async () => session,
+    resumeSession: async () => session,
+  };
+  const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+  const agentId = "00000000-0000-4000-8000-000000000238";
+
+  try {
+    await manager.createAgent({ provider: "codex", cwd: workdir }, agentId, {
+      workspaceId: undefined,
+    });
+    const initialFailure = expect(manager.runAgent(agentId, "Initial task")).rejects.toThrow(
+      "Codex usage limit",
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    await initialFailure;
+    expect((await storage.get(agentId))?.pendingAutomaticRetry?.retryAt).toBe(retryAt);
+
+    const manualRun = manager.runAgent(agentId, "Continue with this new instruction");
+    await vi.waitFor(() => expect(prompts).toHaveLength(2));
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(manualRun).resolves.toMatchObject({ canceled: false });
+    expect((await storage.get(agentId))?.pendingAutomaticRetry).toBeUndefined();
+
+    await vi.advanceTimersByTimeAsync(new Date(retryAt).getTime() - Date.now());
+    expect(prompts).toEqual(["Initial task", "Continue with this new instruction"]);
+  } finally {
+    manager.prepareForShutdown();
+    await manager.closeAgent(agentId);
+    vi.useRealTimers();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("a usage-limit retry that cannot reload its session becomes an actionable error", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 8, 23, 10));
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-usage-limit-reload-error-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const agentId = "00000000-0000-4000-8000-000000000239";
+  const retryAt = new Date(Date.now() + 60_000).toISOString();
+  const manager = new AgentManager({ clients: {}, registry: storage, logger });
+  const states: AgentManagerEvent[] = [];
+
+  try {
+    await storage.upsert({
+      id: agentId,
+      provider: "codex",
+      cwd: workdir,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      labels: {},
+      lastStatus: "closed",
+      config: null,
+      persistence: null,
+      pendingAutomaticRetry: { reason: "usage_limit", retryAt },
+    });
+    manager.subscribe((event) => states.push(event), { agentId, replayState: false });
+    await manager.restorePendingAutomaticRetries(await storage.list());
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await manager.flush();
+
+    const record = await storage.get(agentId);
+    expect(record).toMatchObject({
+      lastStatus: "error",
+      lastError: expect.stringContaining("unavailable provider"),
+      pendingAutomaticRetry: null,
+      requiresAttention: true,
+      attentionReason: "error",
+    });
+    expect(states).toContainEqual(
+      expect.objectContaining({
+        type: "agent_state",
+        agent: expect.objectContaining({ id: agentId, lifecycle: "closed" }),
+      }),
+    );
+  } finally {
+    manager.prepareForShutdown();
+    vi.useRealTimers();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("restores a pre-existing remote compaction usage limit from stored error text", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 8, 23, 10));
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-legacy-usage-limit-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const agentId = "00000000-0000-4000-8000-000000000240";
+  const retryAt = new Date(2026, 8, 28, 23, 31).toISOString();
+  const manager = new AgentManager({ clients: {}, registry: storage, logger });
+
+  try {
+    await storage.upsert({
+      id: agentId,
+      provider: "codex",
+      cwd: workdir,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      labels: {},
+      lastStatus: "closed",
+      lastError:
+        "Error running remote compact task: You’ve hit your usage limit. " +
+        "Visit https://chatgpt.com/codex/settings/usage to purchase more credits " +
+        "or try again at Sep 28th, 2026 11:31 PM.",
+      config: null,
+      persistence: null,
+    });
+
+    await manager.restorePendingAutomaticRetries(await storage.list());
+    expect((await storage.get(agentId))?.pendingAutomaticRetry).toEqual({
+      reason: "usage_limit",
+      retryAt,
+    });
+  } finally {
+    manager.prepareForShutdown();
+    vi.useRealTimers();
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("an empty Codex completion continues once without entering a retry loop", async () => {
   vi.useFakeTimers();
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-empty-completion-retry-"));

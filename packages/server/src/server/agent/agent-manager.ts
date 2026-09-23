@@ -93,10 +93,13 @@ import {
 } from "./provider-subagents/store.js";
 import { withTimeout } from "../../utils/promise-timeout.js";
 import { extractAttention } from "../persistence-hooks.js";
+import { ensureUnarchivedAgentLoaded } from "./agent-loading.js";
+import { parseCodexUsageLimitRetryAt } from "./providers/codex/usage-limit.js";
 
 const RELOAD_SESSION_CLOSE_TIMEOUT_MS = 3_000;
 const INTERRUPT_SESSION_TIMEOUT_MS = 2_000;
 const AUTOMATIC_RETRY_DELAY_MS = 60_000;
+const MAX_AUTOMATIC_RETRY_TIMER_MS = 2_147_483_647;
 const IMPORTABLE_SESSION_LIST_TIMEOUT_MS = 90_000;
 const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
   supportsStreaming: false,
@@ -113,7 +116,7 @@ const STORED_AGENT_CAPABILITIES: AgentCapabilityFlags = {
 type TimeoutResult = "completed" | "timed_out";
 type AutomaticRetryFailureReason = Extract<
   AgentTurnFailureReason,
-  "empty_completion" | "model_at_capacity" | "transient_transport"
+  "empty_completion" | "model_at_capacity" | "transient_transport" | "usage_limit"
 >;
 
 function isAutomaticRetryFailureReason(
@@ -122,7 +125,8 @@ function isAutomaticRetryFailureReason(
   return (
     failureReason === "empty_completion" ||
     failureReason === "model_at_capacity" ||
-    failureReason === "transient_transport"
+    failureReason === "transient_transport" ||
+    failureReason === "usage_limit"
   );
 }
 
@@ -916,6 +920,27 @@ export class AgentManager {
     this.acceptingAgentRegistrations = false;
     for (const agentId of this.automaticRetryTimers.keys()) {
       this.cancelAutomaticRetry(agentId);
+    }
+  }
+
+  async restorePendingAutomaticRetries(records: readonly StoredAgentRecord[]): Promise<void> {
+    for (const record of records) {
+      if (record.archivedAt) continue;
+      let pending = record.pendingAutomaticRetry;
+      if (
+        !pending &&
+        record.provider === "codex" &&
+        (record.lastStatus === "error" || record.lastStatus === "closed") &&
+        record.lastError
+      ) {
+        const retryAt = parseCodexUsageLimitRetryAt(record.lastError, { requireDate: true });
+        if (retryAt && this.registry) {
+          pending = { reason: "usage_limit", retryAt };
+          await this.registry.setPendingAutomaticRetry(record.id, pending);
+        }
+      }
+      if (!pending) continue;
+      this.scheduleAutomaticRetry(record.id, record.provider, pending.reason, pending.retryAt);
     }
   }
 
@@ -1774,6 +1799,12 @@ export class AgentManager {
       "agent.manager.close.start",
     );
     await this.drainSessionEvents(agentId);
+    if (this.acceptingAgentRegistrations) {
+      const stored = await this.registry?.get(agentId);
+      if (stored?.pendingAutomaticRetry) {
+        await this.registry?.setPendingAutomaticRetry(agentId, null);
+      }
+    }
     // Retain ownership until shutdown succeeds. A failed close may still own a
     // native writer, so publishing a resumable closed snapshot would orphan it.
     await agent.session.close();
@@ -1918,6 +1949,7 @@ export class AgentManager {
   ): Promise<ArchivedStoredAgentRecord> {
     const archivedRecord = buildArchivedAgentRecord(record, options);
     await this.requireRegistry().upsert(archivedRecord);
+    this.cancelAutomaticRetry(record.id);
     if (!record.archivedAt && !record.internal) {
       this.pluginLifecycle?.emit("agent.archived", {
         agent: describeHookAgent(archivedRecord),
@@ -2539,6 +2571,8 @@ export class AgentManager {
     options?: AgentManagerRunOptions,
   ): AsyncGenerator<AgentStreamEvent> {
     const existingAgent = this.requireSessionAgent(agentId);
+    const hadAutomaticRetry =
+      this.automaticRetryTimers.has(agentId) || this.automaticRetryStarts.has(agentId);
     if (!this.automaticRetryStarts.has(agentId)) {
       this.automaticRetryAttempts.delete(agentId);
     }
@@ -2581,6 +2615,11 @@ export class AgentManager {
     const streamForwarder = async function* streamForwarder(this: AgentManager) {
       let turnId: string;
       let turnStream: ReturnType<AgentRunState["createTurnStream"]> | null = null;
+      if (hadAutomaticRetry) {
+        await this.clearPendingAutomaticRetryForRun(agentId, () => {
+          this.runs.settleForegroundRun(agentId, pendingRun.token);
+        });
+      }
       turnId = await this.startPendingForegroundTurn({
         agent,
         agentId,
@@ -4558,24 +4597,23 @@ export class AgentManager {
       agent.lifecycle = "error";
     }
     agent.lastError = event.error;
-    const automaticRetryFailureReason =
-      isForegroundEvent &&
-      !options?.fromHistory &&
-      isAutomaticRetryFailureReason(event.failureReason) &&
-      this.canScheduleAutomaticRetry(agent.id, event.failureReason)
-        ? event.failureReason
-        : null;
+    const automaticRetryFailureReason = this.getAutomaticRetryFailureReason(
+      agent.id,
+      event,
+      isForegroundEvent,
+      options?.fromHistory === true,
+    );
     const formattedFailure = this.formatTurnFailedMessage(event);
     await this.appendSystemErrorTimelineMessage(
       agent,
       event.provider,
       automaticRetryFailureReason
-        ? `${formattedFailure}\n\nPaseo will continue this session automatically in 60 seconds.`
+        ? `${formattedFailure}\n\n${automaticRetryFailureReason === "usage_limit" ? "Paseo will continue this session automatically when the usage limit resets." : "Paseo will continue this session automatically in 60 seconds."}`
         : formattedFailure,
       options,
     );
     if (automaticRetryFailureReason) {
-      this.scheduleAutomaticRetry(agent, automaticRetryFailureReason);
+      await this.scheduleFailedTurnRetry(agent, event, automaticRetryFailureReason);
     }
     this.resolvePendingPermissionsForAgent(agent, event.provider, options, "Turn failed");
     if (!isForegroundEvent && !agent.activeForegroundTurnId) {
@@ -4856,52 +4894,194 @@ export class AgentManager {
   }
 
   private scheduleAutomaticRetry(
-    agent: ActiveManagedAgent,
+    agentId: string,
+    provider: string,
     failureReason: AutomaticRetryFailureReason,
+    retryAt?: string,
   ): void {
-    this.cancelAutomaticRetry(agent.id);
-    this.automaticRetryAttempts.set(agent.id, (this.automaticRetryAttempts.get(agent.id) ?? 0) + 1);
+    this.cancelAutomaticRetry(agentId);
+    this.automaticRetryAttempts.set(agentId, (this.automaticRetryAttempts.get(agentId) ?? 0) + 1);
+    this.armAutomaticRetry(agentId, provider, failureReason, retryAt);
+  }
+
+  private armAutomaticRetry(
+    agentId: string,
+    provider: string,
+    failureReason: AutomaticRetryFailureReason,
+    retryAt?: string,
+  ): void {
+    const remainingMs = retryAt ? Date.parse(retryAt) - Date.now() : AUTOMATIC_RETRY_DELAY_MS;
+    const delayMs = Math.min(Math.max(remainingMs, 0), MAX_AUTOMATIC_RETRY_TIMER_MS);
     const timer = setTimeout(() => {
-      if (this.automaticRetryTimers.get(agent.id) !== timer) {
+      if (this.automaticRetryTimers.get(agentId) !== timer) return;
+      if (retryAt && Date.now() < Date.parse(retryAt)) {
+        this.armAutomaticRetry(agentId, provider, failureReason, retryAt);
         return;
       }
-      this.automaticRetryTimers.delete(agent.id);
-      const current = this.agents.get(agent.id);
-      if (!this.acceptingAgentRegistrations || !current || this.hasInFlightRun(agent.id)) {
-        return;
-      }
-      this.logger.info(
-        { agentId: agent.id, provider: current.provider, failureReason },
-        "Retrying agent after recoverable failure",
+      this.trackBackgroundTask(
+        this.runAutomaticRetry(agentId, provider, failureReason, timer, retryAt).catch((error) => {
+          this.logger.error(
+            { err: error, agentId, provider, failureReason },
+            "Automatic agent retry could not start",
+          );
+        }),
       );
-      this.automaticRetryStarts.add(agent.id);
-      let retry: Promise<void>;
-      try {
-        retry = this.runAgent(agent.id, AGENT_CONTINUE_PROMPT).then(
-          () => undefined,
-          (error: unknown) => {
-            this.logger.warn(
-              { err: error, agentId: agent.id, provider: current.provider, failureReason },
-              "Automatic agent retry failed",
-            );
-          },
-        );
-      } finally {
-        this.automaticRetryStarts.delete(agent.id);
-      }
-      this.trackBackgroundTask(retry);
-    }, AUTOMATIC_RETRY_DELAY_MS);
+    }, delayMs);
     timer.unref();
-    this.automaticRetryTimers.set(agent.id, timer);
+    this.automaticRetryTimers.set(agentId, timer);
     this.logger.info(
       {
-        agentId: agent.id,
-        provider: agent.provider,
+        agentId,
+        provider,
         failureReason,
-        delayMs: AUTOMATIC_RETRY_DELAY_MS,
+        delayMs,
+        retryAt,
       },
       "Scheduled agent retry after recoverable failure",
     );
+  }
+
+  private async runAutomaticRetry(
+    agentId: string,
+    provider: string,
+    failureReason: AutomaticRetryFailureReason,
+    timer: NodeJS.Timeout,
+    retryAt?: string,
+  ): Promise<void> {
+    if (!this.acceptingAgentRegistrations || this.automaticRetryTimers.get(agentId) !== timer) {
+      return;
+    }
+    if (
+      failureReason === "usage_limit" &&
+      !(await this.prepareUsageLimitRetry(agentId, provider, timer, retryAt))
+    ) {
+      return;
+    }
+    if (this.automaticRetryTimers.get(agentId) !== timer) return;
+    this.automaticRetryTimers.delete(agentId);
+    const current = this.agents.get(agentId);
+    if (!current || this.hasInFlightRun(agentId)) return;
+    this.logger.info(
+      { agentId, provider: current.provider, failureReason },
+      "Retrying agent after recoverable failure",
+    );
+    this.automaticRetryStarts.add(agentId);
+    try {
+      await this.runAgent(agentId, AGENT_CONTINUE_PROMPT);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, agentId, provider: current.provider, failureReason },
+        "Automatic agent retry failed",
+      );
+    } finally {
+      this.automaticRetryStarts.delete(agentId);
+    }
+  }
+
+  private async prepareUsageLimitRetry(
+    agentId: string,
+    provider: string,
+    timer: NodeJS.Timeout,
+    retryAt: string | undefined,
+  ): Promise<boolean> {
+    const registry = this.registry;
+    if (!registry) return true;
+    const stored = await registry.get(agentId);
+    if (!stored || stored.archivedAt || stored.pendingAutomaticRetry?.retryAt !== retryAt) {
+      this.cancelAutomaticRetry(agentId);
+      return false;
+    }
+    try {
+      await ensureUnarchivedAgentLoaded(agentId, {
+        agentManager: this,
+        agentStorage: registry,
+        logger: this.logger,
+      });
+      return true;
+    } catch (error) {
+      if (this.automaticRetryTimers.get(agentId) !== timer) return false;
+      this.cancelAutomaticRetry(agentId);
+      await this.handleUsageLimitRetryLoadFailure(agentId, retryAt, error);
+      this.logger.warn(
+        { err: error, agentId, provider, failureReason: "usage_limit" },
+        "Failed to resume agent for automatic retry",
+      );
+      return false;
+    }
+  }
+
+  private async handleUsageLimitRetryLoadFailure(
+    agentId: string,
+    retryAt: string | undefined,
+    error: unknown,
+  ): Promise<void> {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const marked = await this.requireRegistry().markAutomaticRetryFailed(
+      agentId,
+      retryAt,
+      errorMessage,
+    );
+    if (!marked) return;
+    const live = this.agents.get(agentId);
+    if (live && !this.hasInFlightRun(agentId)) {
+      live.lifecycle = "error";
+      live.lastError = marked.lastError ?? undefined;
+      live.attention = {
+        requiresAttention: true,
+        attentionReason: "error",
+        attentionTimestamp: new Date(marked.attentionTimestamp ?? marked.updatedAt),
+      };
+      this.emitState(live);
+    } else if (!live && !marked.internal) {
+      this.dispatchStoredAgentState(marked);
+    }
+  }
+
+  private async clearPendingAutomaticRetryForRun(
+    agentId: string,
+    settlePendingRun: () => void,
+  ): Promise<void> {
+    try {
+      const stored = await this.registry?.get(agentId);
+      if (stored?.pendingAutomaticRetry) {
+        await this.registry?.setPendingAutomaticRetry(agentId, null);
+      }
+    } catch (error) {
+      settlePendingRun();
+      throw error;
+    }
+  }
+
+  private getAutomaticRetryFailureReason(
+    agentId: string,
+    event: Extract<AgentStreamEvent, { type: "turn_failed" }>,
+    isForegroundEvent: boolean,
+    fromHistory: boolean,
+  ): AutomaticRetryFailureReason | null {
+    if (!isForegroundEvent || fromHistory || !isAutomaticRetryFailureReason(event.failureReason)) {
+      return null;
+    }
+    if (event.failureReason === "usage_limit") {
+      const retryAtMs = event.retryAt ? Date.parse(event.retryAt) : Number.NaN;
+      if (!Number.isFinite(retryAtMs) || retryAtMs <= Date.now()) return null;
+    }
+    return this.canScheduleAutomaticRetry(agentId, event.failureReason)
+      ? event.failureReason
+      : null;
+  }
+
+  private async scheduleFailedTurnRetry(
+    agent: ActiveManagedAgent,
+    event: Extract<AgentStreamEvent, { type: "turn_failed" }>,
+    failureReason: AutomaticRetryFailureReason,
+  ): Promise<void> {
+    if (failureReason === "usage_limit" && event.retryAt) {
+      await this.registry?.setPendingAutomaticRetry(agent.id, {
+        reason: "usage_limit",
+        retryAt: event.retryAt,
+      });
+    }
+    this.scheduleAutomaticRetry(agent.id, agent.provider, failureReason, event.retryAt);
   }
 
   private canScheduleAutomaticRetry(
