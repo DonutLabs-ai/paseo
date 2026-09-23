@@ -88,6 +88,7 @@ import {
   type CodexAppServerTraceContext,
 } from "./codex/app-server-transport.js";
 import { type CodexUserMessageTurnIndex, revertCodexConversation } from "./codex/rewind.js";
+import { parseCodexUsageLimitRetryAt } from "./codex/usage-limit.js";
 import {
   materializeProviderImage,
   renderProviderImageOutputAsAssistantMarkdown,
@@ -148,17 +149,25 @@ const CODEX_RESPONSE_STREAM_DISCONNECTED_MESSAGE =
   "(https://chatgpt.com/backend-api/codex/responses)";
 const CODEX_RATE_LIMIT_ERROR_PATTERN =
   /\b429\s+Too Many Requests\b|\b(?:last\s+)?status(?:\s+code)?\s*[:=]\s*429\b/i;
-
-function classifyCodexTurnFailure(message: string | null): AgentTurnFailureReason | undefined {
+function classifyCodexTurnFailure(
+  message: string | null,
+): { failureReason: AgentTurnFailureReason; retryAt?: string } | undefined {
   const normalized = message?.trim();
-  if (normalized === CODEX_MODEL_AT_CAPACITY_MESSAGE) return "model_at_capacity";
-  if (normalized === CODEX_RESPONSE_STREAM_DISCONNECTED_MESSAGE) return "transient_transport";
+  if (!normalized) return undefined;
+  const retryAt = parseCodexUsageLimitRetryAt(normalized);
+  if (retryAt) return { failureReason: "usage_limit", retryAt };
+  if (normalized === CODEX_MODEL_AT_CAPACITY_MESSAGE) {
+    return { failureReason: "model_at_capacity" };
+  }
+  if (normalized === CODEX_RESPONSE_STREAM_DISCONNECTED_MESSAGE) {
+    return { failureReason: "transient_transport" };
+  }
   // Codex app-server exhausts its own request retries before reporting a 429
   // as a failed turn. It is still a transient upstream transport failure, so
   // let AgentManager's automatic continuation path handle it instead of
   // surfacing a permanent workspace error.
-  if (normalized && CODEX_RATE_LIMIT_ERROR_PATTERN.test(normalized)) {
-    return "transient_transport";
+  if (CODEX_RATE_LIMIT_ERROR_PATTERN.test(normalized)) {
+    return { failureReason: "transient_transport" };
   }
   return undefined;
 }
@@ -6525,12 +6534,12 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.completePendingRootCompactions();
     if (parsed.status === "failed") {
       const error = parsed.errorMessage ?? "Codex turn failed";
-      const failureReason = classifyCodexTurnFailure(error);
+      const failure = classifyCodexTurnFailure(error);
       this.emitEvent({
         type: "turn_failed",
         provider: CODEX_PROVIDER,
         error,
-        ...(failureReason ? { failureReason } : {}),
+        ...failure,
       });
     } else if (parsed.status === "interrupted") {
       this.dismissInterruptedAsyncQuestions();

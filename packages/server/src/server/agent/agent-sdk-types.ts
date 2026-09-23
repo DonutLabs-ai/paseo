@@ -427,7 +427,8 @@ export type AgentTimelineItem =
 export type AgentTurnFailureReason =
   | "empty_completion"
   | "model_at_capacity"
-  | "transient_transport";
+  | "transient_transport"
+  | "usage_limit";
 
 export type AgentStreamEvent =
   | { type: "thread_started"; sessionId: string; provider: AgentProvider }
@@ -453,6 +454,7 @@ export type AgentStreamEvent =
       code?: string;
       diagnostic?: string;
       failureReason?: AgentTurnFailureReason;
+      retryAt?: string;
       turnId?: string;
     }
   | { type: "turn_canceled"; provider: AgentProvider; reason: string; turnId?: string }

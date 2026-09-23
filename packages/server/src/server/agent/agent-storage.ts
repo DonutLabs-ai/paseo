@@ -69,6 +69,10 @@ const STORED_AGENT_SCHEMA = z.object({
   features: z.array(AgentFeatureSchema).optional(),
   persistence: PERSISTENCE_HANDLE_SCHEMA,
   lastError: z.string().nullable().optional(),
+  pendingAutomaticRetry: z
+    .object({ reason: z.literal("usage_limit"), retryAt: z.string().datetime() })
+    .nullable()
+    .optional(),
   requiresAttention: z.boolean().optional(),
   attentionReason: z.enum(["finished", "error", "permission"]).nullable().optional(),
   attentionTimestamp: z.string().nullable().optional(),
@@ -153,6 +157,47 @@ export class AgentStorage {
   async upsert(record: StoredAgentRecord): Promise<void> {
     await this.load();
     await this.queueRecordWrite(record);
+  }
+
+  async setPendingAutomaticRetry(
+    agentId: string,
+    pending: StoredAgentRecord["pendingAutomaticRetry"],
+  ): Promise<void> {
+    await this.load();
+    await this.queueRecordMutation(agentId, (existing) => {
+      if (!existing) throw new Error(`Agent not found: ${agentId}`);
+      return { ...existing, pendingAutomaticRetry: pending };
+    });
+  }
+
+  async markAutomaticRetryFailed(
+    agentId: string,
+    retryAt: string | undefined,
+    errorMessage: string,
+  ): Promise<StoredAgentRecord | null> {
+    await this.load();
+    let marked: StoredAgentRecord | null = null;
+    await this.queueRecordMutation(agentId, (existing) => {
+      if (!existing) throw new Error(`Agent not found: ${agentId}`);
+      if (existing.archivedAt || existing.pendingAutomaticRetry?.retryAt !== retryAt) {
+        return existing;
+      }
+      const nowMs = Date.now();
+      const previousMs = Date.parse(existing.updatedAt);
+      const updatedAt = new Date(nowMs > previousMs ? nowMs : previousMs + 1).toISOString();
+      marked = {
+        ...existing,
+        updatedAt,
+        lastStatus: "error",
+        lastError: `Automatic continuation failed: ${errorMessage}`,
+        pendingAutomaticRetry: null,
+        requiresAttention: true,
+        attentionReason: "error",
+        attentionTimestamp: updatedAt,
+      };
+      return marked;
+    });
+    return marked;
   }
 
   private queueRecordWrite(record: StoredAgentRecord): Promise<void> {
@@ -258,6 +303,9 @@ export class AgentStorage {
       // stale pre-archive record after the archive mutation.
       if (existing && existing.archivedAt !== undefined) {
         record.archivedAt = existing.archivedAt;
+      }
+      if (existing?.pendingAutomaticRetry) {
+        record.pendingAutomaticRetry = existing.pendingAutomaticRetry;
       }
       return record;
     });

@@ -5301,6 +5301,64 @@ describe("Codex app-server provider", () => {
     });
   });
 
+  test("classifies remote compaction usage limits with their reset time", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 8, 23, 10));
+    try {
+      const session = createSession();
+      const events: AgentStreamEvent[] = [];
+      session.subscribe((event) => events.push(event));
+
+      asInternals(session).handleNotification("turn/started", {
+        turn: { id: "turn-compact-usage-limit" },
+      });
+      asInternals(session).handleNotification("turn/completed", {
+        turn: {
+          status: "failed",
+          error: {
+            message:
+              "Error running remote compact task: You’ve hit your usage limit. " +
+              "Visit https://chatgpt.com/codex/settings/usage to purchase more credits " +
+              "or try again at Sep 28th, 2026 11:31 PM.",
+          },
+        },
+      });
+
+      expect(events.at(-1)).toMatchObject({
+        type: "turn_failed",
+        failureReason: "usage_limit",
+        retryAt: new Date(2026, 8, 28, 23, 31).toISOString(),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("does not schedule a retry for an invalid usage-limit reset date", () => {
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+
+    asInternals(session).handleNotification("turn/started", {
+      turn: { id: "turn-invalid-compact-reset" },
+    });
+    asInternals(session).handleNotification("turn/completed", {
+      turn: {
+        status: "failed",
+        error: {
+          message:
+            "Error running remote compact task: You’ve hit your usage limit. " +
+            "Visit https://chatgpt.com/codex/settings/usage to purchase more credits " +
+            "or try again at Feb 30th, 2027 11:31 PM.",
+        },
+      },
+    });
+
+    expect(events.at(-1)).toMatchObject({ type: "turn_failed" });
+    expect(events.at(-1)).not.toHaveProperty("failureReason");
+    expect(events.at(-1)).not.toHaveProperty("retryAt");
+  });
+
   test("emits and dedupes Codex thread/compacted notifications", () => {
     const session = createSession();
     session.activeForegroundTurnId = null;
