@@ -12,6 +12,7 @@ import type {
   CommandError,
 } from "../../output/index.js";
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { lookup } from "mime-types";
 import { parseDuration } from "../../utils/duration.js";
@@ -25,7 +26,8 @@ export function addRunOptions(cmd: Command): Command {
   return (
     cmd
       .description("Create and start an agent with a task")
-      .argument("<prompt>", "The task/prompt for the agent")
+      .argument("[prompt]", "The task/prompt for the agent")
+      .option("--prompt-file <path>", "Read the task/prompt from a UTF-8 text file")
       .option("-d, --background", "Run in background")
       // COMPAT(detachRunFlag): --detach used to mean background execution, not
       // ownership transfer. Added in v0.2.0; remove after 2027-01-17.
@@ -136,6 +138,55 @@ export interface AgentRunOptions extends CommandOptions {
   label?: string[];
   waitTimeout?: string;
   outputSchema?: string;
+  promptFile?: string;
+}
+
+export async function resolveRunPromptInput(
+  promptArgument: string | undefined,
+  promptFile: string | undefined,
+): Promise<string> {
+  const promptText = promptArgument?.trim();
+  const promptFilePath = promptFile?.trim();
+
+  if (promptText && promptFilePath) {
+    throw {
+      code: "CONFLICTING_PROMPT_INPUT",
+      message: "Provide exactly one of prompt argument or --prompt-file",
+    } satisfies CommandError;
+  }
+
+  if (promptText) {
+    return promptArgument as string;
+  }
+
+  if (!promptFilePath) {
+    throw {
+      code: "MISSING_PROMPT",
+      message: "A prompt is required",
+      details: "Usage: paseo run [options] [prompt] | --prompt-file <path>",
+    } satisfies CommandError;
+  }
+
+  let prompt: string;
+  try {
+    prompt = await readFile(resolve(promptFilePath), "utf8");
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw {
+      code: "PROMPT_FILE_READ_ERROR",
+      message: `Failed to read prompt file: ${promptFilePath}`,
+      details: message,
+    } satisfies CommandError;
+  }
+
+  if (!prompt.trim()) {
+    throw {
+      code: "MISSING_PROMPT",
+      message: "A prompt is required",
+      details: `Prompt file is empty: ${promptFilePath}`,
+    } satisfies CommandError;
+  }
+  return prompt;
 }
 
 function resolveNewWorkspaceKind(options: AgentRunOptions): string | undefined {
@@ -608,13 +659,14 @@ async function resolveRunWorkspace(
 }
 
 export async function runRunCommand(
-  prompt: string,
+  prompt: string | undefined,
   options: AgentRunOptions,
   _command: Command,
 ): Promise<SingleResult<AgentRunResult>> {
+  const resolvedPrompt = await resolveRunPromptInput(prompt, options.promptFile);
   const outputSchema = options.outputSchema ? loadOutputSchema(options.outputSchema) : undefined;
 
-  validateRunOptions(prompt, options, outputSchema);
+  validateRunOptions(resolvedPrompt, options, outputSchema);
   const waitTimeoutMs = parseWaitTimeoutOption(options.waitTimeout);
 
   const resolvedProviderModel = resolveProviderAndModel(options);
@@ -703,7 +755,7 @@ export async function runRunCommand(
         return lastMessage;
       };
 
-      const output = await fetchStructuredOutput(callStructuredTurn, prompt, outputSchema);
+      const output = await fetchStructuredOutput(callStructuredTurn, resolvedPrompt, outputSchema);
 
       if (!structuredAgent) {
         const error: CommandError = {
@@ -732,7 +784,7 @@ export async function runRunCommand(
       modeId: options.mode,
       model: resolvedProviderModel.model,
       thinkingOptionId,
-      initialPrompt: prompt,
+      initialPrompt: resolvedPrompt,
       images,
       env: requestEnv,
       labels: Object.keys(labels).length > 0 ? labels : undefined,
