@@ -1,5 +1,6 @@
 import { type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import fs from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -77,6 +78,7 @@ import {
   type AgentPromptInput,
   type AgentRunOptions,
   type AgentRunResult,
+  type AgentResumeSessionOptions,
   type AgentRuntimeInfo,
   type AgentSession,
   type AgentSessionConfig,
@@ -1017,6 +1019,7 @@ export class ACPAgentClient implements AgentClient {
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
     launchContext?: AgentLaunchContext,
+    options?: AgentResumeSessionOptions,
   ): Promise<AgentSession> {
     if (handle.provider !== this.provider) {
       throw new Error(`Cannot resume ${handle.provider} handle with ${this.provider} provider`);
@@ -1060,7 +1063,11 @@ export class ACPAgentClient implements AgentClient {
       initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
       localHistorySource: this.localHistorySource,
     });
-    await session.initializeResumedSession();
+    if (options?.purpose === "history" && this.localHistorySource) {
+      await session.initializeHistoricalSession();
+    } else {
+      await session.initializeResumedSession();
+    }
     return session;
   }
 
@@ -1849,6 +1856,16 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
   }
 
+  /** Archived local history needs no ACP runtime or surviving working directory. */
+  async initializeHistoricalSession(): Promise<void> {
+    const handle = this.initialHandle;
+    if (!handle || !this.localHistorySource) {
+      throw new Error("Local ACP history requested without a persistence handle and source");
+    }
+    this.sessionId = handle.sessionId;
+    await this.replayLocalHistory(handle.sessionId, true);
+  }
+
   private async closeAfterInitializationFailure(error: unknown): Promise<never> {
     try {
       await this.close();
@@ -1909,10 +1926,16 @@ export class ACPAgentSession implements AgentSession, ACPClient {
         prompt: toACPContentBlocks(prompt),
       })
       .then((response) => {
+        if (this.activeForegroundTurnId !== turnId) {
+          return;
+        }
         this.handlePromptResponse(response, turnId);
         return;
       })
       .catch((error) => {
+        if (this.activeForegroundTurnId !== turnId) {
+          return;
+        }
         const summary = summarizeACPRequestError(error);
         this.finishTurn({
           type: "turn_failed",
@@ -2599,10 +2622,11 @@ export class ACPAgentSession implements AgentSession, ACPClient {
    *
    * The collected updates go through the same translation as live ones, so
    * replayed history renders exactly like it did when it was first streamed.
-   * A source that fails is reported and skipped: an unreadable history log must
-   * not fail the resume, because the agent itself is already usable.
+   * During an interactive resume, a source failure is reported and skipped
+   * because the agent itself is already usable. A history-only resume must
+   * instead surface the failure: there is no live ACP connection to fall back to.
    */
-  private async replayLocalHistory(sessionId: string): Promise<void> {
+  private async replayLocalHistory(sessionId: string, failOnSourceError = false): Promise<void> {
     const source = this.localHistorySource;
     if (!source) {
       return;
@@ -2611,6 +2635,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     try {
       updates = await source.collect({ cwd: this.config.cwd, sessionId });
     } catch (error) {
+      if (failOnSourceError) {
+        throw error;
+      }
       this.logger.warn(
         { err: error, agentId: this.agentId, provider: this.provider, sessionId },
         "provider.acp.local_history_failed",
@@ -2811,7 +2838,26 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       }),
       stdio: ["pipe", "pipe", "pipe"],
     });
+
+    // Node emits spawn failures (including a deleted cwd) as an asynchronous
+    // ChildProcess error, not as an exception from spawn(). Without a listener
+    // that error escapes the session initialization guard and kills the daemon.
+    child.on("error", (error) => {
+      this.logger.error({ err: error, agentId: this.agentId }, "ACP agent process failed");
+      if (this.activeForegroundTurnId) {
+        this.synthesizeCanceledToolCalls();
+        this.finishTurn({
+          type: "turn_failed",
+          provider: this.provider,
+          error: `ACP agent process failed: ${String(error)}`,
+          turnId: this.activeForegroundTurnId,
+        });
+      }
+    });
     assertChildWithPipes(child);
+    // Do not construct stream adapters until the process has actually started:
+    // a failed spawn's stdio pipes can emit their own errors during setup.
+    await once(child, "spawn");
 
     const stderrChunks: string[] = [];
     child.stderr.on("data", (chunk: Buffer | string) => {
