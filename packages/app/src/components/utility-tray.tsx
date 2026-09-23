@@ -21,6 +21,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { AdaptiveTextInput } from "@/components/adaptive-text-input";
 import { Button } from "@/components/ui/button";
 import { ToolbarButton } from "@/components/ui/pane-content-toolbar";
+import { smallIconButtonChromeFrameSize } from "@/components/ui/icon-button-chrome";
 import { TerminalPane } from "@/components/terminal-pane";
 import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
 import { useHostRuntimeClient, useHosts } from "@/runtime/host-runtime";
@@ -30,7 +31,9 @@ import {
   getUtilityTerminalFailureIds,
   utilityTerminalNeedsAttention,
 } from "@/utils/utility-terminal-health";
-import type { Theme } from "@/styles/theme";
+import { SPACING, type Theme } from "@/styles/theme";
+
+export const UTILITY_TRAY_TRIGGER_CLEARANCE = smallIconButtonChromeFrameSize() + SPACING[3];
 
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
 const ThemedCircleAlert = withUnistyles(CircleAlert);

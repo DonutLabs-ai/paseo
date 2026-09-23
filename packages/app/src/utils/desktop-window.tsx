@@ -128,6 +128,22 @@ export function resolveWindowChromeSafeArea(input: {
   return { paddingLeft: topLeft?.width ?? 0, paddingRight: topRight?.width ?? 0 };
 }
 
+export function addWindowChromeAccessory(input: {
+  obstruction: WindowChromeObstruction;
+  corner: WindowChromeCorner;
+  accessory: WindowChromeCornerObstruction;
+}): WindowChromeObstruction {
+  const existing =
+    input.corner === "top-left" ? input.obstruction.topLeft : input.obstruction.topRight;
+  const combined = {
+    width: (existing?.width ?? 0) + input.accessory.width,
+    height: Math.max(existing?.height ?? 0, input.accessory.height),
+  };
+  return input.corner === "top-left"
+    ? { ...input.obstruction, topLeft: combined }
+    : { ...input.obstruction, topRight: combined };
+}
+
 export function WindowChromeProvider({ children }: { children: ReactNode }) {
   const [isElectronReady, setIsElectronReady] = useState(getIsElectronRuntime);
   const [windowState, setWindowState] = useState({ isFullscreen: false, isMaximized: false });
@@ -275,6 +291,35 @@ export function WindowChromeRootRegion({
     <WindowChromeCornersContext.Provider value={corners}>
       {children}
     </WindowChromeCornersContext.Provider>
+  );
+}
+
+/** Adds app-owned chrome, such as a global toolbar action, to descendants' safe area. */
+export function WindowChromeAccessoryRegion({
+  corner,
+  width,
+  height,
+  children,
+}: {
+  corner: WindowChromeCorner;
+  width: number;
+  height: number;
+  children: ReactNode;
+}) {
+  const obstruction = useContext(WindowChromeContext);
+  const augmentedObstruction = useMemo(
+    () =>
+      addWindowChromeAccessory({
+        obstruction,
+        corner,
+        accessory: { width, height },
+      }),
+    [corner, height, obstruction, width],
+  );
+  return (
+    <WindowChromeContext.Provider value={augmentedObstruction}>
+      {children}
+    </WindowChromeContext.Provider>
   );
 }
 
