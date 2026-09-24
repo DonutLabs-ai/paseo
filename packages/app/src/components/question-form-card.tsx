@@ -528,7 +528,11 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
         onSelect={handleSelectQuestion}
       />
       <View style={styles.questionHeader}>
-        <Text testID="question-form-current-question" style={questionTextStyle}>
+        <Text
+          testID="question-form-current-question"
+          style={questionTextStyle}
+          selectable={IS_WEB ? undefined : true}
+        >
           {activeQuestion?.question}
         </Text>
       </View>
@@ -633,6 +637,7 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.normal,
     lineHeight: 22,
+    ...(IS_WEB ? { userSelect: "text" as const } : {}),
   },
   optionsWrap: {
     gap: theme.spacing[1],

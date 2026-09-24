@@ -1,4 +1,4 @@
-import { test } from "../support/fixtures";
+import { expect, test } from "../support/fixtures";
 import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import {
   chooseQuestionOption,
@@ -96,6 +96,19 @@ test.describe("Question prompt pagination", () => {
         total: 2,
         question: REPO_URL_QUESTION,
       });
+
+      const questionText = page.getByTestId("question-form-current-question");
+      await expect(questionText).toHaveCSS("user-select", "text");
+      const questionBounds = await questionText.boundingBox();
+      if (!questionBounds) throw new Error("Question text has no visible bounds");
+      const questionY = questionBounds.y + questionBounds.height / 2;
+      await page.mouse.move(questionBounds.x + 8, questionY);
+      await page.mouse.down();
+      await page.mouse.move(questionBounds.x + questionBounds.width - 8, questionY, { steps: 8 });
+      await page.mouse.up();
+      expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toContain(
+        "GitHub private repo URL",
+      );
 
       await fillQuestionAnswer(page, {
         question: REPO_URL_QUESTION,
