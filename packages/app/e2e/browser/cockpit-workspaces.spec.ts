@@ -245,7 +245,10 @@ test("surfaces a failed utility terminal while the tray is closed", async ({ pag
       name: "Failed watcher",
       cwd: workspace.cwd,
       command: process.execPath,
-      args: ["-e", "process.stderr.write('watcher failed\\n'); process.exit(7)"],
+      args: [
+        "-e",
+        "for (let i = 0; i < 24; i++) process.stderr.write('watcher line ' + i + '\\n'); process.exit(7)",
+      ],
     });
     if (!created.terminal) {
       throw new Error(created.error ?? "Failed to create the utility terminal");
@@ -262,6 +265,21 @@ test("surfaces a failed utility terminal while the tray is closed", async ({ pag
     await expect(page.getByTestId(`utility-terminal-alert-${utilityTerminalId}`)).toBeVisible();
     await row.click();
     await expect(page.getByText("Exited with code 7", { exact: true })).toBeVisible();
+    const exitOutput = page.getByTestId("utility-tray-exit-output");
+    await expect(exitOutput).toContainText("watcher line 23");
+    const scrollTop = await exitOutput.evaluate((element) => {
+      const scrollable = Array.from(element.querySelectorAll("*")).find((child) => {
+        const overflowY = window.getComputedStyle(child).overflowY;
+        return (
+          (overflowY === "auto" || overflowY === "scroll") &&
+          child.scrollHeight > child.clientHeight
+        );
+      });
+      if (!scrollable) return 0;
+      scrollable.scrollTop = scrollable.scrollHeight;
+      return scrollable.scrollTop;
+    });
+    expect(scrollTop).toBeGreaterThan(0);
     await expect(page.getByTestId("utility-tray-start")).toBeVisible();
   } finally {
     try {
