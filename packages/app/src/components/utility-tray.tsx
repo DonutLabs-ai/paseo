@@ -19,6 +19,7 @@ import {
 } from "react";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { AdaptiveTextInput } from "@/components/adaptive-text-input";
+import { ScrollableCodeSurface } from "@/components/ui/scrollable-code-surface";
 import { Button } from "@/components/ui/button";
 import { ToolbarButton } from "@/components/ui/pane-content-toolbar";
 import { smallIconButtonChromeFrameSize } from "@/components/ui/icon-button-chrome";
@@ -523,9 +524,15 @@ function UtilityTrayContent({
       <Text style={styles.stateText}>{selectedEntry.terminal.cwd}</Text>
       {exitDescription ? <Text style={styles.stateText}>{exitDescription}</Text> : null}
       {exitOutput ? (
-        <Text selectable style={styles.exitOutput} numberOfLines={8}>
+        <ScrollableCodeSurface
+          maxHeight={200}
+          style={styles.exitOutput}
+          textStyle={styles.exitOutputText}
+          testID="utility-tray-exit-output"
+          accessibilityLabel="Utility terminal exit output"
+        >
           {exitOutput}
-        </Text>
+        </ScrollableCodeSurface>
       ) : null}
       {mutationError ? <Text style={styles.errorText}>{mutationError}</Text> : null}
       <Button size="sm" loading={isMutating} testID="utility-tray-start" onPress={onStart}>
@@ -929,13 +936,9 @@ const styles = StyleSheet.create((theme) => ({
   exitOutput: {
     width: "100%",
     maxWidth: 640,
-    padding: theme.spacing[3],
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.lg,
-    backgroundColor: theme.colors.surface1,
+  },
+  exitOutputText: {
     color: theme.colors.foregroundMuted,
-    fontFamily: "monospace",
     fontSize: theme.fontSize.sm,
   },
   terminalList: {
