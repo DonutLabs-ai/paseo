@@ -565,6 +565,63 @@ describe("DirectorySync session readiness", () => {
     directory.dispose();
   });
 
+  it("does not restore an archived workspace from a delayed turn reconciliation", async () => {
+    const serverId = "archived-during-turn-reconciliation";
+    const { client, directory } = createDirectory(serverId);
+    const workspacePayload = {
+      id: "workspace-archived-during-turn",
+      projectId: "project-1",
+      projectDisplayName: "Paseo",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo",
+      projectKind: "git",
+      workspaceKind: "local_checkout",
+      name: "archived turn",
+      status: "running",
+      statusEnteredAt: "2026-09-11T04:30:00.000Z",
+      activityAt: "2026-09-11T04:30:00.000Z",
+      archivingAt: null,
+      diffStat: null,
+      scripts: [],
+    } satisfies WorkspaceFetchResult["entries"][number];
+    const workspace = normalizeWorkspaceDescriptor(workspacePayload);
+    const agent = {
+      ...createAgent(serverId, "agent-archived-during-turn"),
+      workspaceId: workspace.id,
+    };
+    const releaseWorkspace = client.holdWorkspaceFetch();
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, null, 1);
+    directory.acceptWorkspaces([workspace]);
+    directory.acceptAgent(agent);
+    directory.applyAgentTurnLiveness(agent.id, {
+      type: "stream_open",
+      turn: { turnId: "turn-1", startedAt: new Date("2026-09-11T04:30:00.000Z") },
+    });
+    directory.applyAgentTurnLiveness(agent.id, { type: "stream_close", turnId: "turn-1" });
+    await expect.poll(() => client.fetchWorkspacesCalls).toBe(1);
+
+    directory.removeWorkspace(workspace.id);
+    releaseWorkspace({
+      requestId: "workspace-status-before-archive",
+      entries: [workspacePayload],
+      emptyProjects: [],
+      pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(workspace.id)).toBe(false);
+    client.emit({
+      type: "workspace_update",
+      payload: { kind: "upsert", workspace: { ...workspacePayload, status: "done" } },
+    });
+    expect(
+      useSessionStore.getState().sessions[serverId]?.workspaces.get(workspace.id)?.status,
+    ).toBe("done");
+    directory.dispose();
+  });
+
   it("preserves a newer pushed workspace status over the completed-turn response", async () => {
     const serverId = "newer-push-terminal-turn-workspace-reconciliation";
     const { client, directory } = createDirectory(serverId);

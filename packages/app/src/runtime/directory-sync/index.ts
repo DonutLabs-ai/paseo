@@ -744,6 +744,7 @@ export class DirectorySync {
   }
 
   removeWorkspace(workspaceId: string): void {
+    this.advanceWorkspaceVersion(workspaceId);
     const mutations = this.workspaces.removeWorkspaceSnapshot(workspaceId);
     this.checkpoints?.commitDirectoryMutations(this.serverId, mutations);
   }
