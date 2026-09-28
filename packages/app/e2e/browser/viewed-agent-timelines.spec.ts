@@ -198,7 +198,7 @@ async function startVisibleTurn(
   prompt: string,
 ): Promise<void> {
   await scenario.client.sendAgentMessage(scenario.firstAgentId, prompt);
-  await expect(page.getByText(prompt, { exact: true })).toBeVisible();
+  await expect(page.getByTestId("user-message").getByText(prompt, { exact: true })).toBeVisible();
   await expectInlineWorkingIndicator(page);
 }
 
