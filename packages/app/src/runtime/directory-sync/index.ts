@@ -62,6 +62,11 @@ interface AgentSnapshot {
   syncRemovals: Array<{ id: string; seq: number }>;
 }
 
+interface WorkspaceRefreshSnapshot extends WorkspaceDirectorySnapshot {
+  readonly requestCursors: Readonly<Pick<DirectoryCheckpoint, "projects" | "workspaces">>;
+  readonly localWorkspaceVersions: ReadonlyMap<string, number>;
+}
+
 interface AgentPageInfo {
   hasMore?: boolean;
   hasMoreAfter?: boolean;
@@ -159,7 +164,7 @@ export class DirectorySync {
     AgentDirectoryDelta
   >();
   private readonly workspaceTransactions = new DirectoryTransactionOwner<
-    WorkspaceDirectorySnapshot,
+    WorkspaceRefreshSnapshot,
     WorkspaceDirectoryDelta
   >();
   private readonly agents: AgentDirectoryReplica;
@@ -180,6 +185,7 @@ export class DirectorySync {
   private workspaceRevision = 0;
   private projectRevision = 0;
   private readonly workspaceVersions = new Map<string, number>();
+  private readonly localWorkspaceVersions = new Map<string, number>();
   private readonly routeDemandIds = new Set<string>();
   private readonly fullDemandSources = new Set<object>();
   private demandRefresh: Promise<void> | null = null;
@@ -526,6 +532,14 @@ export class DirectorySync {
     this.workspaceVersions.set(workspaceId, (this.workspaceVersions.get(workspaceId) ?? 0) + 1);
   }
 
+  private advanceLocalWorkspaceVersion(workspaceId: string): void {
+    this.advanceWorkspaceVersion(workspaceId);
+    this.localWorkspaceVersions.set(
+      workspaceId,
+      (this.localWorkspaceVersions.get(workspaceId) ?? 0) + 1,
+    );
+  }
+
   acceptAgent(agent: Agent): Agent {
     return this.agents.accept(agent);
   }
@@ -611,14 +625,21 @@ export class DirectorySync {
     const onlineConnection = this.getOnlineConnection();
     if (!onlineConnection) return;
     const { client, source } = onlineConnection;
-    const transaction = this.workspaceTransactions.begin(source, () => ({
-      workspaces: new Map(useSessionStore.getState().sessions[this.serverId]?.workspaces),
-      projects: new Map(useSessionStore.getState().sessions[this.serverId]?.projects),
-      syncCursors: {},
-      syncModes: {},
-      touchedWorkspaceIds: new Set(),
-      touchedProjectIds: new Set(),
-    }));
+    const transaction = this.workspaceTransactions.begin(source, () => {
+      const baseline = this.workspaces.snapshot();
+      return {
+        workspaces: new Map(baseline.workspaces),
+        projects: new Map(baseline.projects),
+        // Cache hydration can advance the live replica while these requests await responses.
+        // Every page must use the cursors belonging to the maps captured here.
+        requestCursors: { ...this.cursors },
+        localWorkspaceVersions: new Map(this.localWorkspaceVersions),
+        syncCursors: {},
+        syncModes: {},
+        touchedWorkspaceIds: new Set(),
+        touchedProjectIds: new Set(),
+      };
+    });
     try {
       await this.waitForSessionMetadata(client, source);
       const serverInfo = useSessionStore.getState().sessions[this.serverId]?.serverInfo;
@@ -650,7 +671,7 @@ export class DirectorySync {
   private async fetchWorkspaceSnapshot(
     client: DaemonClient,
     source: DirectorySourceToken,
-    transaction: DirectoryTransaction<WorkspaceDirectorySnapshot, WorkspaceDirectoryDelta>,
+    transaction: DirectoryTransaction<WorkspaceRefreshSnapshot, WorkspaceDirectoryDelta>,
     initialSubscribe: boolean,
     supportsDirectorySync: boolean,
   ): Promise<void> {
@@ -665,7 +686,7 @@ export class DirectorySync {
         ...(supportsDirectorySync
           ? {
               sync: this.hasAuthoritativeDirectorySnapshot
-                ? (this.readCursors().workspaces ?? {})
+                ? (transaction.snapshot.requestCursors.workspaces ?? {})
                 : {},
             }
           : {}),
@@ -725,7 +746,7 @@ export class DirectorySync {
   }
 
   acceptWorkspaces(workspaces: readonly WorkspaceDescriptor[]): void {
-    for (const workspace of workspaces) this.advanceWorkspaceVersion(workspace.id);
+    for (const workspace of workspaces) this.advanceLocalWorkspaceVersion(workspace.id);
     const mutations = this.workspaces.acceptWorkspaces(workspaces);
     this.checkpoints?.commitDirectoryMutations(this.serverId, mutations);
   }
@@ -744,7 +765,7 @@ export class DirectorySync {
   }
 
   removeWorkspace(workspaceId: string): void {
-    this.advanceWorkspaceVersion(workspaceId);
+    this.advanceLocalWorkspaceVersion(workspaceId);
     const mutations = this.workspaces.removeWorkspaceSnapshot(workspaceId);
     this.checkpoints?.commitDirectoryMutations(this.serverId, mutations);
   }
@@ -810,7 +831,7 @@ export class DirectorySync {
   private assertWorkspaceTransactionCurrent(
     client: DaemonClient,
     source: DirectorySourceToken,
-    transaction: DirectoryTransaction<WorkspaceDirectorySnapshot, WorkspaceDirectoryDelta>,
+    transaction: DirectoryTransaction<WorkspaceRefreshSnapshot, WorkspaceDirectoryDelta>,
   ): void {
     if (!this.workspaceTransactions.isCurrent(transaction) || !this.isCurrent(client, source)) {
       throw new DirectoryRefreshSupersededError("workspace fetch no longer current");
@@ -867,13 +888,15 @@ export class DirectorySync {
   private async fetchProjectSnapshot(
     client: DaemonClient,
     source: DirectorySourceToken,
-    transaction: DirectoryTransaction<WorkspaceDirectorySnapshot, WorkspaceDirectoryDelta>,
+    transaction: DirectoryTransaction<WorkspaceRefreshSnapshot, WorkspaceDirectoryDelta>,
     supportsDirectorySync: boolean,
   ): Promise<void> {
     const payload = await client.listProjects(
       supportsDirectorySync
         ? {
-            sync: this.hasAuthoritativeDirectorySnapshot ? (this.readCursors().projects ?? {}) : {},
+            sync: this.hasAuthoritativeDirectorySnapshot
+              ? (transaction.snapshot.requestCursors.projects ?? {})
+              : {},
           }
         : undefined,
     );
@@ -900,7 +923,7 @@ export class DirectorySync {
   private completeWorkspaceRefresh(
     client: DaemonClient,
     source: DirectorySourceToken,
-    transaction: DirectoryTransaction<WorkspaceDirectorySnapshot, WorkspaceDirectoryDelta>,
+    transaction: DirectoryTransaction<WorkspaceRefreshSnapshot, WorkspaceDirectoryDelta>,
   ): void {
     if (!this.isCurrent(client, source) || !this.hasMatchingSession(client, source)) {
       throw new DirectoryRefreshSupersededError("workspace completion no longer current");
@@ -912,6 +935,7 @@ export class DirectorySync {
     this.revision += 1;
     this.workspaceRevision += 1;
     const previous = this.readWorkspaceState();
+    this.reconcileLocalWorkspaceChanges(completion.snapshot, previous);
     const deltas = this.selectCurrentWorkspaceDeltas(
       completion.deltas,
       completion.snapshot.syncCursors,
@@ -938,6 +962,19 @@ export class DirectorySync {
       if (cursor) this.writeCursor(entity as "projects" | "workspaces", cursor);
     }
     this.persistCheckpoint();
+  }
+
+  private reconcileLocalWorkspaceChanges(
+    snapshot: WorkspaceRefreshSnapshot,
+    previous: WorkspaceDirectorySnapshot,
+  ): void {
+    for (const [workspaceId, version] of this.localWorkspaceVersions) {
+      if (version === (snapshot.localWorkspaceVersions.get(workspaceId) ?? 0)) continue;
+      const current = previous.workspaces.get(workspaceId);
+      if (current) snapshot.workspaces.set(workspaceId, current);
+      else snapshot.workspaces.delete(workspaceId);
+      (snapshot.touchedWorkspaceIds ??= new Set()).add(workspaceId);
+    }
   }
 
   private selectCurrentWorkspaceDeltas(
