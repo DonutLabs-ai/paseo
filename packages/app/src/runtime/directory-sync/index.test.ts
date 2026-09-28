@@ -1681,6 +1681,38 @@ describe("DirectorySync session readiness", () => {
     directory.dispose();
   });
 
+  it("does not restore a locally archived workspace from an older directory snapshot", async () => {
+    const serverId = "archived-during-workspace-refresh";
+    const { client, directory } = createDirectory(serverId);
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, client as unknown as DaemonClient, 1);
+    store.updateSessionServerInfo(serverId, {
+      serverId,
+      hostname: null,
+      version: "test",
+      features: { workspaceMultiplicity: true, directorySync: true },
+    });
+    const workspace = createWorkspaceEntry("archived-during-refresh");
+    directory.acceptWorkspaces([normalizeWorkspaceDescriptor(workspace)]);
+    const release = client.holdWorkspaceFetch();
+    const refresh = directory.refreshWorkspaces();
+    await expect.poll(() => client.fetchWorkspacesCalls).toBe(1);
+
+    directory.removeWorkspace(workspace.id);
+    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(workspace.id)).toBe(false);
+    release({
+      requestId: "pre-archive-snapshot",
+      entries: [workspace],
+      emptyProjects: [],
+      pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+      sync: { generation: "g", headSeq: 1, mode: "snapshot", removals: [] },
+    });
+    await refresh;
+
+    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(workspace.id)).toBe(false);
+    directory.dispose();
+  });
+
   it("rejects a session wait on disconnect so the reconnect can refresh", async () => {
     const serverId = "session-wait-reconnect";
     const { client, directory } = createDirectory(serverId);
@@ -2207,8 +2239,9 @@ it.each(["before", "during", "before-metadata", "damaged"] as const)(
         },
       });
       await directory.refreshDemand();
-      expect(client.lastProjectOptions).toEqual({ sync: cacheFirst ? cursor : {} });
-      expect(client.workspaceSyncRequests).toEqual(cacheFirst ? [cursor] : [{}, {}]);
+      // A cached cursor is not authoritative until this process has rebuilt a full baseline.
+      expect(client.lastProjectOptions).toEqual({ sync: {} });
+      expect(client.workspaceSyncRequests).toEqual([{}, {}]);
       expect.soft(visibleIds(), "after overlapping refresh").toEqual(["A", "B"]);
       await cache.flush();
       expect([...(await cache.readDirectory(serverId)).workspaces.keys()].sort()).toEqual([

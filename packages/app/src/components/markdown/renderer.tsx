@@ -469,7 +469,7 @@ function SharedMarkdownLink({
 
   if (!isNative) {
     return (
-      <MarkdownLinkText style={style} onPress={handlePress}>
+      <MarkdownLinkText href={href} style={style} onPress={handlePress}>
         {children}
       </MarkdownLinkText>
     );

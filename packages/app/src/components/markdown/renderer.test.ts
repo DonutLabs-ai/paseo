@@ -72,6 +72,21 @@ describe("resolveInlineImageSize", () => {
 });
 
 describe("shared Markdown links", () => {
+  it("exposes the full URL to the browser without bypassing the app link handler", () => {
+    const onPress = vi.fn();
+    const href = "https://github.com/DonutLabs-ai/donut-backend/pull/13246";
+    const view = render(
+      createElement(MarkdownLinkText, { href, style: {}, onPress }, "后端 #13246"),
+    );
+    const link = view.container.querySelector("a") as HTMLAnchorElement;
+
+    expect(link.href).toBe(href);
+    const click = fireEvent.click(link.firstElementChild as HTMLElement);
+    expect(click).toBe(false);
+    expect(onPress).toHaveBeenCalledOnce();
+    view.unmount();
+  });
+
   it("renders accent text and underlines it while hovered", () => {
     const onPress = vi.fn();
     const children = colorMarkdownLinkChildren(

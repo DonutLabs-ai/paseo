@@ -26,7 +26,6 @@ const mocks = vi.hoisted(() => ({
   spawnProcess: vi.fn(),
   startDaemonInstance: vi.fn(),
   stopDaemonInstance: vi.fn(),
-  readDaemonInstance: vi.fn(),
   isSameDaemonInstance: vi.fn(() => false),
   logInfo: vi.fn(),
   logError: vi.fn(),
@@ -62,7 +61,6 @@ vi.mock("@getpaseo/server/daemon-control", async (importOriginal) => ({
   spawnProcess: mocks.spawnProcess,
   startDaemonInstance: mocks.startDaemonInstance,
   stopDaemonInstance: mocks.stopDaemonInstance,
-  readDaemonInstance: mocks.readDaemonInstance,
   isSameDaemonInstance: mocks.isSameDaemonInstance,
 }));
 

@@ -3714,7 +3714,8 @@ describe("ACPAgentSession initialization cleanup", () => {
 
     try {
       await expect(session.initializeResumedSession()).rejects.toThrow("ENOENT");
-      expect(terminator.terminated).toHaveLength(1);
+      // A missing cwd fails before the child process starts, so there is no live process to kill.
+      expect(terminator.terminated).toHaveLength(0);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

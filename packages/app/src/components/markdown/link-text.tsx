@@ -1,9 +1,10 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { Pressable, Text, type StyleProp, type TextStyle } from "react-native";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { markdownLinkTextStyle } from "./link-children";
 
 interface MarkdownLinkTextProps {
+  href?: string;
   style: StyleProp<TextStyle>;
   dataSet?: Record<string, string>;
   onPress(): void;
@@ -12,6 +13,7 @@ interface MarkdownLinkTextProps {
 }
 
 export function MarkdownLinkText({
+  href,
   style,
   dataSet,
   onPress,
@@ -26,9 +28,9 @@ export function MarkdownLinkText({
   const handleHoverOut = useStableEvent(() => setHovered(false));
   const textStyle = useMemo(() => markdownLinkTextStyle(style, hovered), [hovered, style]);
 
-  return (
+  const content = (
     <Pressable
-      accessibilityRole="link"
+      accessibilityRole={href ? undefined : "link"}
       onPress={onPress}
       onHoverIn={handleHoverIn}
       onHoverOut={handleHoverOut}
@@ -38,4 +40,26 @@ export function MarkdownLinkText({
       </Text>
     </Pressable>
   );
+
+  if (!href) return content;
+  return (
+    <a
+      href={href}
+      onClickCapture={preventAnchorNavigation}
+      onAuxClickCapture={preventAnchorNavigation}
+      style={LINK_ANCHOR_STYLE}
+    >
+      {content}
+    </a>
+  );
+}
+
+const LINK_ANCHOR_STYLE: CSSProperties = {
+  display: "contents",
+  color: "inherit",
+  textDecoration: "none",
+};
+
+function preventAnchorNavigation(event: MouseEvent<HTMLAnchorElement>): void {
+  event.preventDefault();
 }

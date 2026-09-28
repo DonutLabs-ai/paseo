@@ -64,6 +64,7 @@ interface AgentSnapshot {
 
 interface WorkspaceRefreshSnapshot extends WorkspaceDirectorySnapshot {
   readonly requestCursors: Readonly<Pick<DirectoryCheckpoint, "projects" | "workspaces">>;
+  readonly localWorkspaceVersions: ReadonlyMap<string, number>;
 }
 
 interface AgentPageInfo {
@@ -184,6 +185,7 @@ export class DirectorySync {
   private workspaceRevision = 0;
   private projectRevision = 0;
   private readonly workspaceVersions = new Map<string, number>();
+  private readonly localWorkspaceVersions = new Map<string, number>();
   private readonly routeDemandIds = new Set<string>();
   private readonly fullDemandSources = new Set<object>();
   private demandRefresh: Promise<void> | null = null;
@@ -530,6 +532,14 @@ export class DirectorySync {
     this.workspaceVersions.set(workspaceId, (this.workspaceVersions.get(workspaceId) ?? 0) + 1);
   }
 
+  private advanceLocalWorkspaceVersion(workspaceId: string): void {
+    this.advanceWorkspaceVersion(workspaceId);
+    this.localWorkspaceVersions.set(
+      workspaceId,
+      (this.localWorkspaceVersions.get(workspaceId) ?? 0) + 1,
+    );
+  }
+
   acceptAgent(agent: Agent): Agent {
     return this.agents.accept(agent);
   }
@@ -623,6 +633,7 @@ export class DirectorySync {
         // Cache hydration can advance the live replica while these requests await responses.
         // Every page must use the cursors belonging to the maps captured here.
         requestCursors: { ...this.cursors },
+        localWorkspaceVersions: new Map(this.localWorkspaceVersions),
         syncCursors: {},
         syncModes: {},
         touchedWorkspaceIds: new Set(),
@@ -735,7 +746,7 @@ export class DirectorySync {
   }
 
   acceptWorkspaces(workspaces: readonly WorkspaceDescriptor[]): void {
-    for (const workspace of workspaces) this.advanceWorkspaceVersion(workspace.id);
+    for (const workspace of workspaces) this.advanceLocalWorkspaceVersion(workspace.id);
     const mutations = this.workspaces.acceptWorkspaces(workspaces);
     this.checkpoints?.commitDirectoryMutations(this.serverId, mutations);
   }
@@ -754,7 +765,7 @@ export class DirectorySync {
   }
 
   removeWorkspace(workspaceId: string): void {
-    this.advanceWorkspaceVersion(workspaceId);
+    this.advanceLocalWorkspaceVersion(workspaceId);
     const mutations = this.workspaces.removeWorkspaceSnapshot(workspaceId);
     this.checkpoints?.commitDirectoryMutations(this.serverId, mutations);
   }
@@ -924,6 +935,7 @@ export class DirectorySync {
     this.revision += 1;
     this.workspaceRevision += 1;
     const previous = this.readWorkspaceState();
+    this.reconcileLocalWorkspaceChanges(completion.snapshot, previous);
     const deltas = this.selectCurrentWorkspaceDeltas(
       completion.deltas,
       completion.snapshot.syncCursors,
@@ -950,6 +962,19 @@ export class DirectorySync {
       if (cursor) this.writeCursor(entity as "projects" | "workspaces", cursor);
     }
     this.persistCheckpoint();
+  }
+
+  private reconcileLocalWorkspaceChanges(
+    snapshot: WorkspaceRefreshSnapshot,
+    previous: WorkspaceDirectorySnapshot,
+  ): void {
+    for (const [workspaceId, version] of this.localWorkspaceVersions) {
+      if (version === (snapshot.localWorkspaceVersions.get(workspaceId) ?? 0)) continue;
+      const current = previous.workspaces.get(workspaceId);
+      if (current) snapshot.workspaces.set(workspaceId, current);
+      else snapshot.workspaces.delete(workspaceId);
+      (snapshot.touchedWorkspaceIds ??= new Set()).add(workspaceId);
+    }
   }
 
   private selectCurrentWorkspaceDeltas(
