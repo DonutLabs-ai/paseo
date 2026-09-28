@@ -81,6 +81,7 @@ describe("shared Markdown links", () => {
     const link = view.container.querySelector("a") as HTMLAnchorElement;
 
     expect(link.href).toBe(href);
+    expect(link.title).toBe(href);
     const click = fireEvent.click(link.firstElementChild as HTMLElement);
     expect(click).toBe(false);
     expect(onPress).toHaveBeenCalledOnce();

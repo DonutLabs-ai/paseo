@@ -45,6 +45,7 @@ export function MarkdownLinkText({
   return (
     <a
       href={href}
+      title={href}
       onClickCapture={preventAnchorNavigation}
       onAuxClickCapture={preventAnchorNavigation}
       style={LINK_ANCHOR_STYLE}
