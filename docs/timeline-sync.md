@@ -173,7 +173,9 @@ replica cache.
 
 The app chooses one delivery policy from `server_info.features.selectiveAgentTimeline`:
 
-- Selective daemons receive the chats this session has opened, plus any visible agent pane. A chat
+- Selective daemons receive the chats this session has opened, plus any visible agent pane. The
+  active sidebar also subscribes to the latest root agent in each workspace to keep its preview
+  live; those agents can resume on launch even when their chat tabs are not active. A chat
   enters that set the first time the user opens it and leaves when its tab closes or the session
   ends, independently of mounted or retained React views: switching workspaces, evicting a retained
   view, app backgrounding, and reconnect all preserve the demand. There is no recent-agent limit.

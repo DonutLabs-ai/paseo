@@ -75,22 +75,21 @@ async function seedRestoredLayoutScenario(): Promise<RestoredLayoutScenario> {
     seedWorkspace({ repoPrefix: "restored-layout-second-" }),
   ]);
   try {
-    const chats = await Promise.all(
-      workspaces.flatMap((workspace, workspaceIndex) =>
-        [1, 2].map(async (chatIndex): Promise<RestoredLayoutChat> => {
-          const title = `Restored chat ${workspaceIndex + 1}-${chatIndex}`;
-          const agent = await workspace.client.createAgent({
-            provider: "mock",
-            cwd: workspace.repoPath,
-            workspaceId: workspace.workspaceId,
-            title,
-            modeId: "load-test",
-            model: "ten-second-stream",
-          });
-          return { workspaceId: workspace.workspaceId, agentId: agent.id, title };
-        }),
-      ),
-    );
+    const chats: RestoredLayoutChat[] = [];
+    for (const [workspaceIndex, workspace] of workspaces.entries()) {
+      for (const chatIndex of [1, 2]) {
+        const title = `Restored chat ${workspaceIndex + 1}-${chatIndex}`;
+        const agent = await workspace.client.createAgent({
+          provider: "mock",
+          cwd: workspace.repoPath,
+          workspaceId: workspace.workspaceId,
+          title,
+          modeId: "load-test",
+          model: "ten-second-stream",
+        });
+        chats.push({ workspaceId: workspace.workspaceId, agentId: agent.id, title });
+      }
+    }
     return {
       chats,
       cleanup: async () => {
@@ -255,7 +254,9 @@ async function expectCurrentChatWithoutCatchUp(page: Page, message: string) {
 }
 
 test.describe("Viewed agent timelines", () => {
-  test("a reloaded layout subscribes only the chat it restores into", async ({ page }) => {
+  test("a reloaded layout subscribes the current chat and sidebar previews, not old tabs", async ({
+    page,
+  }) => {
     test.setTimeout(120_000);
     const subscriptions = observeTimelineSubscriptions(page);
     const scenario = await seedRestoredLayoutScenario();
@@ -270,10 +271,12 @@ test.describe("Viewed agent timelines", () => {
       await selectAgent(page, fourth!.title);
       await subscriptions.waitForSubscribedAgents(scenario.chats.map((chat) => chat.agentId));
 
-      // Relaunch. Layout comes back from disk carrying a tab for every chat above; only the
-      // one on screen may be subscribed, because subscribing resumes the agent on the daemon.
+      // Relaunch. Layout carries all four tabs, but only the active chat and the latest root
+      // agent shown in the other workspace's sidebar preview should be subscribed. The older
+      // tab in either workspace must not join merely because it was restored from disk.
       const restored = scenario.chats.at(-1)!;
       const sibling = scenario.chats.at(-2)!;
+      const otherWorkspacePreview = scenario.chats[1]!;
       subscriptions.reset();
       await page.reload();
       await waitForWorkspaceTabsVisible(page);
@@ -282,11 +285,18 @@ test.describe("Viewed agent timelines", () => {
         "true",
       );
       await expect(page.getByRole("button", { name: sibling.title, exact: true })).toBeVisible();
-      await subscriptions.waitForSubscribedAgents([restored.agentId]);
+      await subscriptions.waitForSubscribedAgents([
+        restored.agentId,
+        otherWorkspacePreview.agentId,
+      ]);
 
       // Opening the restored sibling is what adds it, and it adds only itself.
       await selectAgent(page, sibling.title);
-      await subscriptions.waitForSubscribedAgents([restored.agentId, sibling.agentId]);
+      await subscriptions.waitForSubscribedAgents([
+        restored.agentId,
+        sibling.agentId,
+        otherWorkspacePreview.agentId,
+      ]);
     } finally {
       await scenario.cleanup();
     }
