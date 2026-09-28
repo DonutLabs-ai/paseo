@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   createPackagedWorkerSpawnSpec,
@@ -13,19 +14,30 @@ describe("daemon worker launch", () => {
   });
 
   it("maps packaged ASAR workers to the bundled Node runtime", () => {
+    const resources = path.resolve("packaged", "Donut Paseo", "resources");
     expect(
       resolvePackagedNodeWorkerRuntime({
-        currentScriptPath:
-          "/opt/Donut Paseo/resources/app.asar/node_modules/@getpaseo/server/dist/scripts/supervisor-entrypoint.js",
-        workerEntry:
-          "/opt/Donut Paseo/resources/app.asar/node_modules/@getpaseo/server/dist/server/server/daemon-worker.js",
+        currentScriptPath: path.join(
+          resources,
+          "app.asar/node_modules/@getpaseo/server/dist/scripts/supervisor-entrypoint.js",
+        ),
+        workerEntry: path.join(
+          resources,
+          "app.asar/node_modules/@getpaseo/server/dist/server/server/daemon-worker.js",
+        ),
         pathExists: () => true,
       }),
     ).toEqual({
       kind: "node",
-      execPath: "/opt/Donut Paseo/resources/node-runtime/node",
-      workerEntry:
-        "/opt/Donut Paseo/resources/app.asar.unpacked/node_modules/@getpaseo/server/dist/server/server/daemon-worker.js",
+      execPath: path.join(
+        resources,
+        "node-runtime",
+        process.platform === "win32" ? "node.exe" : "node",
+      ),
+      workerEntry: path.join(
+        resources,
+        "app.asar.unpacked/node_modules/@getpaseo/server/dist/server/server/daemon-worker.js",
+      ),
     });
   });
 
