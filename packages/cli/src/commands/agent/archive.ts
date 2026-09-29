@@ -38,6 +38,83 @@ export interface AgentArchiveOptions extends CommandOptions {
 
 export type AgentArchiveCommandResult = SingleResult<AgentArchiveResult>;
 
+interface ArchivableAgent {
+  id: string;
+  title?: string | null;
+  status: string;
+  archivedAt?: string | null;
+}
+
+export interface ArchiveAgentClient {
+  fetchAgent(options: { agentId: string }): Promise<{ agent: ArchivableAgent } | null>;
+  fetchAgents(options: {
+    filter: { includeArchived: true };
+    page: { limit: number; cursor?: string };
+  }): Promise<{
+    entries: Array<{ agent: ArchivableAgent }>;
+    pageInfo: { nextCursor: string | null };
+  }>;
+  archiveAgent(agentId: string): Promise<{ archivedAt: string }>;
+}
+
+export async function archiveAgentWithClient(
+  client: ArchiveAgentClient,
+  agentIdArg: string,
+  force: boolean,
+): Promise<AgentArchiveResult> {
+  // The daemon resolves full IDs, unique prefixes, and exact titles against the entire store.
+  // A directory query only returns its first 200 entries unless it is paginated.
+  const directResult = await client.fetchAgent({ agentId: agentIdArg });
+  let agent = directResult?.agent;
+  if (!agent) {
+    // Preserve the CLI's case-insensitive and partial-title matching semantics.
+    const agents: ArchivableAgent[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await client.fetchAgents({
+        filter: { includeArchived: true },
+        page: { limit: 200, ...(cursor ? { cursor } : {}) },
+      });
+      agents.push(...page.entries.map((entry) => entry.agent));
+      cursor = page.pageInfo.nextCursor;
+    } while (cursor);
+    const agentId = resolveAgentId(agentIdArg, agents);
+    agent = agents.find((entry) => entry.id === agentId);
+  }
+
+  if (!agent) {
+    const error: CommandError = {
+      code: "AGENT_NOT_FOUND",
+      message: `Agent not found: ${agentIdArg}`,
+      details: 'Use "paseo ls" to list available agents',
+    };
+    throw error;
+  }
+
+  const agentId = agent.id;
+  if (agent.archivedAt) {
+    const error: CommandError = {
+      code: "AGENT_ALREADY_ARCHIVED",
+      message: `Agent ${agentId.slice(0, 7)} is already archived`,
+      details: `Archived at: ${agent.archivedAt}`,
+    };
+    throw error;
+  }
+
+  if (agent.status === "running" && !force) {
+    const error: CommandError = {
+      code: "AGENT_RUNNING",
+      message: `Agent ${agentId.slice(0, 7)} is currently running`,
+      details:
+        "Use --force to archive a running agent (it will interrupt the active run), or stop it first with: paseo agent stop. Use paseo agent delete to hard-delete it.",
+    };
+    throw error;
+  }
+
+  const result = await client.archiveAgent(agentId);
+  return { agentId, status: "archived", archivedAt: result.archivedAt };
+}
+
 export async function runArchiveCommand(
   agentIdArg: string,
   options: AgentArchiveOptions,
@@ -56,55 +133,13 @@ export async function runArchiveCommand(
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
-    const agentsPayload = await client.fetchAgents({ filter: { includeArchived: true } });
-    const agents = agentsPayload.entries.map((entry) => entry.agent);
-    const agentId = resolveAgentId(agentIdArg, agents);
-    if (!agentId) {
-      const error: CommandError = {
-        code: "AGENT_NOT_FOUND",
-        message: `Agent not found: ${agentIdArg}`,
-        details: 'Use "paseo ls" to list available agents',
-      };
-      throw error;
-    }
-    const agent = agents.find((entry) => entry.id === agentId);
-    if (!agent) {
-      throw new Error(`Resolved agent missing from fetched agents: ${agentId}`);
-    }
-
-    // Check if agent is already archived
-    if (agent.archivedAt) {
-      const error: CommandError = {
-        code: "AGENT_ALREADY_ARCHIVED",
-        message: `Agent ${agentId.slice(0, 7)} is already archived`,
-        details: `Archived at: ${agent.archivedAt}`,
-      };
-      throw error;
-    }
-
-    // Check if agent is running and reject unless --force is set
-    if (agent.status === "running" && !options.force) {
-      const error: CommandError = {
-        code: "AGENT_RUNNING",
-        message: `Agent ${agentId.slice(0, 7)} is currently running`,
-        details:
-          "Use --force to archive a running agent (it will interrupt the active run), or stop it first with: paseo agent stop. Use paseo agent delete to hard-delete it.",
-      };
-      throw error;
-    }
-
-    // Archive the agent
-    const result = await client.archiveAgent(agentId);
+    const data = await archiveAgentWithClient(client, agentIdArg, Boolean(options.force));
 
     await client.close();
 
     return {
       type: "single",
-      data: {
-        agentId,
-        status: "archived",
-        archivedAt: result.archivedAt,
-      },
+      data,
       schema: archiveSchema,
     };
   } catch (err) {
