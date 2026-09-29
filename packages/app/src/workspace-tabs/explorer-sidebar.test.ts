@@ -13,12 +13,14 @@ import {
   collectAllTabs,
   findPaneById,
   selectExplorerSidebarPaneId,
+  selectIsExplorerSidebarVisible,
   useWorkspaceLayoutStore,
 } from "@/stores/workspace-layout-store";
 import {
   isExplorerSidebarOpen,
   openExplorerSidebarView,
   resolveExplorerSidebarPresentation,
+  showInitialWorkspaceReferences,
   toggleExplorerSidebar,
 } from "@/workspace-tabs/explorer-sidebar";
 
@@ -115,5 +117,52 @@ describe("Explorer sidebar", () => {
 
     expect(isExplorerSidebarOpen(input)).toBe(true);
     expect(usePanelStore.getState().explorerTab).toBe("files");
+  });
+
+  it.each([
+    "See https://linear.app/acme/issue/ENG-1234/fix",
+    "See https://acme.slack.com/archives/C123/p1700000000123456",
+  ])("opens References for an initial %s link", (text) => {
+    showInitialWorkspaceReferences({
+      serverId: "server-1",
+      workspaceId: "ws-main",
+      text,
+      isCompact: false,
+      supportsPaneSplits: true,
+    });
+
+    const state = useWorkspaceLayoutStore.getState();
+    const layout = state.layoutByWorkspace[WORKSPACE_KEY];
+    const paneId = selectExplorerSidebarPaneId(state, WORKSPACE_KEY);
+    const pane = layout && paneId ? findPaneById(layout.root, paneId) : null;
+    expect(selectIsExplorerSidebarVisible(state, WORKSPACE_KEY)).toBe(true);
+    expect(
+      layout && pane
+        ? collectAllTabs(layout.root).find((tab) => tab.tabId === pane.focusedTabId)?.target.kind
+        : null,
+    ).toBe("references");
+    expect(layout.focusedPaneId).not.toBe(paneId);
+  });
+
+  it("keeps the existing Explorer defaults for messages without a reference", () => {
+    showInitialWorkspaceReferences({
+      serverId: "server-1",
+      workspaceId: "ws-main",
+      text: "https://linear.app/docs/api-and-webhooks",
+      isCompact: false,
+      supportsPaneSplits: true,
+    });
+    expect(useWorkspaceLayoutStore.getState().layoutByWorkspace[WORKSPACE_KEY]).toBeUndefined();
+  });
+
+  it("does not create a desktop Explorer pane on compact layouts", () => {
+    showInitialWorkspaceReferences({
+      serverId: "server-1",
+      workspaceId: "ws-main",
+      text: "https://linear.app/acme/issue/ENG-1234",
+      isCompact: true,
+      supportsPaneSplits: true,
+    });
+    expect(useWorkspaceLayoutStore.getState().layoutByWorkspace[WORKSPACE_KEY]).toBeUndefined();
   });
 });

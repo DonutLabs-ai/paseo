@@ -6,6 +6,11 @@ import {
 } from "@/components/explorer-sidebar-layout";
 
 describe("Explorer sidebar layout", () => {
+  it("reserves a wider default for Files, Changes, and References", () => {
+    expect(resolveExplorerSidebarWidth({ containerWidth: 1200 })).toBe(384);
+    expect(resolveExplorerSidebarWidth({ containerWidth: 720 })).toBe(320);
+  });
+
   it("keeps the sidebar width fixed when the workspace body changes size", () => {
     const narrow = resolveExplorerSidebarDockSizes({ requestedWidth: 320, containerWidth: 1200 });
     const wide = resolveExplorerSidebarDockSizes({ requestedWidth: 320, containerWidth: 1520 });

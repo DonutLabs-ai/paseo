@@ -95,6 +95,7 @@ import type { AgentAttachment, ForgeSearchItem } from "@getpaseo/protocol/messag
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import type { WorkspaceDraftTabSetup, WorkspaceTabTarget } from "@/workspace-tabs/model";
+import { showInitialWorkspaceReferences } from "@/workspace-tabs/explorer-sidebar";
 import { isEmptyWorkspaceSubmission, runCreateEmptyWorkspace } from "./new-workspace-empty";
 import {
   getWorkspaceNamingAttachments,
@@ -778,6 +779,7 @@ interface SubmitDraftInput {
   supportsForgeSearch: boolean;
   resolveClient: () => DaemonClient;
   isStillOnCreateScreen: () => boolean;
+  isCompact: boolean;
 }
 
 type NewWorkspaceComposerState = NonNullable<
@@ -876,6 +878,7 @@ interface CreateChatAgentInput {
   supportsForgeSearch: boolean;
   resolveClient: () => DaemonClient;
   isStillOnCreateScreen: () => boolean;
+  isCompact: boolean;
   labels: {
     composerStateRequired: string;
     selectModel: string;
@@ -1007,6 +1010,7 @@ async function createWorkspaceChatAgent(input: CreateChatAgentInput): Promise<Su
           draftContextScopeKey: input.draftContextScopeKey,
           resolveClient: input.resolveClient,
           isStillOnCreateScreen: input.isStillOnCreateScreen,
+          isCompact: input.isCompact,
           serverId,
           clearDraft,
           draftId: input.draftId,
@@ -1159,6 +1163,7 @@ function submitWorkspaceDraft(input: SubmitDraftInput): SubmitOutcome {
     agentCreation: input.agentCreation,
   });
   clearDraft("sent");
+  showInitialWorkspaceReferences({ serverId, workspaceId, text, isCompact: input.isCompact });
   navigateToWorkspace({
     serverId,
     workspaceId,
@@ -2145,6 +2150,7 @@ export function NewWorkspaceScreen({
           supportsForgeSearch,
           resolveClient: withConnectedClient,
           isStillOnCreateScreen,
+          isCompact,
           labels: {
             composerStateRequired: t("newWorkspace.errors.composerStateRequired"),
             selectModel: t("newWorkspace.errors.selectModel"),
@@ -2169,6 +2175,7 @@ export function NewWorkspaceScreen({
       ensureWorkspace,
       forkDraftSetup,
       isStillOnCreateScreen,
+      isCompact,
       launchTarget,
       selectedServerId,
       supportsForgeSearch,
