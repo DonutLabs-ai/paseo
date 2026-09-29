@@ -1,4 +1,5 @@
 import { supportsDesktopPaneSplits } from "@/constants/layout";
+import { hasWorkspaceReferenceLink } from "@getpaseo/protocol/workspace-reference-url";
 import { selectIsCompactFileExplorerOpen, usePanelStore } from "@/stores/panel-store";
 import type { ExplorerCheckoutContext } from "@/stores/explorer-checkout-context";
 import {
@@ -6,6 +7,7 @@ import {
   useWorkspaceLayoutStore,
 } from "@/stores/workspace-layout-store";
 import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
+import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 
 export type ExplorerSidebarView = "changes" | "files" | "pr";
 export type ExplorerSidebarPresentation = "overlay" | "dock" | "pane";
@@ -66,6 +68,29 @@ export function openExplorerSidebarView(
     target: VIEW_TARGETS[input.view],
     intent: "reveal",
     placement: paneId ? { mode: "pane", paneId } : undefined,
+  });
+}
+
+/** Selects References on the first desktop visit when the creating message contains a reference. */
+export function showInitialWorkspaceReferences(input: {
+  serverId: string;
+  workspaceId: string;
+  text: string;
+  isCompact: boolean;
+  supportsPaneSplits?: boolean;
+}): void {
+  if (input.isCompact || !(input.supportsPaneSplits ?? supportsDesktopPaneSplits())) return;
+  if (!hasWorkspaceReferenceLink(input.text)) return;
+  const workspaceKey = buildWorkspaceTabPersistenceKey(input);
+  if (!workspaceKey) return;
+  const store = useWorkspaceLayoutStore.getState();
+  const paneId = store.showExplorerSidebar(workspaceKey);
+  if (!paneId) return;
+  store.openTab({
+    workspaceKey,
+    target: { kind: "references" },
+    intent: "reveal",
+    placement: { mode: "pane", paneId },
   });
 }
 

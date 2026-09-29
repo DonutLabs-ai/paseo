@@ -72,6 +72,10 @@ opening a file leaves that dock visible. Both presentations keep their selection
 and reuse the layout store's per-workspace Explorer width. They do not create a second Explorer
 lifecycle.
 
+When the first message creates a desktop workspace with a supported Linear issue or Slack thread
+link, reveal Explorer on References before entering the workspace. Keep the draft in the main pane;
+later messages and non-reference links do not change the user's Explorer selection.
+
 ## Side pane
 
 `packages/app/src/workspace-tabs/open-beside.ts` owns content opened beside the user's work. The
