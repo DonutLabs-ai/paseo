@@ -29,7 +29,7 @@ import { StatusRing } from "@/components/status-ring";
 import { resolveSidebarWorkspacePrimaryLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { TrailingActionScrim } from "@/components/ui/trailing-action-scrim";
 import {
-  getProviderIcon,
+  useProviderIcon,
   type ProviderIconComponent,
   type ProviderIconProps,
 } from "@/components/provider-icons";
@@ -240,9 +240,9 @@ function WorkspaceProviderIndicator({
   serverId: string;
   workspaceKey: string;
 }) {
+  const ProviderIcon = useProviderIcon(provider ?? "", serverId);
   if (!provider) return null;
 
-  const ProviderIcon = getProviderIcon(provider, serverId);
   const label = model ? `${provider} · ${model}` : provider;
   return (
     <View

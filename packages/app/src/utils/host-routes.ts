@@ -432,6 +432,10 @@ export function buildCockpitRoute() {
   return "/cockpit" as const;
 }
 
+export function buildUsageRoute() {
+  return "/usage" as const;
+}
+
 export function buildOpenProjectRoute() {
   return "/open-project" as const;
 }

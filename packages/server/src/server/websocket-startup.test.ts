@@ -24,8 +24,17 @@ describe("startWebSocketRuntime", () => {
           events.push("start-plugins");
         },
       },
+      settlePluginProviders() {
+        events.push("settle-providers");
+      },
     });
 
-    expect(events).toEqual(["bind-plugins", "start-plugins", "accepting", "restore-utilities"]);
+    expect(events).toEqual([
+      "bind-plugins",
+      "start-plugins",
+      "settle-providers",
+      "accepting",
+      "restore-utilities",
+    ]);
   });
 });
