@@ -22,7 +22,6 @@ import { AdaptiveTextInput } from "@/components/adaptive-text-input";
 import { ScrollableCodeSurface } from "@/components/ui/scrollable-code-surface";
 import { Button } from "@/components/ui/button";
 import { ToolbarButton } from "@/components/ui/pane-content-toolbar";
-import { smallIconButtonChromeFrameSize } from "@/components/ui/icon-button-chrome";
 import { TerminalPane } from "@/components/terminal-pane";
 import { HEADER_INNER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
 import {
@@ -32,14 +31,11 @@ import {
   useHosts,
 } from "@/runtime/host-runtime";
 import { useUtilityTrayStore, type UtilityTrayTarget } from "@/stores/utility-tray-store";
-import { WindowChromeRegion, WindowChromeSafeArea } from "@/utils/desktop-window";
 import {
   getUtilityTerminalFailureIds,
   utilityTerminalNeedsAttention,
 } from "@/utils/utility-terminal-health";
-import { SPACING, type Theme } from "@/styles/theme";
-
-export const UTILITY_TRAY_TRIGGER_CLEARANCE = smallIconButtonChromeFrameSize() + SPACING[3];
+import type { Theme } from "@/styles/theme";
 
 const ThemedSquareTerminal = withUnistyles(SquareTerminal);
 const ThemedCircleAlert = withUnistyles(CircleAlert);
@@ -147,20 +143,6 @@ export function UtilityTrayTrigger() {
         ) : null}
       </View>
     </ToolbarButton>
-  );
-}
-
-export function UtilityTrayTriggerHost() {
-  const isCompact = useIsCompactFormFactor();
-  if (isCompact) return null;
-  return (
-    <WindowChromeRegion corners="top-right">
-      <WindowChromeSafeArea placement="inline" pointerEvents="box-none" style={styles.triggerHost}>
-        <View style={styles.triggerPadding}>
-          <UtilityTrayTrigger />
-        </View>
-      </WindowChromeSafeArea>
-    </WindowChromeRegion>
   );
 }
 
@@ -853,18 +835,6 @@ function UtilityTextField({
 }
 
 const styles = StyleSheet.create((theme) => ({
-  triggerHost: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    zIndex: 500,
-    height: HEADER_INNER_HEIGHT,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  triggerPadding: {
-    paddingRight: theme.spacing[3],
-  },
   triggerIcon: {
     position: "relative",
     width: 15,
