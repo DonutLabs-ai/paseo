@@ -4,6 +4,12 @@ import { JSDOM } from "jsdom";
 import { describe, expect, it, vi } from "vitest";
 import { ScreenHeader } from "./screen-header";
 
+const navigation = vi.hoisted(() => ({ isFocused: true }));
+
+vi.mock("@react-navigation/native", () => ({
+  useIsFocused: () => navigation.isFocused,
+}));
+
 vi.mock("react-native", () => ({ View: "div" }));
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0 }),
@@ -54,5 +60,16 @@ describe("ScreenHeader", () => {
 
     expect(utilityTrigger?.nextElementSibling?.getAttribute("data-testid")).toBe("open-cockpit");
     expect(utilityTrigger?.parentElement?.children).toHaveLength(2);
+  });
+
+  it("does not duplicate the utility terminal trigger in a retained, unfocused route", () => {
+    vi.stubGlobal("React", React);
+    navigation.isFocused = false;
+    const retainedHeader = renderToStaticMarkup(<ScreenHeader />);
+    navigation.isFocused = true;
+    const activeHeader = renderToStaticMarkup(<ScreenHeader />);
+    const document = new JSDOM(`${retainedHeader}${activeHeader}`).window.document;
+
+    expect(document.querySelectorAll('[data-testid="utility-tray-trigger"]')).toHaveLength(1);
   });
 });

@@ -1,4 +1,5 @@
 import { ComposerDockBackground } from "@/composer/dock";
+import { useIsFocused } from "@react-navigation/native";
 import { useMemo, type ReactNode } from "react";
 import type { LayoutChangeEvent } from "react-native";
 import { View, type StyleProp, type ViewStyle } from "react-native";
@@ -36,6 +37,7 @@ export function ScreenHeader({
   onRowLayout,
 }: ScreenHeaderProps) {
   const { theme } = useUnistyles();
+  const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const isMobile = useIsCompactFormFactor();
   // Only add extra padding on mobile for better touch targets; on desktop, only use safe area insets
@@ -61,7 +63,7 @@ export function ScreenHeader({
           <TitlebarDragRegion />
           <View style={leftCombinedStyle}>{left}</View>
           <View style={rightCombinedStyle}>
-            <UtilityTrayTrigger />
+            {isFocused ? <UtilityTrayTrigger /> : null}
             {right}
           </View>
         </WindowChromeSafeArea>
