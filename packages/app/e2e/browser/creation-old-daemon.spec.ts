@@ -148,10 +148,16 @@ for (const version of ["0.2.5", "0.7.2", "0.8.0"]) {
     });
 
     async function expectPromptOnce(client: DaemonClient, agentId: string, text: string) {
-      const timeline = await client.fetchAgentTimeline(agentId);
-      expect(
-        timeline.entries.filter(({ item }) => item.type === "user_message" && item.text === text),
-      ).toHaveLength(1);
+      // Legacy daemons can report an asynchronously created agent idle before its initial
+      // prompt is available in the timeline. Observe the persisted prompt, not the idle edge.
+      await expect
+        .poll(async () => {
+          const timeline = await client.fetchAgentTimeline(agentId);
+          return timeline.entries.filter(
+            ({ item }) => item.type === "user_message" && item.text === text,
+          ).length;
+        })
+        .toBe(1);
     }
 
     async function openOldHost(page: Page, workspaceId: string) {
