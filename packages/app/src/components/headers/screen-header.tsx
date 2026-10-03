@@ -1,4 +1,5 @@
 import { ComposerDockBackground } from "@/composer/dock";
+import { useIsFocused } from "@react-navigation/native";
 import { useMemo, type ReactNode } from "react";
 import type { LayoutChangeEvent } from "react-native";
 import { View, type StyleProp, type ViewStyle } from "react-native";
@@ -12,7 +13,7 @@ import {
 } from "@/constants/layout";
 import { WindowChromeSafeArea } from "@/utils/desktop-window";
 import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
-import { smallIconButtonChromeFrameSize } from "@/components/ui/icon-button-chrome";
+import { UtilityTrayTrigger } from "@/components/utility-tray";
 
 interface ScreenHeaderProps {
   left?: ReactNode;
@@ -36,6 +37,7 @@ export function ScreenHeader({
   onRowLayout,
 }: ScreenHeaderProps) {
   const { theme } = useUnistyles();
+  const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const isMobile = useIsCompactFormFactor();
   // Only add extra padding on mobile for better touch targets; on desktop, only use safe area insets
@@ -49,11 +51,6 @@ export function ScreenHeader({
   const rowStyle = useMemo(() => [styles.row, borderless && styles.borderless], [borderless]);
   const leftCombinedStyle = useMemo(() => [styles.left, leftStyle], [leftStyle]);
   const rightCombinedStyle = useMemo(() => [styles.right, rightStyle], [rightStyle]);
-  const utilityTrayReserveStyle = useMemo(
-    () => ({ width: smallIconButtonChromeFrameSize(false) + theme.spacing[2] }),
-    [theme.spacing],
-  );
-
   return (
     <ComposerDockBackground style={styles.header} testID="composer-dock-header">
       <View style={innerStyle}>
@@ -66,8 +63,8 @@ export function ScreenHeader({
           <TitlebarDragRegion />
           <View style={leftCombinedStyle}>{left}</View>
           <View style={rightCombinedStyle}>
+            {isFocused ? <UtilityTrayTrigger /> : null}
             {right}
-            {!isMobile ? <View style={utilityTrayReserveStyle} /> : null}
           </View>
         </WindowChromeSafeArea>
       </View>

@@ -926,8 +926,6 @@ function CockpitWorkspaceCard({
                   usedTokens={agentUsage.contextWindowUsedTokens}
                   totalCostUsd={agentUsage.totalCostUsd}
                   showPercentage
-                  serverId={workspace.serverId}
-                  provider={agentUsage.provider}
                 />
               ) : null}
             </View>

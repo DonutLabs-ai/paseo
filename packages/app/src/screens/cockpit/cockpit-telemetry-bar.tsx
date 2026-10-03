@@ -2,9 +2,9 @@ import { useMemo } from "react";
 import { ScrollView, Text, View, type TextStyle } from "react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
-import type { ProviderUsage, ProviderUsageWindow, ProviderUsageView } from "@/provider-usage/types";
-import { useProviderUsage } from "@/provider-usage/use-provider-usage";
 import { useHosts } from "@/runtime/host-runtime";
+import { useHostUsage } from "@/usage/queries";
+import type { UsageReport, UsageView, UsageWindow } from "@/usage/types";
 import { useHostSystemUsage, type HostSystemUsageView } from "./use-host-system-usage";
 
 interface CodexWindowSummary {
@@ -19,18 +19,18 @@ interface SystemUsageSummary {
   memoryUsedPct: number;
 }
 
-function resolveUsedPct(window: ProviderUsageWindow): number | null {
+function resolveUsedPct(window: UsageWindow): number | null {
   if (window.usedPct != null) return window.usedPct;
   if (window.remainingPct != null) return 100 - window.remainingPct;
   return null;
 }
 
-function resolveCodexUsage(view: ProviderUsageView): ProviderUsage | null {
+function resolveCodexUsage(view: UsageView): UsageReport | null {
   if (view.kind !== "ready") return null;
-  return view.payload.providers.find((provider) => provider.providerId === "codex") ?? null;
+  return view.reports.find((entry) => entry.sourceId === "codex")?.report ?? null;
 }
 
-function summarizeCodexWindows(usage: ProviderUsage | null): CodexWindowSummary[] {
+function summarizeCodexWindows(usage: UsageReport | null): CodexWindowSummary[] {
   if (!usage || usage.status !== "available") return [];
   return usage.windows.flatMap((window) => {
     if (window.id !== "session" && window.id !== "weekly") return [];
@@ -63,7 +63,7 @@ function summarizeSystemUsage(view: HostSystemUsageView): SystemUsageSummary | n
 
 function HostTelemetryItem({ serverId, label }: { serverId: string; label: string }) {
   const { t } = useTranslation();
-  const { view: providerUsage } = useProviderUsage(serverId);
+  const { view: providerUsage } = useHostUsage(serverId);
   const systemUsage = useHostSystemUsage(serverId);
   const codexWindows = useMemo(
     () => summarizeCodexWindows(resolveCodexUsage(providerUsage)),

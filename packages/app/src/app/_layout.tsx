@@ -45,11 +45,7 @@ import { ProviderSettingsHost } from "@/components/provider-settings-host";
 import { WorkspaceSetupDialog } from "@/components/workspace-setup-dialog";
 import { WorkspaceShortcutTargetsSubscriber } from "@/components/workspace-shortcut-targets-subscriber";
 import { FloatingPanelPortalHost } from "@/components/ui/floating-panel-portal";
-import {
-  UTILITY_TRAY_TRIGGER_CLEARANCE,
-  UtilityTrayHost,
-  UtilityTrayTriggerHost,
-} from "@/components/utility-tray";
+import { UtilityTrayHost } from "@/components/utility-tray";
 import { HostChooserModal, useHostChooser } from "@/hosts/host-chooser";
 import {
   getIsElectronRuntime,
@@ -125,7 +121,6 @@ import { installWebScrollbarStyles } from "@/styles/install-web-scrollbar-styles
 import type { HostProfile } from "@/types/host-connection";
 import {
   useHasWindowChromeObstruction,
-  WindowChromeAccessoryRegion,
   WindowChromeProvider,
   WindowChromeRegion,
   WindowChromeSafeArea,
@@ -594,17 +589,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
   // Their tracked styles update in place; web numeric styles still need remounting.
   const surface = (
     <View style={layoutStyles.surfaceFill}>
-      {isCompactLayout ? (
-        workspaceChrome
-      ) : (
-        <WindowChromeAccessoryRegion
-          corner="top-right"
-          width={UTILITY_TRAY_TRIGGER_CLEARANCE}
-          height={HEADER_INNER_HEIGHT}
-        >
-          {workspaceChrome}
-        </WindowChromeAccessoryRegion>
-      )}
+      {workspaceChrome}
       <AppearanceStyleBoundary>
         {!isCompactLayout && appChromeLayout.sidebarToggleOwner === "window" ? (
           <WindowChromeRegion corners="top-left">
@@ -618,7 +603,6 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
             </WindowChromeSafeArea>
           </WindowChromeRegion>
         ) : null}
-        <UtilityTrayTriggerHost />
         <DesktopWindowControls />
         <FloatingPanelPortalHost />
         <UtilityTrayHost />
@@ -896,6 +880,7 @@ function AppWithSidebar({ children }: { children: ReactNode }) {
       pathname === "/new" ||
       pathname === "/sessions" ||
       pathname === "/schedules" ||
+      pathname === "/usage" ||
       routeHasKnownHost);
 
   return <AppContainer chromeEnabled={shouldShowAppChrome}>{children}</AppContainer>;
@@ -929,6 +914,7 @@ function RootStack() {
         <Stack.Screen name="cockpit" />
         <Stack.Screen name="sessions" />
         <Stack.Screen name="schedules" />
+        <Stack.Screen name="usage" />
         <Stack.Screen name="pair-scan" />
       </Stack.Protected>
       <Stack.Screen name="h/[serverId]" />
