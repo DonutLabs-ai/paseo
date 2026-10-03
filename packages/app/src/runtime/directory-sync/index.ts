@@ -419,11 +419,14 @@ export class DirectorySync {
 
   private async loadCachedWorkspace(workspaceId: string): Promise<void> {
     if (!this.checkpoints) return;
+    // A complete live workspace snapshot is authoritative about absence. A cached
+    // route row can outlive an archive and must not recreate that workspace.
+    if (this.hasSyncedWorkspaceBaseline()) return;
     if (useSessionStore.getState().sessions[this.serverId]?.workspaces.has(workspaceId)) return;
     const revision = this.workspaceRevision;
     const cached = await this.checkpoints.readWorkspace(this.serverId, workspaceId);
     if (!cached) return;
-    if (this.workspaceRevision !== revision) return;
+    if (this.workspaceRevision !== revision || this.hasSyncedWorkspaceBaseline()) return;
     const session = useSessionStore.getState().sessions[this.serverId];
     if (!session) return;
     this.workspaces.commitCachedWorkspace(cached.workspace, cached.project);
@@ -434,15 +437,36 @@ export class DirectorySync {
     if (!checkpoints) return Promise.resolve();
     this.cacheLoad ??= (async () => {
       const revision = this.revision;
+      const workspaceVersions = new Map(this.workspaceVersions);
       const cached = await checkpoints.readDirectory(this.serverId);
       if (this.cacheAccepted) return;
       if (!useSessionStore.getState().sessions[this.serverId]) return;
       this.agents.commitCached(cached.agents);
-      this.workspaces.commitCached(cached);
-      if (this.revision === revision) this.cursors = cached.checkpoint ?? {};
+      const hasLiveWorkspaceSnapshot = this.hasSyncedWorkspaceBaseline();
+      this.workspaces.commitCached({
+        workspaces: hasLiveWorkspaceSnapshot
+          ? new Map()
+          : new Map(
+              [...cached.workspaces].filter(
+                ([id]) =>
+                  (this.workspaceVersions.get(id) ?? 0) === (workspaceVersions.get(id) ?? 0),
+              ),
+            ),
+        projects: hasLiveWorkspaceSnapshot ? new Map() : cached.projects,
+      });
+      if (this.revision === revision && !hasLiveWorkspaceSnapshot)
+        this.cursors = cached.checkpoint ?? {};
       this.cacheAccepted = true;
     })();
     return this.cacheLoad;
+  }
+
+  private hasSyncedWorkspaceBaseline(): boolean {
+    return (
+      this.hasAuthoritativeDirectorySnapshot &&
+      useSessionStore.getState().sessions[this.serverId]?.serverInfo?.features?.directorySync ===
+        true
+    );
   }
 
   restoreCachedDirectory(): Promise<void> {
