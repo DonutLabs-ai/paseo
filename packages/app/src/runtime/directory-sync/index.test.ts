@@ -24,6 +24,7 @@ import {
   DirectoryRefreshSupersededError,
   DirectorySync,
   type DirectoryCheckpointStorage,
+  type DirectoryConnection,
 } from "./index";
 
 import { subscriptionFixture } from "../subscription-fixture";
@@ -188,7 +189,11 @@ const serverIds = new Set<string>();
 
 function createDirectory(
   serverId: string,
-  options?: { workspaceLabels?: boolean },
+  options?: {
+    workspaceLabels?: boolean;
+    checkpoints?: DirectoryCheckpointStorage;
+    initializeSession?: boolean;
+  },
 ): {
   client: FakeDirectoryClient;
   directory: DirectorySync;
@@ -196,17 +201,25 @@ function createDirectory(
   serverIds.add(serverId);
   const client = new FakeDirectoryClient();
   client.supportsWorkspaceLabels = options?.workspaceLabels === true;
-  const directory = new DirectorySync(serverId, {
-    onAgentStoppedRunning: () => undefined,
-    markAgentLoading: () => undefined,
-    markAgentReady: () => undefined,
-    markAgentError: () => undefined,
-  });
-  directory.connectionChanged({
+  const directory = new DirectorySync(
+    serverId,
+    {
+      onAgentStoppedRunning: () => undefined,
+      markAgentLoading: () => undefined,
+      markAgentReady: () => undefined,
+      markAgentError: () => undefined,
+    },
+    options?.checkpoints,
+  );
+  const connection: DirectoryConnection = {
     client: client as unknown as DaemonClient,
     status: "online",
     source: { clientGeneration: 1, connectionEpoch: 1 },
-  });
+  };
+  directory.connectionChanged(connection);
+  if (options?.initializeSession) {
+    useSessionStore.getState().initializeSession(serverId, connection.client, 1);
+  }
   return { client, directory };
 }
 
@@ -834,6 +847,37 @@ describe("DirectorySync session readiness", () => {
     directory.dispose();
   });
 
+  it("does not hydrate an archived workspace route after a synced live snapshot", async () => {
+    const serverId = "archived-workspace-route";
+    const archived = normalizeWorkspaceDescriptor(createWorkspaceEntry("archived-route"));
+    const { directory } = createDirectory(serverId, {
+      initializeSession: true,
+      checkpoints: {
+        readAgent: async () => undefined,
+        readWorkspace: async () => ({ workspace: archived }),
+        readDirectory: async () => ({
+          agents: new Map(),
+          workspaces: new Map(),
+          projects: new Map(),
+        }),
+        commitDirectoryMutations: () => undefined,
+      },
+    });
+    const store = useSessionStore.getState();
+    store.updateSessionServerInfo(serverId, {
+      serverId,
+      hostname: null,
+      version: "test",
+      features: { workspaceMultiplicity: true, directorySync: true },
+    });
+    directory.setAgentRouteDemand(["agent"]);
+    await directory.refreshDemand();
+    await directory.prepareWorkspaceRoute(archived.id);
+
+    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(archived.id)).toBe(false);
+    directory.dispose();
+  });
+
   it("persists accepted script status updates through the directory owner", async () => {
     const serverId = "script-status-owner";
     serverIds.add(serverId);
@@ -1276,6 +1320,77 @@ describe("DirectorySync session readiness", () => {
     await refresh;
 
     expect(client.lastWorkspaceOptions).not.toHaveProperty("sync.generation");
+    directory.dispose();
+  });
+
+  it("does not restore an archived workspace from cache after an authoritative snapshot", async () => {
+    const serverId = "archive-after-authoritative-snapshot";
+    const archived = normalizeWorkspaceDescriptor(createWorkspaceEntry("archived"));
+    const { directory } = createDirectory(serverId, {
+      initializeSession: true,
+      checkpoints: {
+        readAgent: async () => undefined,
+        readWorkspace: async () => undefined,
+        readDirectory: async () => ({
+          agents: new Map(),
+          workspaces: new Map([[archived.id, archived]]),
+          projects: new Map(),
+        }),
+        commitDirectoryMutations: () => undefined,
+      },
+    });
+    const store = useSessionStore.getState();
+    store.updateSessionServerInfo(serverId, {
+      serverId,
+      hostname: null,
+      version: "test",
+      features: { workspaceMultiplicity: true, directorySync: true },
+    });
+    directory.setAgentRouteDemand(["agent"]);
+    await directory.refreshDemand();
+    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(archived.id)).toBe(false);
+
+    await directory.restoreCachedDirectory();
+    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(archived.id)).toBe(false);
+    directory.dispose();
+  });
+
+  it("does not restore a workspace removed while the directory cache is loading", async () => {
+    const serverId = "archive-during-directory-cache-read";
+    const archived = normalizeWorkspaceDescriptor(createWorkspaceEntry("archived"));
+    const retained = normalizeWorkspaceDescriptor(createWorkspaceEntry("retained"));
+    let releaseCache!: (
+      value: Awaited<ReturnType<DirectoryCheckpointStorage["readDirectory"]>>,
+    ) => void;
+    const cacheRead = new Promise<Awaited<ReturnType<DirectoryCheckpointStorage["readDirectory"]>>>(
+      (resolve) => {
+        releaseCache = resolve;
+      },
+    );
+    const { client, directory } = createDirectory(serverId, {
+      initializeSession: true,
+      checkpoints: {
+        readAgent: async () => undefined,
+        readWorkspace: async () => undefined,
+        readDirectory: () => cacheRead,
+        commitDirectoryMutations: () => undefined,
+      },
+    });
+
+    const restore = directory.restoreCachedDirectory();
+    client.emit({ type: "workspace_update", payload: { kind: "remove", id: archived.id } });
+    releaseCache({
+      agents: new Map(),
+      workspaces: new Map([
+        [archived.id, archived],
+        [retained.id, retained],
+      ]),
+      projects: new Map(),
+    });
+    await restore;
+
+    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(archived.id)).toBe(false);
+    expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(retained.id)).toBe(true);
     directory.dispose();
   });
 
